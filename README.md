@@ -1,4 +1,4 @@
-# CHULOOPA
+# CHULOOPA (a CHUCK Loopa)
 
 ## GIST
 
