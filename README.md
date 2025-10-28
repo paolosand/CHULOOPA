@@ -26,6 +26,7 @@
     3. looper midi quneo
        - NEEDED SPECIFIC WORKAROUNDS FOR THE QUNEO MIDI CONTROLLER
        - looper_midi_quneo.ck
+       - looper_midi_quneo_vocoder.ck
     4. looper midi quneo visual
        - NEEDED SPECIFIC WORKAROUNDS FOR THE QUNEO MIDI CONTROLLER
        - looper_midi_quneo_grid_visual.ck
