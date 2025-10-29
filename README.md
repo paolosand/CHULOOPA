@@ -31,3 +31,8 @@
        - NEEDED SPECIFIC WORKAROUNDS FOR THE QUNEO MIDI CONTROLLER
        - looper_midi_quneo_grid_visual.ck
        - looper_midi_quneo_visual.ck
+    5. realtime symbolic transcription
+       - pitch_detector_recorder.ck (records from mic to MIDI text file)
+       - pitch_detector_file.ck (converts WAV files to MIDI text file)
+       - midi_playback.ck (plays back MIDI text files)
+       - uses autocorrelation for pitch detection
