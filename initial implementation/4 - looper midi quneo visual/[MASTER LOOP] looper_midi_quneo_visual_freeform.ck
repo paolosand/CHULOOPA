@@ -1,14 +1,21 @@
 //---------------------------------------------------------------------
-// name: looper_midi_quneo_visual.ck
-// desc: Multi-track audio looper with ChuGL visualization & BPM sync
+// name: [MASTER LOOP] looper_midi_quneo_visual_freeform.ck
+// desc: Multi-track audio looper with ChuGL visualization + MASTER LOOP SYNC
 //       3 independent audio tracks with frequency-reactive spheres
 //       Each sphere reacts to amplitude (size) and frequency (color)
-//       Visual metronome with beat indicators
+//       DRIFT PREVENTION: First loop becomes master, subsequent loops
+//       auto-adjust to clean multiples (0.25×, 0.5×, 1×, 2×, etc.)
 //
 // Recording Behavior:
 //   PRESS AND HOLD to record - starts immediately
-//   RELEASE to stop - loop length quantized to nearest beat/measure
-//   Quantization can be toggled (see QUANTIZE_ENABLED below)
+//   RELEASE to stop - loop length adjusted to sync with master
+//
+// Sync System:
+//   - First recorded loop = MASTER (sets the timing reference)
+//   - Subsequent loops automatically snap to nearest multiple of master
+//   - Valid multipliers: 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0
+//   - System chooses closest match to what you recorded
+//   - Clear all tracks to reset master and start fresh
 //
 // MIDI Mapping (customize below):
 //   NOTES (for pad triggers):
@@ -17,27 +24,17 @@
 //   
 //   CCs (for continuous controls - sliders/knobs):
 //     CC 45-47:    Volume control for tracks 0-2
-//     CC 48:       BPM control (30-300 BPM)
 //
 // Visual Features:
-//   Track Spheres (top row):
+//   Track Spheres:
 //     - SIZE: Amplitude/volume of playback
 //     - COLOR: Dominant frequency (cool to warm gradient)
 //       Blue → Cyan → Green → Yellow → Red
 //       (low frequencies → high frequencies)
-//   
-//   Beat Indicators (middle row):
-//     - 4 small spheres representing beats 1-4 in 4/4 time
-//     - Current beat glows RED
-//     - Inactive beats are gray
-//   
-//   Metronome Ball (bottom):
-//     - White sphere that moves left to right
-//     - Travels across beat indicators in time with tempo
-//     - Pulses slightly at the start of each beat
+//     - Master track has a subtle gold highlight
 //
 // Usage:
-//   chuck looper_midi_quneo_visual.ck
+//   chuck "[MASTER LOOP] looper_midi_quneo_visual_freeform.ck"
 //---------------------------------------------------------------------
 
 // === MIDI CONFIGURATION ===
@@ -52,16 +49,49 @@
 45 => int CC_VOLUME_TRACK_0;
 46 => int CC_VOLUME_TRACK_1;
 47 => int CC_VOLUME_TRACK_2;
-48 => int CC_BPM;
 
 0 => int MIDI_DEVICE;
 
 // === CONFIGURATION ===
 3 => int NUM_TRACKS;
 
-// Quantization settings
-1 => int QUANTIZE_ENABLED;  // 1 = on, 0 = off
-1 => int QUANTIZE_TO_BEAT;  // If 1, quantize to beats; if 0, quantize to measures
+// === MASTER LOOP SYNC SYSTEM ===
+-1 => int master_track;
+0::second => dur master_duration;
+0 => int has_master;
+
+// Valid multipliers for sync (most common musical ratios)
+[0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0] @=> float valid_multipliers[];
+
+// Find best multiplier to sync with master loop
+fun dur findBestMultiplier(dur recorded_duration, dur master_duration) {
+    1000000.0 => float best_error;  // Large initial value
+    1.0 => float best_multiplier;
+
+    // Test each multiplier
+    for(0 => int i; i < valid_multipliers.size(); i++) {
+        valid_multipliers[i] => float mult;
+        master_duration * mult => dur target;
+
+        // Calculate absolute error
+        Math.fabs((recorded_duration - target) / second) => float error;
+
+        if(error < best_error) {
+            error => best_error;
+            mult => best_multiplier;
+        }
+    }
+
+    return master_duration * best_multiplier;
+}
+
+// Check if any loops exist
+fun int anyLoopsExist() {
+    for(0 => int i; i < NUM_TRACKS; i++) {
+        if(has_loop[i]) return 1;
+    }
+    return 0;
+}
 
 // === CHUGL SETUP ===
 GG.scene() @=> GScene @ scene;
@@ -81,23 +111,6 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     else if(i == 1) track_sphere[i].color(@(0.2, 0.7, 0.8)); // Cyan
     else if(i == 2) track_sphere[i].color(@(0.3, 0.8, 0.4)); // Green
 }
-
-// === METRONOME VISUALIZATION SETUP ===
-// Create 4 beat indicator spheres (for 4/4 time)
-GSphere beat_indicator[4];
-for(0 => int i; i < 4; i++) {
-    beat_indicator[i] --> scene;
-    beat_indicator[i].posX(-1.5 + (i * 1.0));  // Evenly spaced
-    beat_indicator[i].posY(-2.5);               // Below track spheres
-    beat_indicator[i].sca(0.3);
-    beat_indicator[i].color(@(0.3, 0.3, 0.3));  // Default gray
-}
-
-// Create moving metronome sphere
-GSphere metronome_ball --> scene;
-metronome_ball.posY(-3.5);  // Below beat indicators
-metronome_ball.sca(0.25);
-metronome_ball.color(@(1.0, 1.0, 1.0));  // White
 
 // Add some lighting
 GDirLight light --> scene;
@@ -159,87 +172,6 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0 => has_loop[i];
 }
 
-// === BPM / TEMPO VARIABLES ===
-120.0 => float bpm;
-4 => int beats_per_measure;
-time tempo_start_time;
-now => tempo_start_time;
-
-// Beat tracking
-0 => int current_beat;  // 0-3 for 4/4 time
-time last_beat_time;
-now => last_beat_time;
-
-fun dur beatDuration() {
-    return (60.0 / bpm)::second;
-}
-
-fun dur measureDuration() {
-    return (60.0 / bpm * beats_per_measure)::second;
-}
-
-fun void setBPM(float new_bpm) {
-    Math.max(30.0, Math.min(300.0, new_bpm)) => bpm;
-    <<< "BPM set to:", bpm >>>;
-}
-
-// Get current beat position (0.0 to 1.0 within the current beat)
-fun float getBeatProgress() {
-    now - last_beat_time => dur elapsed;
-    return (elapsed / beatDuration()) $ float;
-}
-
-// Quantize a duration to the nearest beat or measure
-fun dur quantizeDuration(dur input_duration) {
-    if(!QUANTIZE_ENABLED) {
-        return input_duration;
-    }
-    
-    if(QUANTIZE_TO_BEAT) {
-        // Quantize to nearest beat
-        beatDuration() => dur beat;
-        (input_duration / beat) $ int => int num_beats;
-        
-        // Round to nearest beat
-        input_duration - (num_beats $ float * beat) => dur remainder;
-        beat => dur quantized;  // Declare variable
-        
-        if(remainder > (beat * 0.5)) {
-            (num_beats + 1) $ float * beat => quantized;
-        } else {
-            num_beats $ float * beat => quantized;
-        }
-        
-        // Ensure at least 1 beat
-        if(quantized < beat) {
-            return beat;
-        }
-        
-        return quantized;
-    } else {
-        // Quantize to nearest measure
-        measureDuration() => dur measure;
-        (input_duration / measure) $ int => int num_measures;
-        
-        // Round to nearest measure
-        input_duration - (num_measures $ float * measure) => dur remainder;
-        measure => dur quantized;  // Declare variable
-        
-        if(remainder > (measure * 0.5)) {
-            (num_measures + 1) $ float * measure => quantized;
-        } else {
-            num_measures $ float * measure => quantized;
-        }
-        
-        // Ensure at least 1 measure
-        if(quantized < measure) {
-            return measure;
-        }
-        
-        return quantized;
-    }
-}
-
 // === TRACK FUNCTIONS ===
 
 fun void startRecording(int track) {
@@ -278,23 +210,44 @@ fun void stopRecording(int track) {
         0 => is_recording[track];
 
         lisa[track].recPos() => recorded_duration[track];
-        
-        // Apply quantization
-        quantizeDuration(recorded_duration[track]) => dur quantized_duration;
-        quantized_duration => recorded_duration[track];
-        recorded_duration[track] / second => loop_length[track];
 
-        <<< ">>> TRACK", track, "RECORDING STOPPED <<<" >>>;
-        <<< "Loop length:", loop_length[track], "seconds" >>>;
-        if(QUANTIZE_ENABLED) {
-            if(QUANTIZE_TO_BEAT) {
-                (loop_length[track] / (beatDuration() / second)) $ int => int num_beats;
-                <<< "Quantized to", num_beats, "beats" >>>;
-            } else {
-                (loop_length[track] / (measureDuration() / second)) $ int => int num_measures;
-                <<< "Quantized to", num_measures, "measures" >>>;
+        // === MASTER LOOP LOGIC ===
+        if(!has_master) {
+            // First loop becomes master
+            track => master_track;
+            recorded_duration[track] => master_duration;
+            1 => has_master;
+            
+            <<< "" >>>;
+            <<< "╔═══════════════════════════════════════╗" >>>;
+            <<< "║  MASTER LOOP SET: Track", track, "          ║" >>>;
+            <<< "╚═══════════════════════════════════════╝" >>>;
+            <<< "Duration:", master_duration / second, "seconds" >>>;
+            <<< "All future loops will sync to this!" >>>;
+            <<< "" >>>;
+        } else {
+            // Adjust to best fit of master
+            findBestMultiplier(recorded_duration[track], master_duration) => dur adjusted;
+            
+            // Calculate multiplier for display
+            (adjusted / master_duration) $ float => float multiplier;
+            
+            // Calculate how much we adjusted (for user feedback)
+            Math.fabs((adjusted - recorded_duration[track]) / second) => float adjustment;
+            
+            adjusted => recorded_duration[track];
+            
+            <<< "" >>>;
+            <<< ">>> TRACK", track, "SYNCED TO MASTER <<<" >>>;
+            <<< "Adjusted to", multiplier, "× master length" >>>;
+            <<< "Final length:", recorded_duration[track] / second, "seconds" >>>;
+            if(adjustment > 0.01) {
+                <<< "Adjustment:", adjustment, "seconds" >>>;
             }
+            <<< "" >>>;
         }
+
+        recorded_duration[track] / second => loop_length[track];
 
         if(loop_length[track] > 0.1) {
             0::second => lisa[track].playPos;
@@ -330,6 +283,22 @@ fun void clearTrack(int track) {
     0.0 => loop_length[track];
     0::second => recorded_duration[track];
     0 => has_loop[track];
+    
+    // If we cleared the master track, check if we need to reset master
+    if(track == master_track) {
+        if(!anyLoopsExist()) {
+            <<< "" >>>;
+            <<< "╔═══════════════════════════════════════╗" >>>;
+            <<< "║  MASTER LOOP CLEARED               ║" >>>;
+            <<< "╚═══════════════════════════════════════╝" >>>;
+            <<< "Next recorded loop will become new master" >>>;
+            <<< "" >>>;
+            
+            -1 => master_track;
+            0::second => master_duration;
+            0 => has_master;
+        }
+    }
 }
 
 fun void setTrackVolume(int track, float vol) {
@@ -414,18 +383,13 @@ fun vec3 frequencyToColor(float freq) {
     }
 }
 
-// === BEAT TRACKING SHRED ===
-fun void beatTracker() {
-    while(true) {
-        beatDuration() => now;
-        now => last_beat_time;
-        
-        // Increment beat (0-3 for 4/4)
-        (current_beat + 1) % beats_per_measure => current_beat;
-        
-        // Optional: Print beat for debugging
-        // <<< "Beat:", current_beat + 1 >>>;
-    }
+// Add subtle gold tint for master track
+fun vec3 addMasterHighlight(vec3 color, float intensity) {
+    color.x + (intensity * 0.3) => float r;
+    color.y + (intensity * 0.2) => float g;
+    color.z => float b;
+    
+    return @(r, g, b);
 }
 
 // === VISUALIZATION SHRED ===
@@ -465,6 +429,12 @@ fun void visualizationLoop() {
                 // Update color based on frequency (cool to warm)
                 if(level > 0.01) {  // Only change color when there's sound
                     frequencyToColor(smoothed_freq[i]) => vec3 color;
+                    
+                    // Add subtle highlight if this is the master track
+                    if(i == master_track) {
+                        addMasterHighlight(color, 0.15) => color;
+                    }
+                    
                     track_sphere[i].color(color);
                 }
                 
@@ -484,37 +454,6 @@ fun void visualizationLoop() {
                 track_sphere[i].rotY(0.005);
             }
         }
-        
-        // === METRONOME VISUALIZATION ===
-        // Update beat indicator spheres (4 beats in 4/4 time)
-        for(0 => int i; i < 4; i++) {
-            if(i == current_beat) {
-                // Current beat - bright red
-                beat_indicator[i].color(@(1.0, 0.2, 0.2));
-                beat_indicator[i].sca(0.35);  // Slightly larger
-            } else {
-                // Inactive beats - dark gray
-                beat_indicator[i].color(@(0.3, 0.3, 0.3));
-                beat_indicator[i].sca(0.3);
-            }
-        }
-        
-        // Update moving metronome ball position
-        getBeatProgress() => float progress;
-        
-        // Move from left to right across the 4 beat positions
-        // Start at beat 0 position (-1.5) and end at beat 3 position (1.5)
-        -1.5 + (progress * 3.0) + (current_beat * 1.0) => float x_pos;
-        metronome_ball.posX(x_pos);
-        
-        // Pulse the metronome ball at the start of each beat
-        if(progress < 0.1) {
-            0.35 => float pulse_size;
-            metronome_ball.sca(pulse_size);
-        } else {
-            0.25 => float normal_size;
-            metronome_ball.sca(normal_size);
-        }
     }
 }
 
@@ -523,7 +462,7 @@ MidiIn min;
 MidiMsg msg;
 
 <<< "=====================================================" >>>;
-<<< "    ChucK Multi-Track Looper with ChuGL Visualization" >>>;
+<<< "  ChucK Multi-Track Looper - MASTER LOOP SYNC" >>>;
 <<< "=====================================================" >>>;
 <<< "Scanning for MIDI devices..." >>>;
 <<< "Number of MIDI devices:", min.num() >>>;
@@ -544,7 +483,6 @@ if(!min.open(MIDI_DEVICE)) {
 <<< "Opened MIDI device:", min.name() >>>;
 <<< "Number of tracks:", NUM_TRACKS >>>;
 <<< "Max loop duration:", max_duration / second, "seconds" >>>;
-<<< "Default BPM:", bpm >>>;
 <<< "" >>>;
 <<< "MIDI Note Mapping (QUNEO Pads):" >>>;
 <<< "  RECORD TRACKS (Press & Hold):" >>>;
@@ -557,35 +495,30 @@ if(!min.open(MIDI_DEVICE)) {
 <<< "" >>>;
 <<< "MIDI CC Mapping (QUNEO Bottom Sliders):" >>>;
 <<< "  Volume Tracks 0-2: CC", CC_VOLUME_TRACK_0, CC_VOLUME_TRACK_1, CC_VOLUME_TRACK_2 >>>;
-<<< "  BPM Control:       CC", CC_BPM, "(30-300 BPM)" >>>;
 <<< "" >>>;
 <<< "Visual Mapping:" >>>;
-<<< "  Track Spheres (Top Row - Left to Right):" >>>;
+<<< "  Track Spheres (Left to Right):" >>>;
 <<< "    Track 0 | Track 1 | Track 2" >>>;
 <<< "    SIZE:  Reacts to amplitude (volume)" >>>;
 <<< "    COLOR: Reacts to dominant frequency" >>>;
 <<< "      Blue (cool) → Low frequencies" >>>;
 <<< "      Green/Yellow → Mid frequencies" >>>;
 <<< "      Red (warm) → High frequencies" >>>;
+<<< "    Master track has subtle gold highlight" >>>;
 <<< "" >>>;
-<<< "  Beat Indicators (Middle Row):" >>>;
-<<< "    4 spheres showing current beat (1-4)" >>>;
-<<< "    Current beat glows RED" >>>;
+<<< "╔═══════════════════════════════════════════════════╗" >>>;
+<<< "║           MASTER LOOP SYNC SYSTEM              ║" >>>;
+<<< "╚═══════════════════════════════════════════════════╝" >>>;
 <<< "" >>>;
-<<< "  Metronome Ball (Bottom):" >>>;
-<<< "    White sphere moving left to right with tempo" >>>;
-<<< "    Pulses at start of each beat" >>>;
+<<< "How it works:" >>>;
+<<< "  1. First recorded loop becomes MASTER" >>>;
+<<< "  2. Subsequent loops auto-adjust to sync" >>>;
+<<< "  3. Valid multipliers:" >>>;
+<<< "     0.25×, 0.5×, 0.75×, 1×, 1.5×, 2×, 3×, 4×, 6×, 8×" >>>;
+<<< "  4. System picks closest match to your recording" >>>;
+<<< "  5. Clear all tracks to reset and start fresh" >>>;
 <<< "" >>>;
-<<< "Quantization:" >>>;
-if(QUANTIZE_ENABLED) {
-    if(QUANTIZE_TO_BEAT) {
-        <<< "  ENABLED - Loops quantize to nearest BEAT" >>>;
-    } else {
-        <<< "  ENABLED - Loops quantize to nearest MEASURE" >>>;
-    }
-} else {
-    <<< "  DISABLED - Free-form looping" >>>;
-}
+<<< "Result: NO DRIFT! Loops stay perfectly synced!" >>>;
 <<< "=====================================================" >>>;
 
 // === MIDI LISTENER ===
@@ -596,7 +529,6 @@ for(0 => int i; i < 32; i++) {
 0 => ignore_cc[CC_VOLUME_TRACK_0];
 0 => ignore_cc[CC_VOLUME_TRACK_1];
 0 => ignore_cc[CC_VOLUME_TRACK_2];
-0 => ignore_cc[CC_BPM];
 
 fun void midiListener() {
     while(true) {
@@ -623,10 +555,6 @@ fun void midiListener() {
                 }
                 else if(data1 == CC_VOLUME_TRACK_2) {
                     setTrackVolume(2, data2 / 127.0);
-                }
-                else if(data1 == CC_BPM) {
-                    30.0 + (data2 / 127.0 * 270.0) => float new_bpm;
-                    setBPM(new_bpm);
                 }
                 else {
                     <<< "Unmapped CC:", data1, "Value:", data2 >>>;
@@ -679,7 +607,6 @@ fun void midiListener() {
 }
 
 // === MAIN PROGRAM ===
-spork ~ beatTracker();
 spork ~ midiListener();
 spork ~ visualizationLoop();
 
