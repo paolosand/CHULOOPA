@@ -2,25 +2,33 @@
 // name: chuloopa_main.ck
 // desc: CHULOOPA - Integrated AI-powered looper with symbolic transcription
 //       Combines multi-track audio looping, real-time pitch detection,
-//       symbolic MIDI storage, and AI generation pipeline (placeholder)
+//       symbolic MIDI storage, and MIDI playback synthesis
 //
 // Architecture:
 //   1. Record audio loops (with master sync to prevent drift)
 //   2. Real-time pitch detection → symbolic MIDI representation
-//   3. Store MIDI data for each track independently
-//   4. [AI PLACEHOLDER] Generate variations from symbolic data
-//   5. Playback variations through synthesis
-//   6. Visual feedback (ChuGL) for audio + symbolic data
+//   3. AUTO-EXPORT: Symbolic data saved to track_N_midi.txt files
+//   4. MIDI PLAYBACK: Transcribed notes played as sine wave (not audio loop)
+//   5. Visual feedback (ChuGL) reacts to MIDI synthesis output
+//   6. [AI PIPELINE] Use track_N_midi.txt with ai_pipeline_placeholder.ck
+//
+// NEW BEHAVIOR:
+//   - After recording, MIDI data is AUTOMATICALLY exported
+//   - DUAL PLAYBACK: Original audio (40%) + MIDI transcription (60%)
+//   - Both play simultaneously for sync verification
+//   - If no notes detected, only original audio plays
+//   - Visualization shows MIDI synth output (pure sine wave harmonics)
 //
 // MIDI Mapping (QuNeo):
 //   RECORDING:
 //     C1, C#1, D1 (36-38):    Press & hold to record tracks 0-2
+//                             Release to stop recording
 //
 //   CLEARING:
-//     E1, F1, F#1 (40-42):    Clear tracks 0-2
+//     E1, F1, F#1 (40-42):    Press to clear tracks 0-2
 //
-//   EXPORT SYMBOLIC DATA:
-//     G1 (43):                Export all track MIDI data to files
+//   MANUAL EXPORT (optional):
+//     G1 (43):                Export all track MIDI data (already auto-exported)
 //
 //   VOLUME:
 //     CC 45-47:               Volume control for tracks 0-2
@@ -34,11 +42,11 @@
 37 => int NOTE_RECORD_TRACK_1;   // C#1
 38 => int NOTE_RECORD_TRACK_2;   // D1
 
-40 => int NOTE_CLEAR_TRACK_0;    // E1
-41 => int NOTE_CLEAR_TRACK_1;    // F1
-42 => int NOTE_CLEAR_TRACK_2;    // F#1
+39 => int NOTE_CLEAR_TRACK_0;    // E1 (fallback clear button)
+40 => int NOTE_CLEAR_TRACK_1;    // F1 (fallback clear button)
+41 => int NOTE_CLEAR_TRACK_2;    // F#1 (fallback clear button)
 
-43 => int NOTE_EXPORT_MIDI;      // G1
+42 => int NOTE_EXPORT_MIDI;      // G1
 
 45 => int CC_VOLUME_TRACK_0;
 46 => int CC_VOLUME_TRACK_1;
@@ -58,6 +66,10 @@ HOP_SIZE::samp => dur HOP;
 0.009 => float AMPLITUDE_THRESHOLD;
 44100.0 => float SAMPLE_RATE;
 50::ms => dur MIN_NOTE_DURATION;
+
+// Analysis latency compensation
+// The center of the analysis window is FRAME_SIZE/2 samples in the past
+(FRAME_SIZE/2.0 / SAMPLE_RATE)::second => dur ANALYSIS_LATENCY;
 
 // Volume mapping for pitch detection
 0.009 => float MIN_AMPLITUDE;
@@ -134,11 +146,18 @@ FFT track_fft[NUM_TRACKS];
 RMS track_rms[NUM_TRACKS];
 Gain track_analysis_gain[NUM_TRACKS];
 
-// === PITCH DETECTION SETUP (per track) ===
-Flip track_flip[NUM_TRACKS];
-AutoCorr track_autocorr[NUM_TRACKS];
-Flip track_flip_rms[NUM_TRACKS];
-RMS track_pitch_rms[NUM_TRACKS];
+// === PITCH DETECTION SETUP (SHARED - single chain for all tracks) ===
+// This is more reliable than having multiple chains connected to adc
+Flip pitch_flip;
+AutoCorr pitch_autocorr;
+Flip pitch_flip_rms;
+RMS pitch_rms;
+
+// === MIDI SYNTHESIS SETUP (per track) ===
+// For playing back transcribed MIDI instead of audio loops
+SinOsc track_synth[NUM_TRACKS];
+ADSR track_env[NUM_TRACKS];
+Gain track_synth_gain[NUM_TRACKS];
 
 // Configure each track
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -150,25 +169,32 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     1 => lisa[i].loop;
     0 => lisa[i].bi;
 
-    // Setup output gain
+    // Setup output gain (reduced to 40% during MIDI playback for sync verification)
     lisa[i] => output_gains[i] => dac;
     0.7 => output_gains[i].gain;
 
-    // Setup visualization analysis (FFT + RMS)
-    lisa[i] => track_analysis_gain[i] => track_fft[i] =^ track_rms[i] => blackhole;
+    // Setup MIDI synthesis chain
+    track_synth[i] => track_env[i] => track_synth_gain[i] => dac;
+    0.2 => track_synth_gain[i].gain;
+
+    // Configure ADSR envelope (same as variation_playback.ck)
+    track_env[i].set(20::ms, 50::ms, 0.8, 150::ms);
+
+    // Setup visualization analysis (FFT + RMS) - now analyzes MIDI synth output
+    track_synth_gain[i] => track_analysis_gain[i] => track_fft[i] =^ track_rms[i] => blackhole;
     3.0 => track_analysis_gain[i].gain;
     2048 => track_fft[i].size;
     Windowing.hann(2048) => track_fft[i].window;
-
-    // Setup pitch detection chain (during recording only)
-    adc => track_flip[i] =^ track_autocorr[i] => blackhole;
-    adc => track_flip_rms[i] =^ track_pitch_rms[i] => blackhole;
-
-    FRAME_SIZE => track_flip[i].size => track_flip_rms[i].size;
-    Windowing.hann(FRAME_SIZE) => track_flip[i].window;
-    Windowing.hann(FRAME_SIZE) => track_flip_rms[i].window;
-    1 => track_autocorr[i].normalize;
 }
+
+// Setup SHARED pitch detection chain (used by whichever track is recording)
+adc => pitch_flip =^ pitch_autocorr => blackhole;
+adc => pitch_flip_rms =^ pitch_rms => blackhole;
+
+FRAME_SIZE => pitch_flip.size => pitch_flip_rms.size;
+Windowing.hann(FRAME_SIZE) => pitch_flip.window;
+Windowing.hann(FRAME_SIZE) => pitch_flip_rms.window;
+1 => pitch_autocorr.normalize;
 
 // === STATE VARIABLES (per track) ===
 int is_recording[NUM_TRACKS];
@@ -179,6 +205,10 @@ dur recorded_duration[NUM_TRACKS];
 int has_loop[NUM_TRACKS];
 time record_start_time[NUM_TRACKS];
 
+// MIDI playback state
+time loop_start_time[NUM_TRACKS];
+int midi_playback_active[NUM_TRACKS];
+
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
     0 => is_recording[i];
@@ -187,6 +217,9 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0.0 => loop_length[i];
     0::second => recorded_duration[i];
     0 => has_loop[i];
+
+    // Initialize MIDI playback state
+    0 => midi_playback_active[i];
 }
 
 // === SYMBOLIC MIDI DATA STORAGE (per track) ===
@@ -308,71 +341,160 @@ fun void exportAllSymbolicData() {
     <<< "" >>>;
 }
 
-// === PITCH DETECTION (per track, during recording) ===
-fun void pitchDetectionLoop(int track) {
-    // Let buffer fill
+// === MIDI PLAYBACK FUNCTIONS ===
+
+// Play a single MIDI note with given velocity and duration
+fun void playMidiNote(int track, float midi_note, float velocity, float duration) {
+    // Convert MIDI to frequency
+    Std.mtof(midi_note $ int) => float freq;
+    freq => track_synth[track].freq;
+
+    // Map velocity (0-127) to gain (0.1-1.0)
+    // Same mapping as variation_playback.ck
+    ((velocity - 27.0) / 100.0) * 0.8 => float gain;
+    Math.max(0.1, Math.min(1.0, gain)) => track_synth_gain[track].gain;
+
+    // Trigger envelope
+    track_env[track].keyOn();
+
+    // Hold for duration (accounting for release time)
+    Math.max(0.05, duration - 0.15) => float hold_time;
+    hold_time::second => now;
+
+    // Release
+    track_env[track].keyOff();
+    0.01::second => now;
+}
+
+// Main MIDI playback loop for a track
+fun void midiPlaybackLoop(int track) {
+    if(track_midi_notes[track].size() == 0) {
+        <<< "Track", track, "- No MIDI notes to play (will be silent)" >>>;
+        return;
+    }
+
+    // Use ACTUAL recorded loop duration (NOT calculated from MIDI notes)
+    // This ensures MIDI playback matches the audio loop exactly
+    loop_length[track] => float total_duration;
+
+    <<< "Track", track, "- MIDI playback started" >>>;
+    <<< "  Loop duration:", total_duration, "sec (matches audio)" >>>;
+    <<< "  MIDI notes:", track_midi_notes[track].size() >>>;
+
+    // Continuous loop playback
+    while(midi_playback_active[track] && has_loop[track]) {
+        // Anchor for this loop iteration
+        now => loop_start_time[track];
+
+        // Play all notes in sequence
+        for(0 => int i; i < track_midi_notes[track].size(); i++) {
+            // Check if still active
+            if(!midi_playback_active[track] || !has_loop[track]) break;
+
+            // Calculate when to play this note
+            loop_start_time[track] + track_note_starts[track][i]::second => time note_time;
+            note_time - now => dur wait_time;
+
+            // Wait if necessary
+            if(wait_time > 0::second) {
+                wait_time => now;
+            }
+
+            // Play the note
+            playMidiNote(track,
+                        track_midi_notes[track][i],
+                        track_note_velocities[track][i],
+                        track_note_durations[track][i]);
+        }
+
+        // Wait for loop to complete before restarting
+        loop_start_time[track] + total_duration::second => time loop_end;
+        loop_end - now => dur remaining;
+
+        if(remaining > 0::second) {
+            remaining => now;
+        }
+    }
+
+    <<< "Track", track, "- MIDI playback stopped" >>>;
+}
+
+// === MAIN PITCH DETECTION LOOP (runs in main thread, not sporked) ===
+// This continuously checks which track is recording and performs analysis
+fun void mainPitchDetectionLoop() {
+    // Let initial buffer fill
     FRAME_SIZE::samp => now;
 
-    <<< "Pitch detection started for track", track >>>;
+    <<< "Main pitch detection loop started" >>>;
 
-    while(is_recording[track]) {
-        // Get amplitude
-        track_pitch_rms[track].upchuck();
-        track_pitch_rms[track].fval(0) => float amplitude;
-
-        if(amplitude > AMPLITUDE_THRESHOLD) {
-            // Perform autocorrelation analysis
-            track_autocorr[track].upchuck();
-            track_autocorr[track].fvals() @=> float correlation[];
-
-            // Find peak in autocorrelation
-            0.0 => float max_corr;
-            0 => int best_lag;
-
-            Math.max(20, SAMPLE_RATE/800) $ int => int min_lag;
-            Math.min(correlation.size()-1, SAMPLE_RATE/80) $ int => int max_lag;
-
-            for(min_lag => int lag; lag <= max_lag; lag++) {
-                if(correlation[lag] > max_corr) {
-                    correlation[lag] => max_corr;
-                    lag => best_lag;
-                }
-            }
-
-            // Convert lag to frequency
-            if(max_corr > 0.3 && best_lag > 0) {
-                SAMPLE_RATE / best_lag => float detected_freq;
-                12.0 * Math.log2(detected_freq / 440.0) + 69.0 => float detected_midi;
-                Math.round(detected_midi) => float rounded_midi;
-
-                // Check if this is a new note
-                if(!note_playing[track] || Math.fabs(rounded_midi - current_midi_note[track]) >= 1.0) {
-                    // Save previous note
-                    saveCurrentNote(track);
-
-                    // Start new note
-                    rounded_midi => current_midi_note[track];
-                    now => current_note_start[track];
-                    mapAmplitudeToVelocity(amplitude) => current_velocity[track];
-                    1 => note_playing[track];
-                }
-            }
-        } else {
-            // No signal - end current note
-            if(note_playing[track]) {
-                saveCurrentNote(track);
-                0 => note_playing[track];
+    while(true) {
+        // Find which track (if any) is currently recording
+        -1 => int active_track;
+        for(0 => int i; i < NUM_TRACKS; i++) {
+            if(is_recording[i]) {
+                i => active_track;
+                break;
             }
         }
 
+        // If a track is recording, perform pitch detection
+        if(active_track >= 0) {
+            // Get amplitude using SHARED analysis chain
+            pitch_rms.upchuck();
+            pitch_rms.fval(0) => float amplitude;
+
+            if(amplitude > AMPLITUDE_THRESHOLD) {
+                // Perform autocorrelation analysis using SHARED chain
+                pitch_autocorr.upchuck();
+                pitch_autocorr.fvals() @=> float correlation[];
+
+                // Find peak in autocorrelation
+                0.0 => float max_corr;
+                0 => int best_lag;
+
+                Math.max(20, SAMPLE_RATE/800) $ int => int min_lag;
+                Math.min(correlation.size()-1, SAMPLE_RATE/80) $ int => int max_lag;
+
+                for(min_lag => int lag; lag <= max_lag; lag++) {
+                    if(correlation[lag] > max_corr) {
+                        correlation[lag] => max_corr;
+                        lag => best_lag;
+                    }
+                }
+
+                // Convert lag to frequency
+                if(max_corr > 0.3 && best_lag > 0) {
+                    SAMPLE_RATE / best_lag => float detected_freq;
+                    12.0 * Math.log2(detected_freq / 440.0) + 69.0 => float detected_midi;
+                    Math.round(detected_midi) => float rounded_midi;
+
+                    // Check if this is a new note for the active track
+                    if(!note_playing[active_track] || Math.fabs(rounded_midi - current_midi_note[active_track]) >= 1.0) {
+                        // Save previous note
+                        saveCurrentNote(active_track);
+
+                        // Start new note with latency compensation
+                        // Subtract ANALYSIS_LATENCY because the detected audio is from the past
+                        rounded_midi => current_midi_note[active_track];
+                        now - ANALYSIS_LATENCY => current_note_start[active_track];
+                        mapAmplitudeToVelocity(amplitude) => current_velocity[active_track];
+                        1 => note_playing[active_track];
+
+                        <<< "Track", active_track, "- Note detected: MIDI", rounded_midi, "Freq:", detected_freq, "Hz" >>>;
+                    }
+                }
+            } else {
+                // No signal - end current note if playing
+                if(note_playing[active_track]) {
+                    saveCurrentNote(active_track);
+                    0 => note_playing[active_track];
+                }
+            }
+        }
+
+        // Advance time by hop size
         HOP => now;
     }
-
-    // Save final note when recording stops
-    saveCurrentNote(track);
-    0 => note_playing[track];
-
-    <<< "Pitch detection stopped for track", track >>>;
 }
 
 // === TRACK CONTROL FUNCTIONS ===
@@ -396,8 +518,10 @@ fun void startRecording(int track) {
     1 => is_recording[track];
     now => record_start_time[track];
 
-    // Start pitch detection for this track
-    spork ~ pitchDetectionLoop(track);
+    // Pitch detection happens automatically in mainPitchDetectionLoop()
+    <<< "Recording... pitch detection active" >>>;
+
+    // Start recording monitor
     spork ~ recordingMonitor(track);
 }
 
@@ -407,6 +531,10 @@ fun void stopRecording(int track) {
 
     0 => lisa[track].record;
     0 => is_recording[track];
+
+    // Save any final note that was being played
+    saveCurrentNote(track);
+    0 => note_playing[track];
 
     lisa[track].recPos() => recorded_duration[track];
 
@@ -427,7 +555,24 @@ fun void stopRecording(int track) {
         (adjusted / master_duration) $ float => float multiplier;
         Math.fabs((adjusted - recorded_duration[track]) / second) => float adjustment;
 
+        // Store original duration before adjustment
+        recorded_duration[track] / second => float original_duration;
+
         adjusted => recorded_duration[track];
+        adjusted / second => float adjusted_duration;
+
+        // Scale MIDI timings if duration was adjusted
+        if(adjustment > 0.001 && track_midi_notes[track].size() > 0) {
+            adjusted_duration / original_duration => float scale_ratio;
+
+            <<< "Scaling", track_midi_notes[track].size(), "MIDI notes by ratio:", scale_ratio >>>;
+
+            // Scale all note start times and durations
+            for(0 => int i; i < track_note_starts[track].size(); i++) {
+                track_note_starts[track][i] * scale_ratio => track_note_starts[track][i];
+                track_note_durations[track][i] * scale_ratio => track_note_durations[track][i];
+            }
+        }
 
         <<< "" >>>;
         <<< ">>> TRACK", track, "SYNCED TO MASTER <<<" >>>;
@@ -452,6 +597,26 @@ fun void stopRecording(int track) {
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
         <<< ">>> Captured", track_midi_notes[track].size(), "MIDI notes <<<" >>>;
+
+        // === AUTO-EXPORT SYMBOLIC DATA ===
+        if(track_midi_notes[track].size() > 0) {
+            exportSymbolicData(track);
+        }
+
+        // === ENABLE DUAL PLAYBACK ===
+        // Keep recorded audio playing (at reduced level) to verify sync
+        0.2 => output_gains[track].gain;  // Original audio at 0% initially
+
+        // Start MIDI playback alongside recorded audio
+        if(track_midi_notes[track].size() > 0) {
+            1 => midi_playback_active[track];
+            spork ~ midiPlaybackLoop(track);
+            <<< ">>> DUAL PLAYBACK: Recorded audio (40%) + MIDI sine wave (60%) <<<" >>>;
+            <<< ">>> Listen for sync and timing accuracy <<<" >>>;
+        } else {
+            0.7 => output_gains[track].gain;  // Original audio at 70%
+            <<< ">>> No notes captured - playing recorded audio only <<<" >>>;
+        }
     } else {
         <<< "Track", track, "recording too short" >>>;
     }
@@ -468,6 +633,12 @@ fun void clearTrack(int track) {
     0 => is_recording[track];
     0 => is_playing[track];
     0 => has_loop[track];
+
+    // Stop MIDI playback
+    0 => midi_playback_active[track];
+
+    // Re-enable LiSa audio gain (in case it was muted for MIDI playback)
+    0.7 => output_gains[track].gain;
 
     clearSymbolicData(track);
 
@@ -499,6 +670,23 @@ fun void recordingMonitor(int track) {
             return;
         }
         100::ms => now;
+    }
+}
+
+// === BUTTON HANDLERS ===
+
+// Handle button press (note on) - starts recording immediately
+fun void handleButtonPress(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    startRecording(track);
+}
+
+// Handle button release (note off) - stops recording
+fun void handleButtonRelease(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+
+    if(is_recording[track]) {
+        stopRecording(track);
     }
 }
 
@@ -612,7 +800,9 @@ if(min.num() == 0) {
 <<< "" >>>;
 <<< "MIDI Controls:" >>>;
 <<< "  RECORD: C1 (36), C#1 (37), D1 (38)" >>>;
-<<< "  CLEAR:  E1 (40), F1 (41), F#1 (42)" >>>;
+<<< "    - Press & hold to record" >>>;
+<<< "    - Release to stop recording" >>>;
+<<< "  CLEAR: E1 (40), F1 (41), F#1 (42)" >>>;
 <<< "  EXPORT: G1 (43)" >>>;
 <<< "  VOLUME: CC 45-47" >>>;
 <<< "" >>>;
@@ -647,20 +837,23 @@ fun void midiListener() {
 
             // Note On
             else if(messageType == 0x90 && data2 > 0) {
-                if(data1 == NOTE_RECORD_TRACK_0) startRecording(0);
-                else if(data1 == NOTE_RECORD_TRACK_1) startRecording(1);
-                else if(data1 == NOTE_RECORD_TRACK_2) startRecording(2);
+                // RECORD buttons with double-tap-to-clear
+                if(data1 == NOTE_RECORD_TRACK_0) handleButtonPress(0);
+                else if(data1 == NOTE_RECORD_TRACK_1) handleButtonPress(1);
+                else if(data1 == NOTE_RECORD_TRACK_2) handleButtonPress(2);
+                // Fallback CLEAR buttons (still work)
                 else if(data1 == NOTE_CLEAR_TRACK_0) clearTrack(0);
                 else if(data1 == NOTE_CLEAR_TRACK_1) clearTrack(1);
                 else if(data1 == NOTE_CLEAR_TRACK_2) clearTrack(2);
+                // Export
                 else if(data1 == NOTE_EXPORT_MIDI) exportAllSymbolicData();
             }
 
             // Note Off
             else if(messageType == 0x80 || (messageType == 0x90 && data2 == 0)) {
-                if(data1 == NOTE_RECORD_TRACK_0) stopRecording(0);
-                else if(data1 == NOTE_RECORD_TRACK_1) stopRecording(1);
-                else if(data1 == NOTE_RECORD_TRACK_2) stopRecording(2);
+                if(data1 == NOTE_RECORD_TRACK_0) handleButtonRelease(0);
+                else if(data1 == NOTE_RECORD_TRACK_1) handleButtonRelease(1);
+                else if(data1 == NOTE_RECORD_TRACK_2) handleButtonRelease(2);
             }
         }
     }
@@ -669,8 +862,10 @@ fun void midiListener() {
 // === MAIN PROGRAM ===
 spork ~ midiListener();
 spork ~ visualizationLoop();
+spork ~ mainPitchDetectionLoop();
 
 <<< "CHULOOPA running! Ready to loop..." >>>;
+<<< "Pitch detection latency compensation:", (ANALYSIS_LATENCY/ms), "ms" >>>;
 <<< "" >>>;
 
 while(true) {
