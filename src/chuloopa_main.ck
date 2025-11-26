@@ -52,6 +52,16 @@
 46 => int CC_VOLUME_TRACK_1;
 47 => int CC_VOLUME_TRACK_2;
 
+// FX amount (wet/dry) control per track
+48 => int CC_FX_TRACK_0;
+49 => int CC_FX_TRACK_1;
+50 => int CC_FX_TRACK_2;
+
+// Audio/MIDI mix ratio per track
+51 => int CC_MIX_TRACK_0;
+52 => int CC_MIX_TRACK_1;
+53 => int CC_MIX_TRACK_2;
+
 0 => int MIDI_DEVICE;
 
 // === CONFIGURATION ===
@@ -159,6 +169,22 @@ SinOsc track_synth[NUM_TRACKS];
 ADSR track_env[NUM_TRACKS];
 Gain track_synth_gain[NUM_TRACKS];
 
+// Per-track FX send/return architecture
+Gain track_dry_gain[NUM_TRACKS];     // Dry signal (no effects)
+Gain track_fx_send[NUM_TRACKS];      // Send to effects (wet signal)
+
+// === SHARED EFFECTS FOR MIDI SYNTHESIS ===
+Chorus shared_chorus => JCRev shared_reverb => Gain fx_return => dac;
+
+// Configure chorus (now at 100% wet since we control dry/wet with sends)
+1.0 => shared_chorus.mix;         // 100% wet
+0.2 => shared_chorus.modDepth;    // Modulation depth
+0.5 => shared_chorus.modFreq;     // Modulation frequency (Hz)
+
+// Configure reverb (100% wet)
+1.0 => shared_reverb.mix;         // 100% wet
+0.5 => fx_return.gain;            // Return level
+
 // Configure each track
 for(0 => int i; i < NUM_TRACKS; i++) {
     // Setup LiSa
@@ -169,18 +195,26 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     1 => lisa[i].loop;
     0 => lisa[i].bi;
 
-    // Setup output gain (reduced to 40% during MIDI playback for sync verification)
+    // Setup output gain for audio loops
     lisa[i] => output_gains[i] => dac;
     0.7 => output_gains[i].gain;
 
-    // Setup MIDI synthesis chain
-    track_synth[i] => track_env[i] => track_synth_gain[i] => dac;
+    // Setup MIDI synthesis chain with send/return FX architecture
+    track_synth[i] => track_env[i] => track_synth_gain[i];
     0.2 => track_synth_gain[i].gain;
+
+    // Split to dry (direct) and wet (through effects) paths
+    track_synth_gain[i] => track_dry_gain[i] => dac;
+    track_synth_gain[i] => track_fx_send[i] => shared_chorus;
+
+    // Initial FX amount: 30% wet, 70% dry
+    0.7 => track_dry_gain[i].gain;
+    0.3 => track_fx_send[i].gain;
 
     // Configure ADSR envelope (same as variation_playback.ck)
     track_env[i].set(20::ms, 50::ms, 0.8, 150::ms);
 
-    // Setup visualization analysis (FFT + RMS) - now analyzes MIDI synth output
+    // Setup visualization analysis (FFT + RMS) - taps before effects for clean analysis
     track_synth_gain[i] => track_analysis_gain[i] => track_fft[i] =^ track_rms[i] => blackhole;
     3.0 => track_analysis_gain[i].gain;
     2048 => track_fft[i].size;
@@ -209,6 +243,10 @@ time record_start_time[NUM_TRACKS];
 time loop_start_time[NUM_TRACKS];
 int midi_playback_active[NUM_TRACKS];
 
+// FX and mix control state
+float track_fx_amount[NUM_TRACKS];      // 0.0 = dry, 1.0 = wet
+float track_audio_midi_mix[NUM_TRACKS]; // 0.0 = all audio, 1.0 = all MIDI
+
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
     0 => is_recording[i];
@@ -220,6 +258,10 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 
     // Initialize MIDI playback state
     0 => midi_playback_active[i];
+
+    // Initialize FX and mix controls
+    0.3 => track_fx_amount[i];          // 30% wet by default
+    0.6 => track_audio_midi_mix[i];     // 60% MIDI by default (40% audio)
 }
 
 // === SYMBOLIC MIDI DATA STORAGE (per track) ===
@@ -268,7 +310,8 @@ fun void saveCurrentNote(int track) {
             track_note_velocities[track] << current_velocity[track];
 
             <<< "Track", track, "- Saved note: MIDI", current_midi_note[track],
-                "Duration:", duration, "sec", "Velocity:", current_velocity[track] >>>;
+                "Duration:", duration, "sec", "Velocity:", current_velocity[track],
+                "| Total notes:", track_midi_notes[track].size() >>>;
         }
     }
 }
@@ -288,6 +331,10 @@ fun void clearSymbolicData(int track) {
 
 // Export symbolic data to file
 fun void exportSymbolicData(int track) {
+    <<< "" >>>;
+    <<< "=== DEBUG: exportSymbolicData() called for Track", track, "===" >>>;
+    <<< "  Array size:", track_midi_notes[track].size() >>>;
+
     if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "has no symbolic data to export" >>>;
         return;
@@ -307,6 +354,7 @@ fun void exportSymbolicData(int track) {
     fout.write("# Format: MIDI_NOTE,FREQUENCY,VELOCITY,START_TIME,DURATION\n");
 
     // Write each note
+    <<< "=== Exporting notes to", filename, "===" >>>;
     for(0 => int i; i < track_midi_notes[track].size(); i++) {
         track_midi_notes[track][i] $ int => int midi_note;
         Std.mtof(midi_note) => float frequency;
@@ -315,11 +363,18 @@ fun void exportSymbolicData(int track) {
         track_note_durations[track][i] => float duration;
 
         fout.write(midi_note + "," + frequency + "," + velocity + "," + start_time + "," + duration + "\n");
+
+        // Log first few notes
+        if(i < 5) {
+            <<< "  Exporting note", i, "- MIDI:", midi_note, "Freq:", frequency,
+                "Vel:", velocity, "Start:", start_time, "Dur:", duration >>>;
+        }
     }
 
     fout.close();
 
     <<< ">>> Track", track, "exported to", filename, "(" + track_midi_notes[track].size(), "notes) <<<" >>>;
+    <<< "" >>>;
 }
 
 // Export all tracks
@@ -343,7 +398,7 @@ fun void exportAllSymbolicData() {
 
 // === MIDI PLAYBACK FUNCTIONS ===
 
-// Play a single MIDI note with given velocity and duration
+// Play a single MIDI note with given velocity and duration (blocking version for internal use)
 fun void playMidiNote(int track, float midi_note, float velocity, float duration) {
     // Convert MIDI to frequency
     Std.mtof(midi_note $ int) => float freq;
@@ -366,8 +421,40 @@ fun void playMidiNote(int track, float midi_note, float velocity, float duration
     0.01::second => now;
 }
 
+// Scheduled note playback - waits until scheduled time, then plays
+// This runs in its own sporked shred for non-blocking, precise timing
+fun void playScheduledNote(int track, float midi_note, float velocity, float duration,
+                          time scheduled_time, int note_index, int loop_num) {
+    // Wait until it's time to play this note
+    scheduled_time - now => dur wait_time;
+
+    if(wait_time > 0::second) {
+        wait_time => now;
+    }
+
+    // Check if playback is still active (might have been stopped while waiting)
+    if(!midi_playback_active[track] || !has_loop[track]) {
+        return;
+    }
+
+    // Log first loop only to avoid spam
+    if(loop_num == 1 && note_index < 3) {
+        <<< "  [Scheduled] Playing note", note_index, "at T=",
+            (now - scheduled_time + duration::second) / second,
+            "- MIDI:", midi_note >>>;
+    }
+
+    // Play the note (blocking is OK here since we're in our own shred)
+    playMidiNote(track, midi_note, velocity, duration);
+}
+
 // Main MIDI playback loop for a track
 fun void midiPlaybackLoop(int track) {
+    <<< "" >>>;
+    <<< "=== DEBUG: midiPlaybackLoop() STARTED for Track", track, "===" >>>;
+    <<< "  Array size at entry:", track_midi_notes[track].size() >>>;
+    <<< "" >>>;
+
     if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "- No MIDI notes to play (will be silent)" >>>;
         return;
@@ -380,39 +467,58 @@ fun void midiPlaybackLoop(int track) {
     <<< "Track", track, "- MIDI playback started" >>>;
     <<< "  Loop duration:", total_duration, "sec (matches audio)" >>>;
     <<< "  MIDI notes:", track_midi_notes[track].size() >>>;
+    <<< "" >>>;
 
-    // Continuous loop playback
+    // Log first few notes for verification
+    <<< "=== First 5 notes in array ===" >>>;
+    for(0 => int i; i < Math.min(5, track_midi_notes[track].size()) $ int; i++) {
+        <<< "  Note", i, "- MIDI:", track_midi_notes[track][i],
+            "Start:", track_note_starts[track][i], "s",
+            "Duration:", track_note_durations[track][i], "s",
+            "Velocity:", track_note_velocities[track][i] >>>;
+    }
+    <<< "" >>>;
+
+    // Continuous loop playback using NON-BLOCKING scheduled notes
+    0 => int loop_count;
     while(midi_playback_active[track] && has_loop[track]) {
+        loop_count++;
+        <<< "=== Starting loop iteration", loop_count, "===" >>>;
+
         // Anchor for this loop iteration
         now => loop_start_time[track];
 
-        // Play all notes in sequence
+        // Schedule ALL notes for this loop iteration
+        // Each note plays in its own sporked shred for precise, non-blocking timing
         for(0 => int i; i < track_midi_notes[track].size(); i++) {
             // Check if still active
             if(!midi_playback_active[track] || !has_loop[track]) break;
 
-            // Calculate when to play this note
+            // Calculate when this note should play
             loop_start_time[track] + track_note_starts[track][i]::second => time note_time;
-            note_time - now => dur wait_time;
 
-            // Wait if necessary
-            if(wait_time > 0::second) {
-                wait_time => now;
-            }
-
-            // Play the note
-            playMidiNote(track,
-                        track_midi_notes[track][i],
-                        track_note_velocities[track][i],
-                        track_note_durations[track][i]);
+            // Spork the note to play at its scheduled time
+            spork ~ playScheduledNote(track,
+                                     track_midi_notes[track][i],
+                                     track_note_velocities[track][i],
+                                     track_note_durations[track][i],
+                                     note_time,
+                                     i,  // note index for logging
+                                     loop_count);  // loop number for logging
         }
 
-        // Wait for loop to complete before restarting
+        // Wait for the entire loop duration before starting next iteration
         loop_start_time[track] + total_duration::second => time loop_end;
         loop_end - now => dur remaining;
 
         if(remaining > 0::second) {
             remaining => now;
+        } else {
+            // If we're already past the loop end, log a warning
+            if(loop_count <= 2) {
+                <<< "  WARNING: Loop", loop_count, "overran by",
+                    (remaining / second) * -1, "seconds" >>>;
+            }
         }
     }
 
@@ -586,6 +692,12 @@ fun void stopRecording(int track) {
 
     recorded_duration[track] / second => loop_length[track];
 
+    <<< "" >>>;
+    <<< "=== DEBUG: Post-recording state for Track", track, "===" >>>;
+    <<< "  Array size:", track_midi_notes[track].size(), "notes" >>>;
+    <<< "  Loop length:", loop_length[track], "seconds" >>>;
+    <<< "" >>>;
+
     if(loop_length[track] > 0.1) {
         0::second => lisa[track].playPos;
         recorded_duration[track] => lisa[track].loopEnd;
@@ -599,20 +711,29 @@ fun void stopRecording(int track) {
         <<< ">>> Captured", track_midi_notes[track].size(), "MIDI notes <<<" >>>;
 
         // === AUTO-EXPORT SYMBOLIC DATA ===
+        <<< "=== DEBUG: Before export check ===" >>>;
+        <<< "  Array size:", track_midi_notes[track].size() >>>;
         if(track_midi_notes[track].size() > 0) {
+            <<< "  Exporting symbolic data..." >>>;
             exportSymbolicData(track);
+        } else {
+            <<< "  WARNING: No notes to export!" >>>;
         }
 
         // === ENABLE DUAL PLAYBACK ===
-        // Keep recorded audio playing (at reduced level) to verify sync
-        0.2 => output_gains[track].gain;  // Original audio at 0% initially
-
         // Start MIDI playback alongside recorded audio
+        <<< "=== DEBUG: Before playback spork ===" >>>;
+        <<< "  Array size:", track_midi_notes[track].size() >>>;
         if(track_midi_notes[track].size() > 0) {
+            <<< "  Sporking MIDI playback..." >>>;
             1 => midi_playback_active[track];
+
+            // Initialize mix ratios using the current knob settings
+            setTrackAudioMIDIMix(track, track_audio_midi_mix[track]);
+
             spork ~ midiPlaybackLoop(track);
-            <<< ">>> DUAL PLAYBACK: Recorded audio (40%) + MIDI sine wave (60%) <<<" >>>;
-            <<< ">>> Listen for sync and timing accuracy <<<" >>>;
+            <<< ">>> DUAL PLAYBACK ENABLED <<<" >>>;
+            <<< ">>> Use Mix knob (CC", 51 + track, ") to balance Audio/MIDI <<<" >>>;
         } else {
             0.7 => output_gains[track].gain;  // Original audio at 70%
             <<< ">>> No notes captured - playing recorded audio only <<<" >>>;
@@ -658,7 +779,45 @@ fun void clearTrack(int track) {
 
 fun void setTrackVolume(int track, float vol) {
     if(track < 0 || track >= NUM_TRACKS) return;
-    Math.max(0.0, Math.min(1.0, vol)) => output_gains[track].gain;
+    // Volume controls the overall output gain for the audio loop
+    Math.max(0.0, Math.min(1.0, vol)) => float master_vol;
+    // Apply the audio/MIDI mix ratio
+    master_vol * (1.0 - track_audio_midi_mix[track]) => output_gains[track].gain;
+}
+
+// Set FX amount (wet/dry) for a track
+fun void setTrackFXAmount(int track, float amount) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    Math.max(0.0, Math.min(1.0, amount)) => track_fx_amount[track];
+
+    // Update dry/wet sends using equal power crossfade
+    Math.sqrt(1.0 - track_fx_amount[track]) => track_dry_gain[track].gain;
+    Math.sqrt(track_fx_amount[track]) => track_fx_send[track].gain;
+
+    <<< "Track", track, "FX:", (track_fx_amount[track] * 100) $ int, "% wet" >>>;
+}
+
+// Set audio/MIDI mix ratio for a track
+fun void setTrackAudioMIDIMix(int track, float mix) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    Math.max(0.0, Math.min(1.0, mix)) => track_audio_midi_mix[track];
+
+    if(has_loop[track] && midi_playback_active[track]) {
+        // Update the balance between audio loop and MIDI synthesis
+        // mix = 0.0: 100% audio, 0% MIDI
+        // mix = 0.5: 50% audio, 50% MIDI
+        // mix = 1.0: 0% audio, 100% MIDI
+
+        // Audio loop gain (inverse of mix)
+        (1.0 - track_audio_midi_mix[track]) * 0.7 => output_gains[track].gain;
+
+        // MIDI synth gain (proportional to mix)
+        track_audio_midi_mix[track] * 0.2 => track_synth_gain[track].gain;
+
+        <<< "Track", track, "Mix: Audio",
+            ((1.0 - track_audio_midi_mix[track]) * 100) $ int, "%",
+            "/ MIDI", (track_audio_midi_mix[track] * 100) $ int, "%" >>>;
+    }
 }
 
 fun void recordingMonitor(int track) {
@@ -804,7 +963,11 @@ if(min.num() == 0) {
 <<< "    - Release to stop recording" >>>;
 <<< "  CLEAR: E1 (40), F1 (41), F#1 (42)" >>>;
 <<< "  EXPORT: G1 (43)" >>>;
-<<< "  VOLUME: CC 45-47" >>>;
+<<< "" >>>;
+<<< "  KNOBS (per track):" >>>;
+<<< "    CC 45-47: Track volume" >>>;
+<<< "    CC 48-50: FX amount (dry/wet)" >>>;
+<<< "    CC 51-53: Audio/MIDI mix ratio" >>>;
 <<< "" >>>;
 <<< "=====================================================" >>>;
 <<< "" >>>;
@@ -812,9 +975,21 @@ if(min.num() == 0) {
 // MIDI control
 int ignore_cc[128];
 for(0 => int i; i < 32; i++) 1 => ignore_cc[i];
+
+// Allow volume CCs
 0 => ignore_cc[CC_VOLUME_TRACK_0];
 0 => ignore_cc[CC_VOLUME_TRACK_1];
 0 => ignore_cc[CC_VOLUME_TRACK_2];
+
+// Allow FX amount CCs
+0 => ignore_cc[CC_FX_TRACK_0];
+0 => ignore_cc[CC_FX_TRACK_1];
+0 => ignore_cc[CC_FX_TRACK_2];
+
+// Allow Audio/MIDI mix CCs
+0 => ignore_cc[CC_MIX_TRACK_0];
+0 => ignore_cc[CC_MIX_TRACK_1];
+0 => ignore_cc[CC_MIX_TRACK_2];
 
 fun void midiListener() {
     while(true) {
@@ -829,9 +1004,20 @@ fun void midiListener() {
             // Control Change
             if(messageType == 0xB0) {
                 if(!ignore_cc[data1]) {
+                    // Volume controls
                     if(data1 == CC_VOLUME_TRACK_0) setTrackVolume(0, data2 / 127.0);
                     else if(data1 == CC_VOLUME_TRACK_1) setTrackVolume(1, data2 / 127.0);
                     else if(data1 == CC_VOLUME_TRACK_2) setTrackVolume(2, data2 / 127.0);
+
+                    // FX amount controls
+                    else if(data1 == CC_FX_TRACK_0) setTrackFXAmount(0, data2 / 127.0);
+                    else if(data1 == CC_FX_TRACK_1) setTrackFXAmount(1, data2 / 127.0);
+                    else if(data1 == CC_FX_TRACK_2) setTrackFXAmount(2, data2 / 127.0);
+
+                    // Audio/MIDI mix controls
+                    else if(data1 == CC_MIX_TRACK_0) setTrackAudioMIDIMix(0, data2 / 127.0);
+                    else if(data1 == CC_MIX_TRACK_1) setTrackAudioMIDIMix(1, data2 / 127.0);
+                    else if(data1 == CC_MIX_TRACK_2) setTrackAudioMIDIMix(2, data2 / 127.0);
                 }
             }
 
