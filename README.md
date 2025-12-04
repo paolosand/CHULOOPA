@@ -12,6 +12,32 @@ CHULOOPA is an intelligent looping system that uses AI to generate evolving vari
 
 Each track can store a symbolic representation and generate variations independently, allowing for complex multi-track evolution and composition.
 
+## 🥁 DRUM GENERATION PIVOT (Nov 25, 2025)
+
+**Status:** 🟢 ACTIVE DEVELOPMENT - Phase 1 in progress
+
+CHULOOPA is pivoting from melody-based (pitch detection) to **drum-based generation** using vocal beatboxing as input. This pivot addresses accuracy challenges with pitch detection (vibrato, slides) and targets a novel research angle: **making drum programming accessible to amateur beatboxers**.
+
+**New Focus:**
+- Vocal beatboxing → Drum pattern transcription
+- Onset detection + classification (kick/snare/hat)
+- AI variation generation using GrooVAE
+- Target: ICMC 2025 submission (Dec 22 deadline)
+
+**Key Documents:**
+- 📊 `pivot_explorations.md` - Technical comparison & research analysis
+- 📋 `DRUM_PIVOT_PLAN.md` - Detailed implementation roadmap
+- 🎯 Checkpoint: December 8, 2025 (go/no-go decision)
+
+**Current Implementation:**
+- ✅ `src/drum_onset_detector.ck` - Real-time onset detection (spectral flux)
+- 🔄 Feature extraction & classifier training (in progress)
+- ⏳ GrooVAE integration (Phase 2)
+
+**Previous melody-based system preserved in:** `src/chuloopa_main.ck` (backup plan)
+
+---
+
 ## Current Status
 
 **Main pipeline complete!** The core CHULOOPA system is now functional in the `src/` directory.

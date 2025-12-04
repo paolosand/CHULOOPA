@@ -1,0 +1,978 @@
+//---------------------------------------------------------------------
+// name: chuloopa_drums.ck
+// desc: CHULOOPA - Drum-based looper with real-time beatbox classification
+//       Multi-track looper that transcribes beatbox to drum patterns
+//
+// Architecture:
+//   1. Record audio loops (with master sync to prevent drift)
+//   2. Real-time onset detection + classification → symbolic drum data
+//   3. AUTO-EXPORT: Symbolic data saved to track_N_drums.txt files
+//   4. DRUM PLAYBACK: Transcribed drums played as samples
+//   5. Visual feedback (ChuGL) reacts to drum hits
+//
+// MIDI Mapping (QuNeo):
+//   RECORDING:
+//     C1, C#1, D1 (36-38):    Press & hold to record tracks 0-2
+//                             Release to stop recording
+//   CLEARING:
+//     E1, F1, F#1 (40-42):    Press to clear tracks 0-2
+//
+//   MANUAL EXPORT (optional):
+//     G1 (43):                Export all track drum data (already auto-exported)
+//
+//   VOLUME:
+//     CC 45-47:               Volume control for tracks 0-2
+//
+// Usage:
+//   chuck src/chuloopa_drums.ck
+//---------------------------------------------------------------------
+
+// === MIDI CONFIGURATION ===
+36 => int NOTE_RECORD_TRACK_0;   // C1
+37 => int NOTE_RECORD_TRACK_1;   // C#1
+38 => int NOTE_RECORD_TRACK_2;   // D1
+
+39 => int NOTE_CLEAR_TRACK_0;    // D#1
+40 => int NOTE_CLEAR_TRACK_1;    // E1
+41 => int NOTE_CLEAR_TRACK_2;    // F1
+
+42 => int NOTE_EXPORT_DATA;      // F#1
+
+45 => int CC_VOLUME_TRACK_0;
+46 => int CC_VOLUME_TRACK_1;
+47 => int CC_VOLUME_TRACK_2;
+
+// Audio/Drum mix ratio per track
+51 => int CC_MIX_TRACK_0;
+52 => int CC_MIX_TRACK_1;
+53 => int CC_MIX_TRACK_2;
+
+0 => int MIDI_DEVICE;
+
+// === CONFIGURATION ===
+3 => int NUM_TRACKS;
+10::second => dur MAX_LOOP_DURATION;
+
+// === VOLUME SETTINGS ===
+0.1 => float AUDIO_LOOP_VOLUME;   // Original beatbox audio (0.0-1.0)
+0.8 => float DRUM_SAMPLE_VOLUME;  // Transcribed drum samples (0.0-1.0)
+
+// === ONSET DETECTION PARAMETERS ===
+512 => int FRAME_SIZE;
+FRAME_SIZE/4 => int HOP_SIZE;
+HOP_SIZE::samp => dur HOP;
+
+1.5 => float ONSET_THRESHOLD_MULTIPLIER;
+0.01 => float MIN_ONSET_STRENGTH;
+150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
+
+// === MASTER LOOP SYNC SYSTEM ===
+-1 => int master_track;
+0::second => dur master_duration;
+0 => int has_master;
+
+// Valid multipliers for sync (most common musical ratios)
+[0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0] @=> float valid_multipliers[];
+
+// Find best multiplier to sync with master loop
+fun dur findBestMultiplier(dur recorded_duration, dur master_duration) {
+    1000000.0 => float best_error;
+    1.0 => float best_multiplier;
+
+    for(0 => int i; i < valid_multipliers.size(); i++) {
+        valid_multipliers[i] => float mult;
+        master_duration * mult => dur target;
+        Math.fabs((recorded_duration - target) / second) => float error;
+
+        if(error < best_error) {
+            error => best_error;
+            mult => best_multiplier;
+        }
+    }
+
+    return master_duration * best_multiplier;
+}
+
+// Check if any loops exist
+fun int anyLoopsExist() {
+    for(0 => int i; i < NUM_TRACKS; i++) {
+        if(has_loop[i]) return 1;
+    }
+    return 0;
+}
+
+// === CHUGL VISUALIZATION SETUP ===
+GG.scene() @=> GScene @ scene;
+GG.camera() @=> GCamera @ camera;
+camera.posZ(8.0);
+
+// Create 3 spheres for track visualization
+GSphere track_sphere[NUM_TRACKS];
+for(0 => int i; i < NUM_TRACKS; i++) {
+    track_sphere[i] --> scene;
+    track_sphere[i].posX(-3.0 + (i * 3.0));
+    track_sphere[i].posY(0);
+    track_sphere[i].sca(0.8);
+
+    if(i == 0) track_sphere[i].color(@(0.9, 0.2, 0.2));      // Red (kick)
+    else if(i == 1) track_sphere[i].color(@(0.2, 0.7, 0.9)); // Blue (snare)
+    else if(i == 2) track_sphere[i].color(@(0.9, 0.9, 0.2)); // Yellow (hat)
+}
+
+// Add lighting
+GDirLight light --> scene;
+light.intensity(0.8);
+light.rotX(-45);
+
+// === AUDIO SETUP ===
+adc => Gain input_gain => blackhole;
+1.0 => input_gain.gain;
+
+// Create array of LiSa loopers (one per track)
+LiSa lisa[NUM_TRACKS];
+Gain output_gains[NUM_TRACKS];
+
+// === ANALYSIS CHAINS (per track, active only during recording) ===
+FFT track_fft[NUM_TRACKS];
+RMS track_rms[NUM_TRACKS];
+MFCC track_mfcc[NUM_TRACKS];
+
+// Configure each track
+for(0 => int i; i < NUM_TRACKS; i++) {
+    // Setup LiSa
+    MAX_LOOP_DURATION => lisa[i].duration;
+    1.0 => lisa[i].gain;
+    adc => lisa[i];
+    1.0 => lisa[i].rate;
+    1 => lisa[i].loop;
+    0 => lisa[i].bi;
+
+    // Setup output gain for audio loops
+    lisa[i] => output_gains[i] => dac;
+    AUDIO_LOOP_VOLUME => output_gains[i].gain;
+
+    // Setup analysis chains (connected to adc, but only upchucked during recording)
+    // Note: MFCC must be chained from FFT
+    adc => track_fft[i] =^ track_mfcc[i] => blackhole;
+    adc => track_rms[i] => blackhole;
+
+    FRAME_SIZE => track_fft[i].size;
+    Windowing.hann(FRAME_SIZE) => track_fft[i].window;
+
+    // MFCC configuration
+    10 => track_mfcc[i].numFilters;  // Number of MEL filters
+    13 => track_mfcc[i].numCoeffs;   // Number of MFCC coefficients
+}
+
+// === DRUM SAMPLE PLAYBACK ===
+// Each track plays back its transcribed drums using the same 3 samples
+SndBuf kick_sample[NUM_TRACKS];
+SndBuf snare_sample[NUM_TRACKS];
+SndBuf hat_sample[NUM_TRACKS];
+Gain drum_gain[NUM_TRACKS];
+
+// Sample paths
+"src/samples/kick.wav" => string KICK_SAMPLE;
+"src/samples/snare.wav" => string SNARE_SAMPLE;
+"src/samples/hat.WAV" => string HAT_SAMPLE;  // Note: uppercase .WAV
+
+for(0 => int i; i < NUM_TRACKS; i++) {
+    // Setup drum sample players WITHOUT envelopes
+    // Each sample gets its own path to the master gain
+    kick_sample[i] => drum_gain[i] => dac;
+    snare_sample[i] => drum_gain[i];
+    hat_sample[i] => drum_gain[i];
+
+    DRUM_SAMPLE_VOLUME => drum_gain[i].gain;  // Master drum volume
+
+    // Load samples
+    KICK_SAMPLE => kick_sample[i].read;
+    SNARE_SAMPLE => snare_sample[i].read;
+    HAT_SAMPLE => hat_sample[i].read;
+
+    // CRITICAL: Set all samples to NOT play on startup
+    kick_sample[i].samples() => kick_sample[i].pos;  // Move to end
+    snare_sample[i].samples() => snare_sample[i].pos;
+    hat_sample[i].samples() => hat_sample[i].pos;
+
+    // Verify samples loaded
+    if(kick_sample[i].samples() == 0) {
+        <<< "WARNING: Could not load", KICK_SAMPLE >>>;
+    }
+    if(snare_sample[i].samples() == 0) {
+        <<< "WARNING: Could not load", SNARE_SAMPLE >>>;
+    }
+    if(hat_sample[i].samples() == 0) {
+        <<< "WARNING: Could not load", HAT_SAMPLE >>>;
+    }
+}
+
+// === STATE VARIABLES (per track) ===
+int is_recording[NUM_TRACKS];
+int is_playing[NUM_TRACKS];
+float loop_length[NUM_TRACKS];
+dur recorded_duration[NUM_TRACKS];
+int has_loop[NUM_TRACKS];
+time record_start_time[NUM_TRACKS];
+
+// Drum playback state
+time loop_start_time[NUM_TRACKS];
+int drum_playback_active[NUM_TRACKS];
+
+// Mix control state
+float track_audio_drum_mix[NUM_TRACKS]; // 0.0 = all audio, 1.0 = all drums
+
+// Initialize track states
+for(0 => int i; i < NUM_TRACKS; i++) {
+    0 => is_recording[i];
+    0 => is_playing[i];
+    0.0 => loop_length[i];
+    0::second => recorded_duration[i];
+    0 => has_loop[i];
+    0 => drum_playback_active[i];
+    0.6 => track_audio_drum_mix[i];     // 60% drums by default (40% audio)
+}
+
+// === SYMBOLIC DRUM DATA STORAGE (per track) ===
+// Each track stores drum hits: [class, velocity, timestamp]
+int track_drum_classes[NUM_TRACKS][0];      // 0=kick, 1=snare, 2=hat
+float track_drum_timestamps[NUM_TRACKS][0]; // Start times (seconds from loop start)
+float track_drum_velocities[NUM_TRACKS][0]; // Velocities (0-1.0)
+
+// Onset detection state (per track)
+float prev_spectrum[NUM_TRACKS][FRAME_SIZE/2];
+float flux_history[NUM_TRACKS][50];
+int flux_history_idx[NUM_TRACKS];
+int flux_history_filled[NUM_TRACKS];
+time last_onset_time[NUM_TRACKS];
+
+// Initialize onset detection state
+for(0 => int i; i < NUM_TRACKS; i++) {
+    0 => flux_history_idx[i];
+    0 => flux_history_filled[i];
+    now => last_onset_time[i];
+
+    for(0 => int j; j < FRAME_SIZE/2; j++) {
+        0.0 => prev_spectrum[i][j];
+    }
+}
+
+// === ONSET DETECTION FUNCTIONS ===
+
+fun float spectralFlux(int track) {
+    track_fft[track].upchuck() @=> UAnaBlob @ blob;
+    0.0 => float flux;
+
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        blob.fval(i) => float current_mag;
+        Math.max(0.0, current_mag - prev_spectrum[track][i]) => float diff;
+        diff +=> flux;
+        current_mag => prev_spectrum[track][i];
+    }
+
+    return flux;
+}
+
+fun void updateFluxHistory(int track, float flux) {
+    flux => flux_history[track][flux_history_idx[track]];
+    (flux_history_idx[track] + 1) % 50 => flux_history_idx[track];
+
+    if(!flux_history_filled[track] && flux_history_idx[track] == 0) {
+        1 => flux_history_filled[track];
+    }
+}
+
+fun float getAdaptiveThreshold(int track) {
+    if(!flux_history_filled[track] && flux_history_idx[track] < 10) {
+        return MIN_ONSET_STRENGTH * 2.0;
+    }
+
+    0.0 => float mean;
+    50 => int count;
+    if(!flux_history_filled[track]) {
+        flux_history_idx[track] => count;
+    }
+
+    for(0 => int i; i < count; i++) {
+        flux_history[track][i] +=> mean;
+    }
+    mean / count => mean;
+
+    return mean * ONSET_THRESHOLD_MULTIPLIER;
+}
+
+fun int detectOnset(int track, float flux, float threshold) {
+    if(flux < threshold) return 0;
+    if(flux < MIN_ONSET_STRENGTH) return 0;
+
+    now - last_onset_time[track] => dur time_since_last;
+    if(time_since_last < MIN_ONSET_INTERVAL) return 0;
+
+    now => last_onset_time[track];
+    return 1;
+}
+
+// === KNN CLASSIFIER SETUP ===
+KNN2 knn;
+int knn_trained;
+0 => knn_trained;
+3 => int K_NEIGHBORS;  // Number of neighbors to use
+
+// Label names
+["kick", "snare", "hat"] @=> string label_names[];
+
+// Train KNN from CSV file
+fun int trainKNNFromCSV(string filename) {
+    <<< "" >>>;
+    <<< "╔═══════════════════════════════════════╗" >>>;
+    <<< "║  TRAINING KNN FROM CSV               ║" >>>;
+    <<< "╚═══════════════════════════════════════╝" >>>;
+    <<< "" >>>;
+
+    FileIO fin;
+    fin.open(filename, FileIO.READ);
+
+    if(!fin.good()) {
+        <<< "ERROR: Could not open training file:", filename >>>;
+        <<< "Falling back to heuristic classifier" >>>;
+        return 0;
+    }
+
+    // Skip header line
+    fin.readLine() => string header;
+
+    // Count samples first
+    0 => int num_samples;
+    while(fin.more()) {
+        fin.readLine();
+        num_samples++;
+    }
+
+    if(num_samples == 0) {
+        <<< "ERROR: No training samples found" >>>;
+        fin.close();
+        return 0;
+    }
+
+    <<< "Found", num_samples, "training samples" >>>;
+
+    // Reset file
+    fin.close();
+    fin.open(filename, FileIO.READ);
+    fin.readLine();  // Skip header again
+
+    // Allocate arrays for training data
+    // We'll use 5 features: flux, energy, band1, band2, band5
+    float training_features[num_samples][5];
+    int training_labels[num_samples];
+
+    // Read data
+    0 => int sample_idx;
+    int label_counts[3];
+    0 => label_counts[0] => label_counts[1] => label_counts[2];
+
+    while(fin.more()) {
+        fin.readLine() => string line;
+        if(line.length() == 0) continue;
+
+        StringTokenizer tok;
+        tok.set(line);
+        tok.delims(",");  // CRITICAL: CSV uses comma delimiters!
+
+        // Parse CSV: label,timestamp,flux,energy,band1,band2,band3,band4,band5,...
+        tok.next() => string label;
+
+        // Convert label to int (0=kick, 1=snare, 2=hat)
+        0 => int label_val;
+        if(label == "kick") {
+            0 => label_val;
+            label_counts[0]++;
+        }
+        else if(label == "snare") {
+            1 => label_val;
+            label_counts[1]++;
+        }
+        else if(label == "hat") {
+            2 => label_val;
+            label_counts[2]++;
+        }
+
+        label_val => training_labels[sample_idx];
+
+        // Skip timestamp
+        tok.next();
+
+        // Read features: flux, energy, band1, band2, (skip band3, band4), band5
+        Std.atof(tok.next()) => training_features[sample_idx][0];  // flux
+        Std.atof(tok.next()) => training_features[sample_idx][1];  // energy
+        Std.atof(tok.next()) => training_features[sample_idx][2];  // band1
+        Std.atof(tok.next()) => training_features[sample_idx][3];  // band2
+        tok.next();  // skip band3
+        tok.next();  // skip band4
+        Std.atof(tok.next()) => training_features[sample_idx][4];  // band5
+
+        sample_idx++;
+    }
+
+    fin.close();
+
+    <<< "Training samples per class:" >>>;
+    <<< "  Kicks:", label_counts[0] >>>;
+    <<< "  Snares:", label_counts[1] >>>;
+    <<< "  Hats:", label_counts[2] >>>;
+    <<< "" >>>;
+
+    // Train KNN
+    <<< "Training KNN classifier..." >>>;
+    knn.train(training_features, training_labels);
+
+    // Optional: Set feature weights (can be tuned based on importance)
+    // Equal weights for now
+    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];
+    knn.weigh(weights);
+
+    <<< "✓ KNN training complete!" >>>;
+    <<< "Using k =", K_NEIGHBORS, "neighbors" >>>;
+    <<< "" >>>;
+
+    return 1;
+}
+
+// === FEATURE EXTRACTION & CLASSIFICATION ===
+
+fun int classifyOnset(int track, float flux) {
+    // Extract same features as training data
+    track_rms[track].upchuck() @=> UAnaBlob @ rms_blob;
+    rms_blob.fval(0) => float energy;
+
+    track_fft[track].upchuck() @=> UAnaBlob @ blob;
+
+    // Frequency band energies (matching training data format)
+    0.0 => float band1 => float band2 => float band3 => float band4 => float band5;
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        blob.fval(i) => float mag;
+        if(i < FRAME_SIZE/32) mag +=> band1;           // 0-344 Hz
+        else if(i < FRAME_SIZE/8) mag +=> band2;       // 344-1378 Hz
+        else if(i < FRAME_SIZE/4) mag +=> band3;       // 1378-2756 Hz
+        else if(i < FRAME_SIZE/2.5) mag +=> band4;     // 2756-4410 Hz
+        else mag +=> band5;                            // 4410+ Hz
+    }
+
+    if(knn_trained) {
+        // Use trained KNN classifier
+        float query[5];
+        flux => query[0];
+        energy => query[1];
+        band1 => query[2];
+        band2 => query[3];
+        band5 => query[4];
+
+        // Get probabilities for each class
+        float probs[3];
+        knn.predict(query, K_NEIGHBORS, probs);
+
+        // Find class with highest probability
+        0 => int best_class;
+        probs[0] => float best_prob;
+        for(1 => int i; i < 3; i++) {
+            if(probs[i] > best_prob) {
+                i => best_class;
+                probs[i] => best_prob;
+            }
+        }
+
+        return best_class;
+    }
+    else {
+        // Fallback: Simple heuristic classifier
+        band1 / (energy + 0.0001) => float low_ratio;
+        band5 / (energy + 0.0001) => float high_ratio;
+
+        if(low_ratio > 0.5) return 0;      // Kick
+        else if(high_ratio > 0.3) return 2; // Hat
+        else return 1;                      // Snare
+    }
+}
+
+// === SYMBOLIC DATA FUNCTIONS ===
+
+fun void saveDrumHit(int track, int drum_class, float velocity) {
+    if(is_recording[track]) {
+        // Calculate timestamp relative to loop start
+        (now - record_start_time[track]) / second => float timestamp;
+
+        // Store drum hit
+        track_drum_classes[track] << drum_class;
+        track_drum_timestamps[track] << timestamp;
+        track_drum_velocities[track] << velocity;
+
+        ["KICK", "SNARE", "HAT"] @=> string class_names[];
+        <<< "Track", track, "-", class_names[drum_class], "at", timestamp, "sec |",
+            "Total hits:", track_drum_classes[track].size() >>>;
+    }
+}
+
+// Clear symbolic data for a track
+fun void clearSymbolicData(int track) {
+    track_drum_classes[track].clear();
+    track_drum_timestamps[track].clear();
+    track_drum_velocities[track].clear();
+
+    <<< "Track", track, "drum data cleared" >>>;
+}
+
+// Export symbolic data to file
+fun void exportSymbolicData(int track) {
+    if(track_drum_classes[track].size() == 0) {
+        <<< "Track", track, "has no drum data to export" >>>;
+        return;
+    }
+
+    "track_" + track + "_drums.txt" => string filename;
+    FileIO fout;
+    fout.open(filename, FileIO.WRITE);
+
+    if(!fout.good()) {
+        <<< "ERROR: Could not open file for writing:", filename >>>;
+        return;
+    }
+
+    // Write header
+    fout.write("# Track " + track + " Drum Data\n");
+    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY\n");
+    fout.write("# Classes: 0=kick, 1=snare, 2=hat\n");
+
+    // Write each hit
+    for(0 => int i; i < track_drum_classes[track].size(); i++) {
+        track_drum_classes[track][i] => int drum_class;
+        track_drum_timestamps[track][i] => float timestamp;
+        track_drum_velocities[track][i] => float velocity;
+
+        fout.write(drum_class + "," + timestamp + "," + velocity + "\n");
+    }
+
+    fout.close();
+
+    <<< ">>> Track", track, "exported to", filename, "(" + track_drum_classes[track].size(), "hits) <<<" >>>;
+}
+
+// Export all tracks
+fun void exportAllSymbolicData() {
+    <<< "" >>>;
+    <<< "╔═══════════════════════════════════════╗" >>>;
+    <<< "║  EXPORTING ALL DRUM DATA            ║" >>>;
+    <<< "╚═══════════════════════════════════════╝" >>>;
+
+    for(0 => int i; i < NUM_TRACKS; i++) {
+        if(has_loop[i]) {
+            exportSymbolicData(i);
+        }
+    }
+
+    <<< "Export complete!" >>>;
+}
+
+// === DRUM PLAYBACK FUNCTIONS ===
+
+fun void playDrumHit(int track, int drum_class, float velocity) {
+    // Map velocity (0.0-1.0) to gain multiplier
+    Math.max(0.3, Math.min(1.0, velocity)) => float vel_gain;
+
+    // Trigger appropriate sample - they'll play to completion naturally
+    if(drum_class == 0) {  // Kick
+        0 => kick_sample[track].pos;  // Reset to beginning
+        vel_gain * 0.6 => kick_sample[track].gain;  // Apply velocity
+    }
+    else if(drum_class == 1) {  // Snare
+        0 => snare_sample[track].pos;
+        vel_gain * 0.5 => snare_sample[track].gain;
+    }
+    else if(drum_class == 2) {  // Hat
+        0 => hat_sample[track].pos;
+        vel_gain * 0.4 => hat_sample[track].gain;
+    }
+}
+
+// Scheduled drum playback
+fun void playScheduledDrumHit(int track, int drum_class, float velocity,
+                              time scheduled_time, int loop_num) {
+    // Wait until scheduled time
+    scheduled_time - now => dur wait_time;
+    if(wait_time > 0::second) {
+        wait_time => now;
+    }
+
+    // Check if still active
+    if(!drum_playback_active[track] || !has_loop[track]) return;
+
+    // Play the drum hit
+    playDrumHit(track, drum_class, velocity);
+}
+
+// Main drum playback loop for a track
+fun void drumPlaybackLoop(int track) {
+    if(track_drum_classes[track].size() == 0) {
+        <<< "Track", track, "- No drum hits to play" >>>;
+        return;
+    }
+
+    loop_length[track] => float total_duration;
+
+    <<< "Track", track, "- Drum playback started" >>>;
+    <<< "  Loop duration:", total_duration, "sec" >>>;
+    <<< "  Drum hits:", track_drum_classes[track].size() >>>;
+
+    // Continuous loop playback
+    0 => int loop_count;
+    while(drum_playback_active[track] && has_loop[track]) {
+        loop_count++;
+        now => loop_start_time[track];
+
+        // Schedule all drum hits for this loop iteration
+        for(0 => int i; i < track_drum_classes[track].size(); i++) {
+            if(!drum_playback_active[track] || !has_loop[track]) break;
+
+            loop_start_time[track] + track_drum_timestamps[track][i]::second => time hit_time;
+
+            spork ~ playScheduledDrumHit(track,
+                                        track_drum_classes[track][i],
+                                        track_drum_velocities[track][i],
+                                        hit_time,
+                                        loop_count);
+        }
+
+        // Wait for loop to complete
+        loop_start_time[track] + total_duration::second => time loop_end;
+        loop_end - now => dur remaining;
+
+        if(remaining > 0::second) {
+            remaining => now;
+        }
+    }
+
+    <<< "Track", track, "- Drum playback stopped" >>>;
+}
+
+// === MAIN ONSET DETECTION LOOP ===
+fun void mainOnsetDetectionLoop() {
+    FRAME_SIZE::samp => now;
+
+    <<< "Main onset detection loop started" >>>;
+
+    while(true) {
+        // Check which track is recording
+        -1 => int active_track;
+        for(0 => int i; i < NUM_TRACKS; i++) {
+            if(is_recording[i]) {
+                i => active_track;
+                break;
+            }
+        }
+
+        // If a track is recording, perform onset detection
+        if(active_track >= 0) {
+            spectralFlux(active_track) => float flux;
+            updateFluxHistory(active_track, flux);
+            getAdaptiveThreshold(active_track) => float threshold;
+
+            if(detectOnset(active_track, flux, threshold)) {
+                // Classify the onset
+                classifyOnset(active_track, flux) => int drum_class;
+
+                // Calculate velocity from flux
+                Math.min(1.0, flux / 0.1) => float velocity;
+
+                // Save to symbolic data
+                saveDrumHit(active_track, drum_class, velocity);
+            }
+        }
+
+        HOP => now;
+    }
+}
+
+// === TRACK CONTROL FUNCTIONS ===
+
+fun void startRecording(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    if(is_recording[track]) return;
+
+    <<< "" >>>;
+    <<< ">>> TRACK", track, "RECORDING STARTED <<<" >>>;
+
+    // Clear previous drum data
+    clearSymbolicData(track);
+
+    // Setup LiSa for recording
+    0 => lisa[track].play;
+    lisa[track].clear();
+    0::second => lisa[track].recPos;
+    1 => lisa[track].record;
+
+    1 => is_recording[track];
+    now => record_start_time[track];
+
+    <<< "Recording... onset detection active" >>>;
+}
+
+fun void stopRecording(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    if(!is_recording[track]) return;
+
+    0 => lisa[track].record;
+    0 => is_recording[track];
+
+    lisa[track].recPos() => recorded_duration[track];
+
+    // === MASTER LOOP SYNC ===
+    if(!has_master) {
+        track => master_track;
+        recorded_duration[track] => master_duration;
+        1 => has_master;
+
+        <<< "" >>>;
+        <<< "╔═══════════════════════════════════════╗" >>>;
+        <<< "║  MASTER LOOP SET: Track", track, "          ║" >>>;
+        <<< "╚═══════════════════════════════════════╝" >>>;
+        <<< "Duration:", master_duration / second, "seconds" >>>;
+    } else {
+        findBestMultiplier(recorded_duration[track], master_duration) => dur adjusted;
+        (adjusted / master_duration) $ float => float multiplier;
+
+        // Store original duration
+        recorded_duration[track] / second => float original_duration;
+        adjusted => recorded_duration[track];
+        adjusted / second => float adjusted_duration;
+
+        // Scale drum timings if duration was adjusted
+        if(Math.fabs(adjusted_duration - original_duration) > 0.001 &&
+           track_drum_classes[track].size() > 0) {
+            adjusted_duration / original_duration => float scale_ratio;
+
+            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
+                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
+            }
+        }
+
+        <<< "" >>>;
+        <<< ">>> TRACK", track, "SYNCED TO MASTER <<<" >>>;
+        <<< "Adjusted to", multiplier, "× master length" >>>;
+        <<< "Final length:", recorded_duration[track] / second, "seconds" >>>;
+    }
+
+    recorded_duration[track] / second => loop_length[track];
+
+    if(loop_length[track] > 0.1) {
+        0::second => lisa[track].playPos;
+        recorded_duration[track] => lisa[track].loopEnd;
+        0::second => lisa[track].loopStart;
+        1 => lisa[track].loop;
+        1 => lisa[track].play;
+        1 => is_playing[track];
+        1 => has_loop[track];
+
+        <<< ">>> TRACK", track, "LOOPING <<<" >>>;
+        <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
+
+        // === AUTO-EXPORT ===
+        if(track_drum_classes[track].size() > 0) {
+            exportSymbolicData(track);
+        }
+
+        // === ENABLE DRUM PLAYBACK ===
+        if(track_drum_classes[track].size() > 0) {
+            1 => drum_playback_active[track];
+
+            // Set initial mix
+            setTrackAudioDrumMix(track, track_audio_drum_mix[track]);
+
+            spork ~ drumPlaybackLoop(track);
+            <<< ">>> DUAL PLAYBACK ENABLED (Audio + Drums) <<<" >>>;
+        } else {
+            <<< ">>> No drum hits detected - playing audio only <<<" >>>;
+        }
+    }
+}
+
+fun void clearTrack(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+
+    <<< ">>> CLEARING TRACK", track, "<<<" >>>;
+
+    0 => lisa[track].play;
+    0 => lisa[track].record;
+    lisa[track].clear();
+    0 => is_recording[track];
+    0 => is_playing[track];
+    0 => has_loop[track];
+
+    // Stop drum playback
+    0 => drum_playback_active[track];
+
+    clearSymbolicData(track);
+
+    // Reset master if needed
+    if(track == master_track && !anyLoopsExist()) {
+        <<< "╔═══════════════════════════════════════╗" >>>;
+        <<< "║  MASTER LOOP CLEARED               ║" >>>;
+        <<< "╚═══════════════════════════════════════╝" >>>;
+
+        -1 => master_track;
+        0::second => master_duration;
+        0 => has_master;
+    }
+}
+
+fun void setTrackVolume(int track, float vol) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    Math.max(0.0, Math.min(1.0, vol)) => float master_vol;
+    master_vol * (1.0 - track_audio_drum_mix[track]) => output_gains[track].gain;
+}
+
+fun void setTrackAudioDrumMix(int track, float mix) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+    Math.max(0.0, Math.min(1.0, mix)) => track_audio_drum_mix[track];
+
+    if(has_loop[track] && drum_playback_active[track]) {
+        // Audio loop gain
+        (1.0 - track_audio_drum_mix[track]) * 0.7 => output_gains[track].gain;
+
+        // Drum synth gain
+        track_audio_drum_mix[track] * 0.5 => drum_gain[track].gain;
+
+        <<< "Track", track, "Mix: Audio",
+            ((1.0 - track_audio_drum_mix[track]) * 100) $ int, "%",
+            "/ Drums", (track_audio_drum_mix[track] * 100) $ int, "%" >>>;
+    }
+}
+
+// === VISUALIZATION ===
+fun void visualizationLoop() {
+    while(true) {
+        GG.nextFrame() => now;
+
+        for(0 => int i; i < NUM_TRACKS; i++) {
+            if(has_loop[i]) {
+                // Pulse on drum hits (check recent activity)
+                0.8 => float scale;
+                track_sphere[i].sca(scale);
+                track_sphere[i].rotY(0.02);
+            } else {
+                track_sphere[i].sca(0.3);
+                track_sphere[i].rotY(0.005);
+            }
+        }
+    }
+}
+
+// === MIDI LISTENER ===
+MidiIn min;
+MidiMsg msg;
+
+<<< "" >>>;
+<<< "=====================================================" >>>;
+<<< "          CHULOOPA - Drum Looper System" >>>;
+<<< "=====================================================" >>>;
+
+if(min.num() == 0) {
+    <<< "WARNING: No MIDI devices found!" >>>;
+} else {
+    if(min.open(MIDI_DEVICE)) {
+        <<< "MIDI Device:", min.name() >>>;
+    }
+}
+
+<<< "Tracks:", NUM_TRACKS >>>;
+<<< "Max loop duration:", MAX_LOOP_DURATION / second, "sec" >>>;
+<<< "" >>>;
+<<< "Drum Samples Loaded:" >>>;
+<<< "  Kick:", kick_sample[0].samples(), "samples" >>>;
+<<< "  Snare:", snare_sample[0].samples(), "samples" >>>;
+<<< "  Hat:", hat_sample[0].samples(), "samples" >>>;
+<<< "" >>>;
+<<< "MIDI Controls:" >>>;
+<<< "  RECORD: C1 (36), C#1 (37), D1 (38)" >>>;
+<<< "  CLEAR: E1 (40), F1 (41), F#1 (42)" >>>;
+<<< "  EXPORT: G1 (43)" >>>;
+<<< "  VOLUME: CC 45-47" >>>;
+<<< "  AUDIO/DRUM MIX: CC 51-53" >>>;
+<<< "=====================================================" >>>;
+
+int ignore_cc[128];
+for(0 => int i; i < 32; i++) 1 => ignore_cc[i];
+
+0 => ignore_cc[CC_VOLUME_TRACK_0];
+0 => ignore_cc[CC_VOLUME_TRACK_1];
+0 => ignore_cc[CC_VOLUME_TRACK_2];
+0 => ignore_cc[CC_MIX_TRACK_0];
+0 => ignore_cc[CC_MIX_TRACK_1];
+0 => ignore_cc[CC_MIX_TRACK_2];
+
+fun void midiListener() {
+    while(true) {
+        min => now;
+
+        while(min.recv(msg)) {
+            msg.data1 => int status;
+            msg.data2 => int data1;
+            msg.data3 => int data2;
+            status & 0xF0 => int messageType;
+
+            // Control Change
+            if(messageType == 0xB0) {
+                if(!ignore_cc[data1]) {
+                    if(data1 == CC_VOLUME_TRACK_0) setTrackVolume(0, data2 / 127.0);
+                    else if(data1 == CC_VOLUME_TRACK_1) setTrackVolume(1, data2 / 127.0);
+                    else if(data1 == CC_VOLUME_TRACK_2) setTrackVolume(2, data2 / 127.0);
+                    else if(data1 == CC_MIX_TRACK_0) setTrackAudioDrumMix(0, data2 / 127.0);
+                    else if(data1 == CC_MIX_TRACK_1) setTrackAudioDrumMix(1, data2 / 127.0);
+                    else if(data1 == CC_MIX_TRACK_2) setTrackAudioDrumMix(2, data2 / 127.0);
+                }
+            }
+
+            // Note On
+            else if(messageType == 0x90 && data2 > 0) {
+                if(data1 == NOTE_RECORD_TRACK_0) startRecording(0);
+                else if(data1 == NOTE_RECORD_TRACK_1) startRecording(1);
+                else if(data1 == NOTE_RECORD_TRACK_2) startRecording(2);
+                else if(data1 == NOTE_CLEAR_TRACK_0) clearTrack(0);
+                else if(data1 == NOTE_CLEAR_TRACK_1) clearTrack(1);
+                else if(data1 == NOTE_CLEAR_TRACK_2) clearTrack(2);
+                else if(data1 == NOTE_EXPORT_DATA) exportAllSymbolicData();
+            }
+
+            // Note Off
+            else if(messageType == 0x80 || (messageType == 0x90 && data2 == 0)) {
+                if(data1 == NOTE_RECORD_TRACK_0) stopRecording(0);
+                else if(data1 == NOTE_RECORD_TRACK_1) stopRecording(1);
+                else if(data1 == NOTE_RECORD_TRACK_2) stopRecording(2);
+            }
+        }
+    }
+}
+
+// === MAIN PROGRAM ===
+
+// Try to load and train KNN classifier from CSV
+if(trainKNNFromCSV("training_samples.csv")) {
+    1 => knn_trained;
+    <<< "╔═══════════════════════════════════════╗" >>>;
+    <<< "║  KNN CLASSIFIER READY                ║" >>>;
+    <<< "╚═══════════════════════════════════════╝" >>>;
+} else {
+    <<< "⚠ Using fallback heuristic classifier" >>>;
+    <<< "  (Run drum_sample_recorder.ck to create training_samples.csv)" >>>;
+}
+
+<<< "" >>>;
+
+spork ~ midiListener();
+spork ~ visualizationLoop();
+spork ~ mainOnsetDetectionLoop();
+
+<<< "CHULOOPA Drums running! Ready to loop..." >>>;
+<<< "" >>>;
+
+while(true) {
+    1::second => now;
+}
