@@ -1,30 +1,38 @@
 //---------------------------------------------------------------------
-// name: chuloopa_drums.ck
+// name: chuloopa_drums_v2.ck
 // desc: CHULOOPA - Drum-based looper with real-time beatbox classification
 //       Multi-track looper that transcribes beatbox to drum patterns
+//       V2: Adds ability to load and play drum patterns from txt files
 //
 // Architecture:
 //   1. Record audio loops (with master sync to prevent drift)
 //   2. Real-time onset detection + classification → symbolic drum data
 //   3. AUTO-EXPORT: Symbolic data saved to track_N_drums.txt files
 //   4. DRUM PLAYBACK: Transcribed drums played as samples
-//   5. Visual feedback (ChuGL) reacts to drum hits
+//   5. LOAD FROM FILE: Swap buffer playback with saved txt patterns
+//   6. Visual feedback (ChuGL) reacts to drum hits
 //
 // MIDI Mapping (QuNeo):
 //   RECORDING:
 //     C1, C#1, D1 (36-38):    Press & hold to record tracks 0-2
 //                             Release to stop recording
 //   CLEARING:
-//     E1, F1, F#1 (40-42):    Press to clear tracks 0-2
+//     D#1, E1, F1 (39-41):    Press to clear tracks 0-2
+//
+//   LOAD FROM FILE:
+//     G1, G#1, A1 (43-45):    Load track_N_drums.txt into tracks 0-2
 //
 //   MANUAL EXPORT (optional):
-//     G1 (43):                Export all track drum data (already auto-exported)
+//     A#1 (46):               Export all track drum data (already auto-exported)
 //
 //   VOLUME:
 //     CC 45-47:               Volume control for tracks 0-2
 //
+//   AUDIO/DRUM MIX:
+//     CC 51-53:               Audio/Drum mix control for tracks 0-2
+//
 // Usage:
-//   chuck src/chuloopa_drums.ck
+//   chuck src/chuloopa_drums_v2.ck
 //---------------------------------------------------------------------
 
 // === MIDI CONFIGURATION ===
@@ -36,7 +44,11 @@
 40 => int NOTE_CLEAR_TRACK_1;    // E1
 41 => int NOTE_CLEAR_TRACK_2;    // F1
 
-42 => int NOTE_EXPORT_DATA;      // F#1
+43 => int NOTE_LOAD_TRACK_0;     // G1 - NEW: Load from file
+44 => int NOTE_LOAD_TRACK_1;     // G#1 - NEW: Load from file
+45 => int NOTE_LOAD_TRACK_2;     // A1 - NEW: Load from file
+
+46 => int NOTE_EXPORT_DATA;      // A#1 (changed from F#1)
 
 45 => int CC_VOLUME_TRACK_0;
 46 => int CC_VOLUME_TRACK_1;
@@ -51,10 +63,10 @@
 
 // === CONFIGURATION ===
 3 => int NUM_TRACKS;
-10::second => dur MAX_LOOP_DURATION;
+30::second => dur MAX_LOOP_DURATION;
 
 // === VOLUME SETTINGS ===
-0.1 => float AUDIO_LOOP_VOLUME;   // Original beatbox audio (0.0-1.0)
+0.0 => float AUDIO_LOOP_VOLUME;   // Original beatbox audio (DISABLED - drums only!)
 0.8 => float DRUM_SAMPLE_VOLUME;  // Transcribed drum samples (0.0-1.0)
 
 // === ONSET DETECTION PARAMETERS ===
@@ -238,9 +250,9 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     1 => lisa[i].loop;
     0 => lisa[i].bi;
 
-    // Setup output gain for audio loops
-    lisa[i] => output_gains[i] => dac;
-    AUDIO_LOOP_VOLUME => output_gains[i].gain;
+    // Setup output gain for audio loops (DISABLED - drums only mode)
+    lisa[i] => output_gains[i] => blackhole;  // Send to blackhole, not dac
+    0.0 => output_gains[i].gain;  // Zero gain
 
     // Setup analysis chains (connected to adc, but only upchucked during recording)
     // Note: MFCC must be chained from FFT
@@ -309,9 +321,17 @@ time record_start_time[NUM_TRACKS];
 // Drum playback state
 time loop_start_time[NUM_TRACKS];
 int drum_playback_active[NUM_TRACKS];
+int drum_playback_id[NUM_TRACKS];  // Unique ID for each playback session to prevent old hits from playing
 
 // Mix control state
 float track_audio_drum_mix[NUM_TRACKS]; // 0.0 = all audio, 1.0 = all drums
+
+// NEW: Track whether data came from file or live recording
+int track_loaded_from_file[NUM_TRACKS];
+
+// NEW: Queued action system for smooth transitions
+int queued_load_track[NUM_TRACKS];  // Which tracks should load from file at next cycle
+int queued_clear_track[NUM_TRACKS]; // Which tracks should clear at next cycle
 
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -321,7 +341,11 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0::second => recorded_duration[i];
     0 => has_loop[i];
     0 => drum_playback_active[i];
+    0 => drum_playback_id[i];
     0.6 => track_audio_drum_mix[i];     // 60% drums by default (40% audio)
+    0 => track_loaded_from_file[i];
+    0 => queued_load_track[i];
+    0 => queued_clear_track[i];
 }
 
 // === SYMBOLIC DRUM DATA STORAGE (per track) ===
@@ -597,6 +621,9 @@ fun void saveDrumHit(int track, int drum_class, float velocity) {
         track_drum_timestamps[track] << timestamp;
         track_drum_velocities[track] << velocity;
 
+        // NEW: Play drum hit immediately for real-time feedback during recording
+        playDrumHit(track, drum_class, velocity);
+
         ["KICK", "SNARE", "HAT"] @=> string class_names[];
         <<< "Track", track, "-", class_names[drum_class], "at", timestamp, "sec |",
             "Total hits:", track_drum_classes[track].size() >>>;
@@ -676,6 +703,199 @@ fun void exportAllSymbolicData() {
     <<< "Export complete!" >>>;
 }
 
+// === NEW: LOAD DRUM DATA FROM FILE ===
+
+// Queue a file load action (executed at next loop cycle)
+fun void queueLoadFromFile(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return;
+
+    <<< "" >>>;
+    <<< ">>> QUEUED: Track", track, "will load from file at next loop cycle <<<" >>>;
+    1 => queued_load_track[track];
+}
+
+// Internal function: Actually load the drum data (called at loop boundary)
+fun int loadDrumDataFromFile(int track) {
+    if(track < 0 || track >= NUM_TRACKS) return 0;
+
+    "track_" + track + "_drums.txt" => string filename;
+
+    <<< "" >>>;
+    <<< "╔═══════════════════════════════════════╗" >>>;
+    <<< "║  LOADING DRUM DATA FROM FILE         ║" >>>;
+    <<< "╚═══════════════════════════════════════╝" >>>;
+    <<< "Loading:", filename >>>;
+
+    FileIO fin;
+    fin.open(filename, FileIO.READ);
+
+    if(!fin.good()) {
+        <<< "ERROR: Could not open file:", filename >>>;
+        <<< "Make sure the file exists!" >>>;
+        return 0;
+    }
+
+    // CRITICAL: Stop existing drum playback for this track IMMEDIATELY
+    // Note: This is called at loop boundary by coordinator, so timing is perfect
+    // Increment playback ID to invalidate ALL old scheduled drum hits
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+
+    // Stop flags
+    0 => drum_playback_active[track];
+
+    // NO WAIT - we're already at the loop boundary, start immediately!
+
+    // Clear existing data
+    clearSymbolicData(track);
+
+    // Temporary storage for loaded data
+    int loaded_classes[0];
+    float loaded_timestamps[0];
+    float loaded_velocities[0];
+    float loaded_delta_times[0];
+
+    0.0 => float max_timestamp;
+    0.0 => float last_delta_time;  // Will store the final delta_time (time to loop end)
+    0 => int line_count;
+    0 => int has_delta_time_column;  // Track if file has new format
+
+    // Read file
+    while(fin.more()) {
+        fin.readLine() => string line;
+        line_count++;
+
+        // Skip comments and empty lines
+        if(line.length() == 0) continue;
+        if(line.substring(0, 1) == "#") continue;
+
+        // Parse CSV line: DRUM_CLASS,TIMESTAMP,VELOCITY[,DELTA_TIME]
+        StringTokenizer tok;
+        tok.set(line);
+        tok.delims(",");
+
+        // Check if we have enough tokens by trying to parse
+        if(!tok.more()) {
+            <<< "WARNING: Skipping malformed line", line_count >>>;
+            continue;
+        }
+
+        // Parse values
+        Std.atoi(tok.next()) => int drum_class;
+
+        if(!tok.more()) {
+            <<< "WARNING: Skipping malformed line", line_count, "(missing timestamp)" >>>;
+            continue;
+        }
+        Std.atof(tok.next()) => float timestamp;
+
+        if(!tok.more()) {
+            <<< "WARNING: Skipping malformed line", line_count, "(missing velocity)" >>>;
+            continue;
+        }
+        Std.atof(tok.next()) => float velocity;
+
+        // Try to read delta_time (optional, for backwards compatibility)
+        0.0 => float delta_time;
+        if(tok.more()) {
+            Std.atof(tok.next()) => delta_time;
+            1 => has_delta_time_column;
+            delta_time => last_delta_time;  // Keep updating, last one is important
+        }
+
+        // Validate
+        if(drum_class < 0 || drum_class > 2) {
+            <<< "WARNING: Invalid drum class", drum_class, "on line", line_count >>>;
+            continue;
+        }
+
+        // Store
+        loaded_classes << drum_class;
+        loaded_timestamps << timestamp;
+        loaded_velocities << velocity;
+        loaded_delta_times << delta_time;
+
+        // Track max timestamp for loop length
+        if(timestamp > max_timestamp) {
+            timestamp => max_timestamp;
+        }
+    }
+
+    fin.close();
+
+    if(loaded_classes.size() == 0) {
+        <<< "ERROR: No valid drum data found in file" >>>;
+        return 0;
+    }
+
+    // Copy loaded data to track arrays
+    for(0 => int i; i < loaded_classes.size(); i++) {
+        track_drum_classes[track] << loaded_classes[i];
+        track_drum_timestamps[track] << loaded_timestamps[i];
+        track_drum_velocities[track] << loaded_velocities[i];
+    }
+
+    // CRITICAL: Calculate precise loop duration using delta_time from last hit
+    0.0 => float file_loop_duration;
+
+    if(has_delta_time_column && last_delta_time > 0.0) {
+        // NEW: Use precise duration from last hit's delta_time
+        max_timestamp + last_delta_time => file_loop_duration;
+        <<< "Using precise loop duration from file:", file_loop_duration, "sec" >>>;
+    } else {
+        // FALLBACK: Old method - estimate with buffer
+        max_timestamp + 0.5 => file_loop_duration;
+        <<< "No delta_time found - using estimated duration:", file_loop_duration, "sec" >>>;
+    }
+
+    // Use master loop duration if it exists, otherwise use file's duration
+    if(has_master) {
+        // Scale timestamps to fit master loop duration
+        master_duration / second => float target_duration;
+        file_loop_duration => float original_duration;
+
+        if(original_duration > 0.001) {
+            target_duration / original_duration => float scale_ratio;
+
+            <<< "Scaling timestamps to match master loop..." >>>;
+            <<< "  Original duration:", original_duration, "sec" >>>;
+            <<< "  Target duration:", target_duration, "sec" >>>;
+            <<< "  Scale ratio:", scale_ratio >>>;
+
+            // Scale all timestamps
+            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
+                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
+            }
+        }
+
+        // Use master loop duration
+        master_duration / second => loop_length[track];
+        master_duration => recorded_duration[track];
+    } else {
+        // No master loop yet - use file's precise duration
+        file_loop_duration => loop_length[track];
+        loop_length[track]::second => recorded_duration[track];
+    }
+
+    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
+
+    // Mark track as loaded from file
+    1 => track_loaded_from_file[track];
+    1 => has_loop[track];
+
+    // Enable drum-only playback
+    1 => drum_playback_active[track];
+    0.8 => drum_gain[track].gain;
+
+    // Start drum playback with NEW playback ID (old scheduled hits are invalidated)
+    spork ~ drumPlaybackLoop(track);
+
+    <<< ">>> TRACK", track, "LOADED FROM FILE (DRUM-ONLY MODE, Playback ID:", drum_playback_id[track], ") <<<" >>>;
+    <<< "" >>>;
+
+    return 1;
+}
+
 // === DRUM PLAYBACK FUNCTIONS ===
 
 fun void playDrumHit(int track, int drum_class, float velocity) {
@@ -699,15 +919,18 @@ fun void playDrumHit(int track, int drum_class, float velocity) {
 
 // Scheduled drum playback
 fun void playScheduledDrumHit(int track, int drum_class, float velocity,
-                              time scheduled_time, int loop_num) {
+                              time scheduled_time, int my_playback_id) {
     // Wait until scheduled time
     scheduled_time - now => dur wait_time;
     if(wait_time > 0::second) {
         wait_time => now;
     }
 
-    // Check if still active
-    if(!drum_playback_active[track] || !has_loop[track]) return;
+    // CRITICAL: Check if this is still the current playback session
+    // If playback_id changed, this is an old session - don't play!
+    if(!drum_playback_active[track] || !has_loop[track] || drum_playback_id[track] != my_playback_id) {
+        return;  // Old session, abort
+    }
 
     // Play the drum hit
     playDrumHit(track, drum_class, velocity);
@@ -720,21 +943,27 @@ fun void drumPlaybackLoop(int track) {
         return;
     }
 
+    // Get a unique ID for THIS playback session
+    drum_playback_id[track] => int my_playback_id;
+
     loop_length[track] => float total_duration;
 
-    <<< "Track", track, "- Drum playback started" >>>;
+    <<< "Track", track, "- Drum playback started (ID:", my_playback_id, ")" >>>;
     <<< "  Loop duration:", total_duration, "sec" >>>;
     <<< "  Drum hits:", track_drum_classes[track].size() >>>;
 
+    // NOTE: Sync is handled by masterSyncCoordinator - we start immediately
+    // The coordinator ensures we only start at loop boundaries
+
     // Continuous loop playback
     0 => int loop_count;
-    while(drum_playback_active[track] && has_loop[track]) {
+    while(drum_playback_active[track] && has_loop[track] && drum_playback_id[track] == my_playback_id) {
         loop_count++;
         now => loop_start_time[track];
 
         // Schedule all drum hits for this loop iteration
         for(0 => int i; i < track_drum_classes[track].size(); i++) {
-            if(!drum_playback_active[track] || !has_loop[track]) break;
+            if(!drum_playback_active[track] || !has_loop[track] || drum_playback_id[track] != my_playback_id) break;
 
             loop_start_time[track] + track_drum_timestamps[track][i]::second => time hit_time;
 
@@ -742,7 +971,7 @@ fun void drumPlaybackLoop(int track) {
                                         track_drum_classes[track][i],
                                         track_drum_velocities[track][i],
                                         hit_time,
-                                        loop_count);
+                                        my_playback_id);  // Pass session ID
         }
 
         // Wait for loop to complete
@@ -755,6 +984,61 @@ fun void drumPlaybackLoop(int track) {
     }
 
     <<< "Track", track, "- Drum playback stopped" >>>;
+}
+
+// === MASTER SYNC COORDINATOR ===
+// This loop watches for loop boundaries and executes queued actions
+fun void masterSyncCoordinator() {
+    <<< "Master sync coordinator started" >>>;
+
+    while(true) {
+        // Find a reference track that's playing (to sync with)
+        -1 => int ref_track;
+        for(0 => int i; i < NUM_TRACKS; i++) {
+            if(has_loop[i] && drum_playback_active[i] && loop_length[i] > 0.0) {
+                i => ref_track;
+                break;
+            }
+        }
+
+        if(ref_track >= 0) {
+            // Calculate time to next loop boundary
+            loop_start_time[ref_track] + loop_length[ref_track]::second => time next_boundary;
+            next_boundary - now => dur time_to_boundary;
+
+            // If we're close to the boundary (within this loop's duration), wait for it
+            if(time_to_boundary > 0::second && time_to_boundary < loop_length[ref_track]::second) {
+                time_to_boundary => now;
+
+                <<< "" >>>;
+                <<< "=== LOOP BOUNDARY: Processing queued actions ===" >>>;
+
+                // Process all queued loads
+                for(0 => int i; i < NUM_TRACKS; i++) {
+                    if(queued_load_track[i]) {
+                        <<< "Executing queued load for track", i >>>;
+                        loadDrumDataFromFile(i);
+                        0 => queued_load_track[i];  // Clear queue
+                    }
+                }
+
+                // Process all queued clears
+                for(0 => int i; i < NUM_TRACKS; i++) {
+                    if(queued_clear_track[i]) {
+                        <<< "Executing queued clear for track", i >>>;
+                        clearTrack(i);
+                        0 => queued_clear_track[i];  // Clear queue
+                    }
+                }
+            } else {
+                // Not close to boundary, wait a bit
+                100::ms => now;
+            }
+        } else {
+            // No reference track playing yet, wait
+            100::ms => now;
+        }
+    }
 }
 
 // === MAIN ONSET DETECTION LOOP ===
@@ -803,6 +1087,13 @@ fun void startRecording(int track) {
 
     <<< "" >>>;
     <<< ">>> TRACK", track, "RECORDING STARTED <<<" >>>;
+
+    // If this track was loaded from file, stop its playback first
+    if(track_loaded_from_file[track]) {
+        0 => drum_playback_active[track];
+        0 => track_loaded_from_file[track];
+        100::ms => now;  // Brief pause to stop playback
+    }
 
     // Clear previous drum data
     clearSymbolicData(track);
@@ -874,6 +1165,7 @@ fun void stopRecording(int track) {
         1 => lisa[track].play;
         1 => is_playing[track];
         1 => has_loop[track];
+        0 => track_loaded_from_file[track];  // Mark as recorded (not loaded)
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
         <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
@@ -892,13 +1184,13 @@ fun void stopRecording(int track) {
         if(track_drum_classes[track].size() > 0) {
             1 => drum_playback_active[track];
 
-            // Set initial mix
-            setTrackAudioDrumMix(track, track_audio_drum_mix[track]);
+            // Drums-only mode
+            0.8 => drum_gain[track].gain;
 
             spork ~ drumPlaybackLoop(track);
-            <<< ">>> DUAL PLAYBACK ENABLED (Audio + Drums) <<<" >>>;
+            <<< ">>> DRUM PLAYBACK ENABLED (Drums Only Mode) <<<" >>>;
         } else {
-            <<< ">>> No drum hits detected - playing audio only <<<" >>>;
+            <<< ">>> No drum hits detected <<<" >>>;
         }
     }
 }
@@ -920,6 +1212,9 @@ fun void clearTrack(int track) {
 
     clearSymbolicData(track);
 
+    // Reset file-loaded flag
+    0 => track_loaded_from_file[track];
+
     // Reset master if needed
     if(track == master_track && !anyLoopsExist()) {
         <<< "╔═══════════════════════════════════════╗" >>>;
@@ -935,24 +1230,18 @@ fun void clearTrack(int track) {
 fun void setTrackVolume(int track, float vol) {
     if(track < 0 || track >= NUM_TRACKS) return;
     Math.max(0.0, Math.min(1.0, vol)) => float master_vol;
-    master_vol * (1.0 - track_audio_drum_mix[track]) => output_gains[track].gain;
+
+    // Drums-only mode - adjust drum volume
+    if(has_loop[track] && drum_playback_active[track]) {
+        master_vol * 0.8 => drum_gain[track].gain;
+        <<< "Track", track, "Volume:", (master_vol * 100) $ int, "%" >>>;
+    }
 }
 
 fun void setTrackAudioDrumMix(int track, float mix) {
-    if(track < 0 || track >= NUM_TRACKS) return;
-    Math.max(0.0, Math.min(1.0, mix)) => track_audio_drum_mix[track];
-
-    if(has_loop[track] && drum_playback_active[track]) {
-        // Audio loop gain
-        (1.0 - track_audio_drum_mix[track]) * 0.7 => output_gains[track].gain;
-
-        // Drum synth gain
-        track_audio_drum_mix[track] * 0.5 => drum_gain[track].gain;
-
-        <<< "Track", track, "Mix: Audio",
-            ((1.0 - track_audio_drum_mix[track]) * 100) $ int, "%",
-            "/ Drums", (track_audio_drum_mix[track] * 100) $ int, "%" >>>;
-    }
+    // DEPRECATED: Drums-only mode, no mix needed
+    // Keep function for backwards compatibility with MIDI controls
+    <<< "Track", track, "- Drums Only Mode (mix control disabled)" >>>;
 }
 
 // === VISUALIZATION ===
@@ -980,7 +1269,7 @@ MidiMsg msg;
 
 <<< "" >>>;
 <<< "=====================================================" >>>;
-<<< "          CHULOOPA - Drum Looper System" >>>;
+<<< "          CHULOOPA - Drum Looper System V2" >>>;
 <<< "=====================================================" >>>;
 
 if(min.num() == 0) {
@@ -1001,10 +1290,12 @@ if(min.num() == 0) {
 <<< "" >>>;
 <<< "MIDI Controls:" >>>;
 <<< "  RECORD: C1 (36), C#1 (37), D1 (38)" >>>;
-<<< "  CLEAR: E1 (40), F1 (41), F#1 (42)" >>>;
-<<< "  EXPORT: G1 (43)" >>>;
+<<< "  CLEAR: D#1 (39), E1 (40), F1 (41)" >>>;
+<<< "  LOAD FILE: G1 (43), G#1 (44), A1 (45)" >>>;
+<<< "  EXPORT: A#1 (46)" >>>;
 <<< "  VOLUME: CC 45-47" >>>;
-<<< "  AUDIO/DRUM MIX: CC 51-53" >>>;
+<<< "" >>>;
+<<< "MODE: DRUMS ONLY (Real-time drum feedback during recording)" >>>;
 <<< "=====================================================" >>>;
 
 int ignore_cc[128];
@@ -1041,12 +1332,22 @@ fun void midiListener() {
 
             // Note On
             else if(messageType == 0x90 && data2 > 0) {
+                // Recording
                 if(data1 == NOTE_RECORD_TRACK_0) startRecording(0);
                 else if(data1 == NOTE_RECORD_TRACK_1) startRecording(1);
                 else if(data1 == NOTE_RECORD_TRACK_2) startRecording(2);
-                else if(data1 == NOTE_CLEAR_TRACK_0) clearTrack(0);
-                else if(data1 == NOTE_CLEAR_TRACK_1) clearTrack(1);
-                else if(data1 == NOTE_CLEAR_TRACK_2) clearTrack(2);
+
+                // Clearing (queued for next cycle)
+                else if(data1 == NOTE_CLEAR_TRACK_0) { 1 => queued_clear_track[0]; <<< ">>> QUEUED: Track 0 will clear at next loop cycle <<<" >>>; }
+                else if(data1 == NOTE_CLEAR_TRACK_1) { 1 => queued_clear_track[1]; <<< ">>> QUEUED: Track 1 will clear at next loop cycle <<<" >>>; }
+                else if(data1 == NOTE_CLEAR_TRACK_2) { 1 => queued_clear_track[2]; <<< ">>> QUEUED: Track 2 will clear at next loop cycle <<<" >>>; }
+
+                // NEW: Load from file (queued for next cycle)
+                else if(data1 == NOTE_LOAD_TRACK_0) queueLoadFromFile(0);
+                else if(data1 == NOTE_LOAD_TRACK_1) queueLoadFromFile(1);
+                else if(data1 == NOTE_LOAD_TRACK_2) queueLoadFromFile(2);
+
+                // Export
                 else if(data1 == NOTE_EXPORT_DATA) exportAllSymbolicData();
             }
 
@@ -1078,8 +1379,10 @@ if(trainKNNFromCSV("training_samples.csv")) {
 spork ~ midiListener();
 spork ~ visualizationLoop();
 spork ~ mainOnsetDetectionLoop();
+spork ~ masterSyncCoordinator();  // NEW: Manages loop boundaries and queued actions
 
-<<< "CHULOOPA Drums running! Ready to loop..." >>>;
+<<< "CHULOOPA Drums V2 running! Ready to loop..." >>>;
+<<< "Press G1, G#1, or A1 to load drum patterns from files (queued for next cycle)!" >>>;
 <<< "" >>>;
 
 while(true) {

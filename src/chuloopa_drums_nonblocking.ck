@@ -66,12 +66,6 @@ HOP_SIZE::samp => dur HOP;
 0.01 => float MIN_ONSET_STRENGTH;
 150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
 
-// === QUANTIZATION PARAMETERS ===
-false => int ENABLE_QUANTIZATION;    // Enable/disable quantization
-16 => int QUANTIZE_DIVISION;        // Quantize to 16th notes (4=quarter, 8=eighth, 16=sixteenth)
-60.0 => float MIN_BPM;              // Valid BPM range
-200.0 => float MAX_BPM;
-
 // === MASTER LOOP SYNC SYSTEM ===
 -1 => int master_track;
 0::second => dur master_duration;
@@ -105,91 +99,6 @@ fun int anyLoopsExist() {
         if(has_loop[i]) return 1;
     }
     return 0;
-}
-
-// === QUANTIZATION SYSTEM ===
-
-// Estimate BPM from inter-onset intervals
-fun float estimateBPM(int track) {
-    if(track_drum_timestamps[track].size() < 2) {
-        return 120.0;  // Default BPM if not enough hits
-    }
-
-    // Calculate all inter-onset intervals
-    float intervals[0];
-    for(1 => int i; i < track_drum_timestamps[track].size(); i++) {
-        track_drum_timestamps[track][i] - track_drum_timestamps[track][i-1] => float interval;
-        if(interval > 0.1) {  // Ignore very short intervals (likely flams/doubles)
-            intervals << interval;
-        }
-    }
-
-    if(intervals.size() == 0) return 120.0;
-
-    // Find median interval (more robust than mean)
-    // Sort intervals
-    for(0 => int i; i < intervals.size()-1; i++) {
-        for(i+1 => int j; j < intervals.size(); j++) {
-            if(intervals[j] < intervals[i]) {
-                intervals[i] => float temp;
-                intervals[j] => intervals[i];
-                temp => intervals[j];
-            }
-        }
-    }
-
-    // Get median
-    intervals[intervals.size() / 2] => float median_interval;
-
-    // Convert to BPM (assuming the median interval represents one beat or subdivision)
-    // Try different subdivisions and pick the one that results in reasonable BPM
-    60.0 / median_interval => float bpm_if_beat;
-    60.0 / (median_interval * 2) => float bpm_if_eighth;
-    60.0 / (median_interval * 4) => float bpm_if_sixteenth;
-
-    // Choose the BPM that falls in reasonable range
-    if(bpm_if_beat >= MIN_BPM && bpm_if_beat <= MAX_BPM) return bpm_if_beat;
-    if(bpm_if_eighth >= MIN_BPM && bpm_if_eighth <= MAX_BPM) return bpm_if_eighth;
-    if(bpm_if_sixteenth >= MIN_BPM && bpm_if_sixteenth <= MAX_BPM) return bpm_if_sixteenth;
-
-    // If none in range, clamp to range
-    if(bpm_if_beat < MIN_BPM) return MIN_BPM;
-    if(bpm_if_beat > MAX_BPM) return MAX_BPM;
-    return bpm_if_beat;
-}
-
-// Quantize timestamps to grid
-fun void quantizeTrack(int track) {
-    if(!ENABLE_QUANTIZATION) return;
-    if(track_drum_timestamps[track].size() == 0) return;
-
-    // Estimate BPM
-    estimateBPM(track) => float bpm;
-    <<< "Track", track, "- Estimated BPM:", bpm >>>;
-
-    // Calculate grid size (time between quantization points)
-    60.0 / bpm / (QUANTIZE_DIVISION / 4.0) => float grid_size;  // (QUANTIZE_DIVISION/4) converts to beats
-    <<< "  Quantizing to", QUANTIZE_DIVISION + "th", "notes (grid size:", grid_size, "sec)" >>>;
-
-    // Quantize each timestamp
-    0 => int moves_count;
-    for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
-        track_drum_timestamps[track][i] => float original_time;
-
-        // Find nearest grid point
-        Math.round(original_time / grid_size) => float grid_point;
-        grid_point * grid_size => float quantized_time;
-
-        // Update timestamp
-        quantized_time => track_drum_timestamps[track][i];
-
-        // Track how many were moved
-        if(Math.fabs(original_time - quantized_time) > 0.001) {
-            moves_count++;
-        }
-    }
-
-    <<< "  Quantized", moves_count, "hits" >>>;
 }
 
 // === CHUGL VISUALIZATION SETUP ===
@@ -262,7 +171,7 @@ SndBuf snare_sample[NUM_TRACKS];
 SndBuf hat_sample[NUM_TRACKS];
 Gain drum_gain[NUM_TRACKS];
 
-// Sample paths
+// Sample paths (try both relative paths)
 "samples/kick.wav" => string KICK_SAMPLE;
 "samples/snare.wav" => string SNARE_SAMPLE;
 "samples/hat.WAV" => string HAT_SAMPLE;  // Note: uppercase .WAV
@@ -630,34 +539,21 @@ fun void exportSymbolicData(int track) {
 
     // Write header
     fout.write("# Track " + track + " Drum Data\n");
-    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME\n");
+    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY\n");
     fout.write("# Classes: 0=kick, 1=snare, 2=hat\n");
-    fout.write("# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n");
-    fout.write("# Total loop duration: " + loop_length[track] + " seconds\n");
 
-    // Write each hit with delta_time
+    // Write each hit
     for(0 => int i; i < track_drum_classes[track].size(); i++) {
         track_drum_classes[track][i] => int drum_class;
         track_drum_timestamps[track][i] => float timestamp;
         track_drum_velocities[track][i] => float velocity;
 
-        // Calculate delta_time (time until next hit, or until loop end)
-        0.0 => float delta_time;
-        if(i < track_drum_classes[track].size() - 1) {
-            // Time to next hit
-            track_drum_timestamps[track][i+1] - timestamp => delta_time;
-        } else {
-            // Last hit: time until loop wraps around
-            loop_length[track] - timestamp => delta_time;
-        }
-
-        fout.write(drum_class + "," + timestamp + "," + velocity + "," + delta_time + "\n");
+        fout.write(drum_class + "," + timestamp + "," + velocity + "\n");
     }
 
     fout.close();
 
     <<< ">>> Track", track, "exported to", filename, "(" + track_drum_classes[track].size(), "hits) <<<" >>>;
-    <<< "    Total loop duration:", loop_length[track], "seconds" >>>;
 }
 
 // Export all tracks
@@ -677,40 +573,91 @@ fun void exportAllSymbolicData() {
 }
 
 // === DRUM PLAYBACK FUNCTIONS ===
+// Non-blocking playback using sporked instances
 
-fun void playDrumHit(int track, int drum_class, float velocity) {
+fun void playDrumHitSpork(int track, int drum_class, float velocity) {
+    <<< "[SPORK] Playing drum class", drum_class, "velocity", velocity, "track", track >>>;
+
     // Map velocity (0.0-1.0) to gain multiplier
     Math.max(0.3, Math.min(1.0, velocity)) => float vel_gain;
 
-    // Trigger appropriate sample - they'll play to completion naturally
+    // Create a NEW SndBuf instance for this specific hit (allows overlapping)
+    SndBuf snd;
+
+    // Create a dedicated Gain for this specific hit (allows true overlapping)
+    Gain hit_gain;
+
+    // Load appropriate sample BEFORE connecting
     if(drum_class == 0) {  // Kick
-        0 => kick_sample[track].pos;  // Reset to beginning
-        vel_gain * 0.6 => kick_sample[track].gain;  // Apply velocity
+        KICK_SAMPLE => snd.read;
+        if(snd.samples() > 0) {
+            <<< "  Loaded kick:", snd.samples(), "samples" >>>;
+        }
     }
     else if(drum_class == 1) {  // Snare
-        0 => snare_sample[track].pos;
-        vel_gain * 0.5 => snare_sample[track].gain;
+        SNARE_SAMPLE => snd.read;
+        if(snd.samples() > 0) {
+            <<< "  Loaded snare:", snd.samples(), "samples" >>>;
+        }
     }
     else if(drum_class == 2) {  // Hat
-        0 => hat_sample[track].pos;
-        vel_gain * 0.4 => hat_sample[track].gain;
+        HAT_SAMPLE => snd.read;
+        if(snd.samples() > 0) {
+            <<< "  Loaded hat:", snd.samples(), "samples" >>>;
+        }
     }
+
+    // Check if sample loaded successfully
+    if(snd.samples() == 0) {
+        <<< "  ERROR: Failed to load drum sample!" >>>;
+        return;
+    }
+
+    // Connect: snd -> hit_gain -> drum_gain[track]
+    // Each sporked instance gets its own gain stage for true overlapping
+    snd => hit_gain => drum_gain[track];
+
+    // Set gain with velocity
+    vel_gain * DRUM_SAMPLE_VOLUME => snd.gain;
+    <<< "  Gain set to:", snd.gain() >>>;
+
+    // Trigger playback from beginning
+    0 => snd.pos;
+    <<< "  Playing now..." >>>;
+
+    // Wait for sample to finish playing
+    (snd.samples()::samp) => now;
+
+    <<< "  Finished playing" >>>;
+
+    // Disconnect when done (disconnect entire chain)
+    snd =< hit_gain =< drum_gain[track];
 }
 
 // Scheduled drum playback
 fun void playScheduledDrumHit(int track, int drum_class, float velocity,
                               time scheduled_time, int loop_num) {
+    <<< "[SCHED] Scheduled hit:", drum_class, "at time", (scheduled_time - now) / second, "sec from now" >>>;
+
     // Wait until scheduled time
     scheduled_time - now => dur wait_time;
     if(wait_time > 0::second) {
         wait_time => now;
     }
 
-    // Check if still active
-    if(!drum_playback_active[track] || !has_loop[track]) return;
+    <<< "[SCHED] Time reached! Playing drum class", drum_class >>>;
 
-    // Play the drum hit
-    playDrumHit(track, drum_class, velocity);
+    // Check if still active
+    if(!drum_playback_active[track] || !has_loop[track]) {
+        <<< "[SCHED] Playback no longer active, skipping" >>>;
+        return;
+    }
+
+    // Spork the playback directly so it's non-blocking and can overlap
+    spork ~ playDrumHitSpork(track, drum_class, velocity);
+
+    // CRITICAL: Advance time slightly to allow the sporked shred to run
+    1::samp => now;
 }
 
 // Main drum playback loop for a track
@@ -877,11 +824,6 @@ fun void stopRecording(int track) {
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
         <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
-
-        // === QUANTIZATION ===
-        if(track_drum_classes[track].size() > 0) {
-            quantizeTrack(track);
-        }
 
         // === AUTO-EXPORT ===
         if(track_drum_classes[track].size() > 0) {

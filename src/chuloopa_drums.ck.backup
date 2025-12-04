@@ -630,34 +630,21 @@ fun void exportSymbolicData(int track) {
 
     // Write header
     fout.write("# Track " + track + " Drum Data\n");
-    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME\n");
+    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY\n");
     fout.write("# Classes: 0=kick, 1=snare, 2=hat\n");
-    fout.write("# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n");
-    fout.write("# Total loop duration: " + loop_length[track] + " seconds\n");
 
-    // Write each hit with delta_time
+    // Write each hit
     for(0 => int i; i < track_drum_classes[track].size(); i++) {
         track_drum_classes[track][i] => int drum_class;
         track_drum_timestamps[track][i] => float timestamp;
         track_drum_velocities[track][i] => float velocity;
 
-        // Calculate delta_time (time until next hit, or until loop end)
-        0.0 => float delta_time;
-        if(i < track_drum_classes[track].size() - 1) {
-            // Time to next hit
-            track_drum_timestamps[track][i+1] - timestamp => delta_time;
-        } else {
-            // Last hit: time until loop wraps around
-            loop_length[track] - timestamp => delta_time;
-        }
-
-        fout.write(drum_class + "," + timestamp + "," + velocity + "," + delta_time + "\n");
+        fout.write(drum_class + "," + timestamp + "," + velocity + "\n");
     }
 
     fout.close();
 
     <<< ">>> Track", track, "exported to", filename, "(" + track_drum_classes[track].size(), "hits) <<<" >>>;
-    <<< "    Total loop duration:", loop_length[track], "seconds" >>>;
 }
 
 // Export all tracks
