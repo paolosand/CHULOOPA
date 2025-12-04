@@ -1,146 +1,308 @@
 # CHULOOPA
 
-**An experimental AI-powered looper in ChucK that explores intelligent audio evolution.**
+**An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 ## Overview
 
-CHULOOPA is an intelligent looping system that uses AI to generate evolving variations of recorded audio. The architecture converts audio into symbolic representations, stores multiple tracks, and uses generative models to create variations that can be selected and decoded back to audio in real-time.
+CHULOOPA is a real-time drum looping system built in ChucK that uses machine learning to transcribe vocal beatboxing into drum patterns (kick, snare, hat). The system provides immediate audio feedback during recording, automatically exports symbolic drum data, and enables seamless pattern switching for live performance.
 
-### Core Architecture
+**Key Innovation:** Making drum programming accessible to amateur beatboxers through personalized ML classification.
 
-![CHULOOPA Architecture](CHULOOPA%20-%20initial%20procedural%20sketch.png)
+### Core Features
 
-Each track can store a symbolic representation and generate variations independently, allowing for complex multi-track evolution and composition.
-
-## 🥁 DRUM GENERATION PIVOT (Nov 25, 2025)
-
-**Status:** 🟢 ACTIVE DEVELOPMENT - Phase 1 in progress
-
-CHULOOPA is pivoting from melody-based (pitch detection) to **drum-based generation** using vocal beatboxing as input. This pivot addresses accuracy challenges with pitch detection (vibrato, slides) and targets a novel research angle: **making drum programming accessible to amateur beatboxers**.
-
-**New Focus:**
-- Vocal beatboxing → Drum pattern transcription
-- Onset detection + classification (kick/snare/hat)
-- AI variation generation using GrooVAE
-- Target: ICMC 2025 submission (Dec 22 deadline)
-
-**Key Documents:**
-- 📊 `pivot_explorations.md` - Technical comparison & research analysis
-- 📋 `DRUM_PIVOT_PLAN.md` - Detailed implementation roadmap
-- 🎯 Checkpoint: December 8, 2025 (go/no-go decision)
-
-**Current Implementation:**
-- ✅ `src/drum_onset_detector.ck` - Real-time onset detection (spectral flux)
-- 🔄 Feature extraction & classifier training (in progress)
-- ⏳ GrooVAE integration (Phase 2)
-
-**Previous melody-based system preserved in:** `src/chuloopa_main.ck` (backup plan)
-
----
-
-## Current Status
-
-**Main pipeline complete!** The core CHULOOPA system is now functional in the `src/` directory.
-
-- [x] Basic looper implementations (1-4)
-- [x] Realtime symbolic transcription (pitch detection)
-- [x] Complete architecture and data pipeline
-- [x] Main integrated system (`src/chuloopa_main.ck`)
-- [x] Symbolic data storage and export
-- [x] Variation generation placeholder
-- [x] Variation playback system
-- [ ] AI integration for pattern generation (placeholder ready)
+- 🎤 **Real-time Beatbox Transcription** - Vocal input → Drum samples (instant feedback)
+- 🥁 **3-Track Looper** - Master sync prevents drift across tracks
+- 🤖 **KNN Classifier** - User-trainable personalized drum detection
+- 🔄 **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
+- 📊 **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
+- 🎨 **ChuGL Visualization** - Real-time visual feedback per track
 
 ## Quick Start
 
-**Run the main CHULOOPA system:**
+### 1. Train Your Personalized Classifier (One-time, ~5 minutes)
+
+Record 10 samples each of kick, snare, and hi-hat sounds using your voice:
 
 ```bash
-cd "CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA"
-chuck src/chuloopa_main.ck
+chuck src/drum_sample_recorder.ck
 ```
 
-**Complete workflow:**
+**Controls:**
 
-1. **Record loops** - Use MIDI controller (QuNeo) or edit code for keyboard input
-2. **Export MIDI data** - Press G1 or call `exportAllSymbolicData()`
-3. **Generate variations** - `chuck src/ai_pipeline_placeholder.ck:track_0_midi.txt`
-4. **Play variations** - `chuck src/variation_playback.ck:variation_0_midi.txt:mandolin:loop`
+- Press **1**: Record kick samples (record 10)
+- Press **2**: Record snare samples (record 10)
+- Press **3**: Record hi-hat samples (record 10)
+- Press **Q**: Quit and save to `training_samples.csv`
 
-**See `src/README.md` for detailed documentation.**
+**Then train the classifier:**
+
+```bash
+python train_classifier.py
+```
+
+This creates:
+
+- `drum_classifier.pkl` - Your personalized KNN model
+- `training_samples.csv` - Training data (61+ samples)
+
+### 2. Run CHULOOPA Drums V2
+
+```bash
+chuck src/chuloopa_drums_v2.ck
+```
+
+### 3. QuNeo MIDI Controls
+
+**Recording (Press & Hold):**
+
+- **C1, C#1, D1** (36-38): Record tracks 0-2
+  - _Hear drum samples in real-time as you beatbox!_
+  - Release to stop recording
+
+**Clearing (Queued for next cycle):**
+
+- **D#1, E1, F1** (39-41): Clear tracks 0-2
+
+**Load Pattern from File (Queued for next cycle):**
+
+- **G1, G#1, A1** (43-45): Load `track_N_drums.txt` into tracks 0-2
+
+**Export:**
+
+- **A#1** (46): Manually export all tracks (auto-exports after recording)
+
+**Volume:**
+
+- **CC 45-47**: Drum volume for tracks 0-2
 
 ---
 
-## Main Source Code (`src/`)
+## Complete Workflow
 
-The `src/` directory contains the complete integrated CHULOOPA system:
+### Recording a Loop
 
-### `chuloopa_main.ck`
-Main system combining multi-track looping, real-time pitch detection, symbolic MIDI storage, and visualization.
+1. **Press & hold C1** on QuNeo
+2. **Beatbox:** "BOOM tss tss BOOM"
+3. **System responds:**
+   - Detects onsets (spectral flux)
+   - Classifies each hit (kick/snare/hat)
+   - **Plays drum samples immediately** (real-time feedback)
+   - Stores timing data with delta_time precision
+4. **Release C1** to stop
+   - Auto-exports to `track_0_drums.txt`
+   - Starts looping the drum pattern
 
-**Features:**
-- 3-track audio looper with master sync (no drift)
-- Real-time pitch detection → MIDI conversion
-- Symbolic data recording and export
-- ChuGL visualization (spheres react to amplitude & frequency)
-- QuNeo MIDI control
+### Loading a Saved Pattern
 
-### `ai_pipeline_placeholder.ck`
-AI variation generator with clear integration points for future AI models.
+1. **Press G1** mid-loop to queue load
+2. Console: `>>> QUEUED: Track 0 will load from file at next loop cycle <<<`
+3. **Current loop continues** until boundary
+4. **At loop boundary:**
+   - Old drums stop cleanly
+   - New drums from file start immediately
+   - Zero overlap, zero drift!
 
-**Current:** Algorithmic variations (transpose, time-stretch, reverse, permutation)
-**Future:** Integration with notochord, loopgen, living-looper
+### Layering Multiple Tracks
 
-### `variation_playback.ck`
-Plays back AI-generated MIDI variations with multiple synthesis options.
-
-**Synths:** sine, square, saw, mandolin, flute, brass
-**Modes:** one-shot or looped playback
+1. Record Track 0 (C1): Kick pattern
+2. Record Track 1 (C#1): Snare pattern
+3. Record Track 2 (D1): Hi-hat pattern
+4. All tracks stay perfectly in sync (master sync system)
 
 ---
 
-## Experimental Implementations (`initial implementation/`)
+## Technical Architecture
 
-**These are prototype implementations that were integrated into the main `src/` system.**
+### Drums-Only Mode
 
-### 1. Simple Looper
+CHULOOPA V2 operates in **drums-only mode**:
 
-OSC-controlled audio looping with GUI interface.
+- ❌ No audio loop playback (audio recorded for analysis only)
+- ✅ Real-time drum sample playback during recording
+- ✅ Looped drum sample playback after recording
+- ✅ Clean pattern switching at loop boundaries
 
-- `looper.ck` + `looper_gui.ck`
+### Master Sync System
 
-### 2. Looper with Vocoder
+Prevents drift across tracks using musical ratios:
 
-Adds vocoder processing to the basic looper.
+- First recorded loop becomes **master reference**
+- Subsequent loops auto-adjusted to ratios: `[0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]`
+- Algorithm finds closest multiplier and adjusts loop length
+- See `initial implementation/4 - looper midi quneo visual/SOLVING_DRIFT.md` for details
 
-- `looper_vocoder.ck` + `looper_gui_vocoder.ck`
+### Onset Detection
 
-### 3. MIDI Controller (QuNeo)
+- **Algorithm:** Spectral flux with adaptive thresholding
+- **Frame size:** 512 samples, hop size 128 samples
+- **Threshold:** 1.5× running mean of flux history
+- **Debouncing:** 150ms minimum between onsets
 
-QuNeo-specific implementations with MIDI control.
+### KNN Classification
 
-- `looper_midi_quneo.ck`
-- `looper_midi_quneo_vocoder.ck`
+- **Algorithm:** K-Nearest Neighbors (k=3)
+- **Features:** 5-dimensional vector (flux, energy, band1, band2, band5)
+- **Training:** User-specific (10 samples per class)
+- **Fallback:** Heuristic classifier if training fails
 
-### 4. Visual Looper (QuNeo + ChucK GL) → **Integrated into `src/chuloopa_main.ck`**
+### Queued Action System
 
-Grid-based visual feedback for looping with master sync.
+Smooth transitions inspired by `chuck_sample_code/chuck_looper/`:
 
-- `[MASTER LOOP] looper_midi_quneo_visual_freeform.ck` - Best implementation
-- `looper_midi_quneo_grid_visual.ck`
-- `looper_midi_quneo_visual.ck`
-- `SOLVING_DRIFT.md` - Technical documentation on loop sync
+- MIDI actions queue during loop cycle
+- Master coordinator executes at loop boundaries
+- Prevents overlap and maintains sync
 
-### 5. Realtime Symbolic Transcription → **Integrated into `src/chuloopa_main.ck`**
+### Delta Time Format
 
-Pitch detection using autocorrelation to convert audio to MIDI representations.
+Exported files include precise loop timing:
 
-- `pitch_detector_recorder.ck` - Records from mic to MIDI text
-- `pitch_detector_file.ck` - Converts WAV files to MIDI text
-- `midi_playback.ck` - Plays back MIDI text files
+```
+# Track 0 Drum Data
+# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
+# Classes: 0=kick, 1=snare, 2=hat
+# DELTA_TIME: Duration until next hit (for last hit: time until loop end)
+# Total loop duration: 2.182676 seconds
+0,0.037732,0.169278,0.566987
+1,0.603719,0.250155,0.406349
+0,1.010068,0.314029,0.444082
+```
 
-## Goals
+**Key:** Last hit's delta_time (0.444082s) ensures perfect loop timing!
 
-- **Audio**: Use AI to evolve recorded loops intelligently over time
-- **Visual**: Intuitive ChucK GL visualizations of audio and loop state
-- **Research**: Push ChucK's boundaries and document improvement areas
+---
+
+## File Structure
+
+```
+CHULOOPA/
+├── src/
+│   ├── chuloopa_drums_v2.ck         # Main system (CURRENT)
+│   ├── chuloopa_drums.ck            # Original version (no file loading)
+│   ├── chuloopa_main.ck             # OLD: Melody-based system (archived)
+│   ├── drum_sample_recorder.ck      # Training data collector
+│   └── feature_extraction.ck        # ChucK feature extraction
+│
+├── samples/                          # Drum samples
+│   ├── kick.wav
+│   ├── snare.wav
+│   └── hat.WAV
+│
+├── train_classifier.py               # KNN training script
+├── training_samples.csv              # Training data (generated)
+├── track_0_drums.txt                 # Exported drum patterns (generated)
+├── track_1_drums.txt
+├── track_2_drums.txt
+│
+├── README.md                         # This file
+├── QUICK_START.md                    # Step-by-step guide
+└── CLAUDE.md                         # AI assistant context
+```
+
+---
+
+## Next Steps
+
+### Phase 2: AI Variation Generation
+
+**Coming Soon:**
+
+- [ ] GrooVAE integration for drum pattern variations
+- [ ] Pattern evolution and humanization
+- [ ] Style transfer between beatbox performances
+
+### Phase 3: Enhanced Visuals
+
+**Planned:**
+
+- [ ] Improved ChuGL visualizations
+- [ ] Per-drum-hit visual feedback
+- [ ] Pattern similarity visualization
+
+---
+
+## Research Goals
+
+**Target Conference:** ICMC 2025
+
+**Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification for Live Performance"_
+
+**Novel Contributions:**
+
+1. User-trainable beatbox classifier (personalized, not generic)
+2. Minimal training data (10 samples per class vs. 100s)
+3. Live performance focus (<50ms latency)
+4. Personalized sample playback
+5. End-to-end system from training to performance
+
+---
+
+## Legacy Systems
+
+**Melody-based system (archived):**
+
+- `src/chuloopa_main.ck` - Pitch detection → MIDI transcription
+- Preserved as backup plan
+- See git history for development timeline
+
+**Experimental prototypes:**
+
+- `initial implementation/` - Evolution of looper designs (1-5)
+- Concepts integrated into current drum system
+
+---
+
+## Dependencies
+
+**ChucK:**
+
+- ChucK 1.5.x+ (with ChuGL support)
+- STK (Synthesis Toolkit) - included with ChucK
+
+**Python (for training):**
+
+- scikit-learn
+- pandas
+- numpy
+- joblib
+
+**Hardware:**
+
+- MIDI controller (QuNeo recommended)
+- Microphone for beatbox input
+
+---
+
+## Troubleshooting
+
+**No MIDI devices found:**
+
+- Check MIDI controller connection
+- Verify MIDI port in code (line 62: `0 => int MIDI_DEVICE;`)
+
+**Classifier accuracy poor:**
+
+- Record more training samples (20+ per class)
+- Ensure consistent beatbox technique
+- Retrain classifier: `python train_classifier.py`
+
+**Drums out of sync:**
+
+- System uses master sync - should not happen
+- Check console for drift warnings
+- Verify delta_time in exported files
+
+---
+
+## Credits
+
+**Developer:** Paolo Sandejas
+**Institution:** CalArts - Music Technology MFA
+**Advisor:** Ajay Kapur, Jake Cheng
+**Year:** 2025
+
+**Inspired by:**
+
+- Magenta's GrooVAE
+- Living Looper (nn_tilde)
+- Intelligent Instruments Lab's Notochord
