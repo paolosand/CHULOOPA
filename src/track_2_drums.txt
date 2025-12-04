@@ -1,10 +1,7 @@
 # Track 2 Drum Data
-# Format: DRUM_CLASS,TIMESTAMP,VELOCITY
+# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
 # Classes: 0=kick, 1=snare, 2=hat
-2,0.172800,0.108758
-1,0.817141,0.106233
-0,0.975297,0.100683
-0,1.288681,0.148943
-0,1.452695,0.133020
-0,2.003313,0.103620
-0,2.334270,0.113923
+# DELTA_TIME: Duration until next hit (for last hit: time until loop end)
+# Total loop duration: 3.552653 seconds
+1,1.354673,0.303550,1.241036
+2,2.595709,0.122376,0.956944
