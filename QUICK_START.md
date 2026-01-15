@@ -18,16 +18,10 @@ CHULOOPA Drums is a real-time drum looping system that:
 
 **Requirements:**
 - ChucK 1.5.x+ (with ChuGL support)
-- Python 3.x (for training)
-- MIDI controller (QuNeo recommended)
+- MIDI controller
 - Microphone for beatbox input
 
-**Python packages:**
-```bash
-pip install scikit-learn pandas numpy joblib
-```
-
-**No other installation needed!** Just navigate to CHULOOPA:
+**No installation needed!** Just navigate to CHULOOPA:
 
 ```bash
 cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA"
@@ -37,11 +31,9 @@ cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA
 
 ## 10-Minute Workflow
 
-### Step 1: Train Your Classifier (One-Time, ~5 minutes)
+### Step 1: Record Training Samples (One-Time, ~5 minutes)
 
 **Important:** This must be done BEFORE using CHULOOPA for the first time!
-
-#### 1a. Record Training Samples
 
 ```bash
 chuck src/drum_sample_recorder.ck
@@ -80,22 +72,10 @@ Press 1/2/3 to record samples, Q to quit
 - Use **your normal beatbox** voice (this is personalized!)
 - Each sample should be **distinct and clear**
 
-#### 1b. Train the Classifier
+**File created:**
+- `training_samples.csv` - Your personalized training data
 
-```bash
-python train_classifier.py
-```
-
-You'll see:
-```
-Training KNN classifier...
-Accuracy: 95.8%
-✓ Model saved to drum_classifier.pkl
-```
-
-**Files created:**
-- `drum_classifier.pkl` - Your personalized KNN model
-- `training_samples.csv` - Your training data (saved)
+**Note:** The KNN classifier will automatically train when you start CHULOOPA Drums V2!
 
 ---
 
@@ -120,7 +100,7 @@ A visualization window will open showing 3 color-coded spheres (tracks).
 
 ### Step 3: Record Your First Drum Loop
 
-**Press and HOLD C1** on your QuNeo controller
+**Press and HOLD MIDI Note 36** (C1) on your MIDI controller
 
 **Beatbox into the mic:** "BOOM tss tss BOOM tss tss"
 
@@ -130,7 +110,7 @@ A visualization window will open showing 3 color-coded spheres (tracks).
 - **Plays drum samples IMMEDIATELY** (real-time feedback!)
 - Console shows: `Track 0 - KICK at 0.037 sec | Total hits: 1`
 
-**Release C1** to stop recording
+**Release Note 36** to stop recording
 
 **What happens:**
 - Auto-exports to `track_0_drums.txt`
@@ -143,14 +123,14 @@ A visualization window will open showing 3 color-coded spheres (tracks).
 
 ### Step 4: Add More Tracks
 
-**Record Track 1 (C#1):**
-- Press and HOLD C#1
+**Record Track 1 (Note 37/C#1):**
+- Press and HOLD MIDI Note 37
 - Beatbox: "tss tss tss tss" (hi-hat pattern)
 - Release
 - Track 1 loops in sync with Track 0!
 
-**Record Track 2 (D1):**
-- Press and HOLD D1
+**Record Track 2 (Note 38/D1):**
+- Press and HOLD MIDI Note 38
 - Beatbox: "PAH...PAH...PAH" (snare backbeat)
 - Release
 - All 3 tracks now loop together perfectly!
@@ -161,7 +141,7 @@ A visualization window will open showing 3 color-coded spheres (tracks).
 
 ### Step 5: Load a Saved Pattern
 
-**During playback, press G1** (mid-loop is fine!)
+**During playback, press MIDI Note 43** (G1) (mid-loop is fine!)
 
 Console shows:
 ```
@@ -183,10 +163,15 @@ Executing queued load for track 0
 
 ### Step 6: Adjust Volume
 
-**Use CC sliders on QuNeo:**
+**Use CC controls on your MIDI controller:**
 - **CC 45**: Track 0 drum volume
 - **CC 46**: Track 1 drum volume
 - **CC 47**: Track 2 drum volume
+
+**Audio/Drum Mix:**
+- **CC 51**: Track 0 audio/drum mix
+- **CC 52**: Track 1 audio/drum mix
+- **CC 53**: Track 2 audio/drum mix
 
 Console shows: `Track 0 Volume: 80%`
 
@@ -194,7 +179,7 @@ Console shows: `Track 0 Volume: 80%`
 
 ### Step 7: Clear Tracks
 
-**Press D#1, E1, or F1** to queue track clearing
+**Press MIDI Note 39, 40, or 41** (D#1, E1, F1) to queue track clearing
 
 Console: `>>> QUEUED: Track 0 will clear at next loop cycle <<<`
 
@@ -202,48 +187,55 @@ Track clears at next boundary (smooth transition)
 
 ---
 
-## MIDI Control Reference (QuNeo)
+## MIDI Control Reference
 
 ### Recording (Press & Hold)
-| Pad  | MIDI Note | Function              |
-|------|-----------|----------------------|
-| C1   | 36        | Record Track 0       |
-| C#1  | 37        | Record Track 1       |
-| D1   | 38        | Record Track 2       |
+| MIDI Note | Note Name | Function              |
+|-----------|-----------|----------------------|
+| 36        | C1        | Record Track 0       |
+| 37        | C#1       | Record Track 1       |
+| 38        | D1        | Record Track 2       |
 
 **Usage:** Press and HOLD to record, RELEASE to stop
 
 ### Clearing (Queued)
-| Pad  | MIDI Note | Function              |
-|------|-----------|----------------------|
-| D#1  | 39        | Clear Track 0        |
-| E1   | 40        | Clear Track 1        |
-| F1   | 41        | Clear Track 2        |
+| MIDI Note | Note Name | Function              |
+|-----------|-----------|----------------------|
+| 39        | D#1       | Clear Track 0        |
+| 40        | E1        | Clear Track 1        |
+| 41        | F1        | Clear Track 2        |
 
 **Usage:** Single press (executes at next loop boundary)
 
 ### Loading from File (Queued)
-| Pad  | MIDI Note | Function                      |
-|------|-----------|------------------------------|
-| G1   | 43        | Load track_0_drums.txt       |
-| G#1  | 44        | Load track_1_drums.txt       |
-| A1   | 45        | Load track_2_drums.txt       |
+| MIDI Note | Note Name | Function                      |
+|-----------|-----------|------------------------------|
+| 43        | G1        | Load track_0_drums.txt       |
+| 44        | G#1       | Load track_1_drums.txt       |
+| 45        | A1        | Load track_2_drums.txt       |
 
 **Usage:** Single press (executes at next loop boundary)
 
 ### Export
-| Pad  | MIDI Note | Function              |
-|------|-----------|----------------------|
-| A#1  | 46        | Export all tracks    |
+| MIDI Note | Note Name | Function              |
+|-----------|-----------|----------------------|
+| 46        | A#1       | Export all tracks    |
 
 **Note:** Auto-exports after recording anyway!
 
 ### Volume Control
-| Control | CC Number | Function             |
-|---------|-----------|----------------------|
-| Slider  | CC 45     | Track 0 Volume       |
-| Slider  | CC 46     | Track 1 Volume       |
-| Slider  | CC 47     | Track 2 Volume       |
+| CC Number | Function                   |
+|-----------|----------------------------|
+| CC 45     | Track 0 Drum Volume        |
+| CC 46     | Track 1 Drum Volume        |
+| CC 47     | Track 2 Drum Volume        |
+
+### Audio/Drum Mix Control
+| CC Number | Function                   |
+|-----------|----------------------------|
+| CC 51     | Track 0 Audio/Drum Mix     |
+| CC 52     | Track 1 Audio/Drum Mix     |
+| CC 53     | Track 2 Audio/Drum Mix     |
 
 ---
 
@@ -305,7 +297,8 @@ Track clears at next boundary (smooth transition)
 - Record MORE training samples (20+ per class)
 - Be more **consistent** with sounds
 - Record in **quieter environment**
-- Retrain: `python train_classifier.py`
+- Delete `training_samples.csv` and re-record samples
+- Restart CHULOOPA (classifier trains automatically on startup)
 
 ### "Drums triggering on silence / too many false positives"
 **Solution:**
@@ -388,21 +381,20 @@ If it does happen:
 ## Example Session
 
 ```bash
-# Terminal 1: Train classifier (one-time setup)
+# Terminal: Record training samples (one-time setup)
 chuck src/drum_sample_recorder.ck
 # Record 10 kicks, 10 snares, 10 hats, press Q
-python train_classifier.py
 
-# Terminal 1: Run CHULOOPA
+# Terminal: Run CHULOOPA (classifier trains automatically)
 chuck src/chuloopa_drums_v2.ck
 
-# On QuNeo:
-# 1. Press & hold C1, beatbox "BOOM tss BOOM tss", release
-# 2. Press & hold C#1, beatbox "tss tss tss tss", release
-# 3. Press & hold D1, beatbox "PAH...PAH", release
+# On your MIDI controller:
+# 1. Press & hold Note 36 (C1), beatbox "BOOM tss BOOM tss", release
+# 2. Press & hold Note 37 (C#1), beatbox "tss tss tss tss", release
+# 3. Press & hold Note 38 (D1), beatbox "PAH...PAH", release
 # 4. Adjust volumes with CC 45-47
-# 5. Press G1 to reload track 0 from file
-# 6. Press D#1 to clear track 0
+# 5. Press Note 43 (G1) to reload track 0 from file
+# 6. Press Note 39 (D#1) to clear track 0
 
 # Press Ctrl+C to stop
 ```
@@ -446,11 +438,10 @@ CHULOOPA/
 **Ready to beatbox? Start with Step 1!**
 
 ```bash
-# Step 1: Train
+# Step 1: Record training samples
 chuck src/drum_sample_recorder.ck
-python train_classifier.py
 
-# Step 2: Loop!
+# Step 2: Loop! (classifier trains automatically)
 chuck src/chuloopa_drums_v2.ck
 ```
 

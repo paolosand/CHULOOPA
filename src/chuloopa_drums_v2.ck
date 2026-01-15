@@ -44,15 +44,15 @@
 40 => int NOTE_CLEAR_TRACK_1;    // E1
 41 => int NOTE_CLEAR_TRACK_2;    // F1
 
-43 => int NOTE_LOAD_TRACK_0;     // G1 - NEW: Load from file
-44 => int NOTE_LOAD_TRACK_1;     // G#1 - NEW: Load from file
-45 => int NOTE_LOAD_TRACK_2;     // A1 - NEW: Load from file
+42 => int NOTE_LOAD_TRACK_0;     // F#1 - NEW: Load from file
+43 => int NOTE_LOAD_TRACK_1;     // G1 - NEW: Load from file
+44 => int NOTE_LOAD_TRACK_2;     // G#1 - NEW: Load from file
 
-46 => int NOTE_EXPORT_DATA;      // A#1 (changed from F#1)
+45 => int NOTE_EXPORT_DATA;      // A1
 
-45 => int CC_VOLUME_TRACK_0;
-46 => int CC_VOLUME_TRACK_1;
-47 => int CC_VOLUME_TRACK_2;
+46 => int CC_VOLUME_TRACK_0;
+47 => int CC_VOLUME_TRACK_1;
+48 => int CC_VOLUME_TRACK_2;
 
 // Audio/Drum mix ratio per track
 51 => int CC_MIX_TRACK_0;

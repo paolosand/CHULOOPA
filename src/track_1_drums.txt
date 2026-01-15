@@ -2,6 +2,7 @@
 # Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
 # Classes: 0=kick, 1=snare, 2=hat
 # DELTA_TIME: Duration until next hit (for last hit: time until loop end)
-# Total loop duration: 2.368435 seconds
-0,0.049831,0.312685,0.905751
-0,0.955582,0.325429,1.412854
+# Total loop duration: 4.867483 seconds
+1,0.489091,0.115808,1.130474
+1,1.619566,0.107987,1.801144
+1,3.420710,0.152591,1.446773

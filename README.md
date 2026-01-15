@@ -10,16 +10,16 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 
 ### Core Features
 
-- 🎤 **Real-time Beatbox Transcription** - Vocal input → Drum samples (instant feedback)
-- 🥁 **3-Track Looper** - Master sync prevents drift across tracks
-- 🤖 **KNN Classifier** - User-trainable personalized drum detection
-- 🔄 **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
-- 📊 **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
-- 🎨 **ChuGL Visualization** - Real-time visual feedback per track
+- **Real-time Beatbox Transcription** - Vocal input → Drum samples (instant feedback)
+- **3-Track Looper** - Master sync prevents drift across tracks
+- **KNN Classifier** - User-trainable personalized drum detection
+- **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
+- **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
+- **ChuGL Visualization** - Real-time visual feedback per track
 
 ## Quick Start
 
-### 1. Train Your Personalized Classifier (One-time, ~5 minutes)
+### 1. Record Training Samples (One-time, ~5 minutes)
 
 Record 10 samples each of kick, snare, and hi-hat sounds using your voice:
 
@@ -34,16 +34,7 @@ chuck src/drum_sample_recorder.ck
 - Press **3**: Record hi-hat samples (record 10)
 - Press **Q**: Quit and save to `training_samples.csv`
 
-**Then train the classifier:**
-
-```bash
-python train_classifier.py
-```
-
-This creates:
-
-- `drum_classifier.pkl` - Your personalized KNN model
-- `training_samples.csv` - Training data (61+ samples)
+This creates `training_samples.csv` with your personalized beatbox samples.
 
 ### 2. Run CHULOOPA Drums V2
 
@@ -51,29 +42,35 @@ This creates:
 chuck src/chuloopa_drums_v2.ck
 ```
 
-### 3. QuNeo MIDI Controls
+**Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file.
+
+### 3. MIDI Controls
 
 **Recording (Press & Hold):**
 
-- **C1, C#1, D1** (36-38): Record tracks 0-2
+- **MIDI Note 36, 37, 38** (C1, C#1, D1): Record tracks 0-2
   - _Hear drum samples in real-time as you beatbox!_
   - Release to stop recording
 
 **Clearing (Queued for next cycle):**
 
-- **D#1, E1, F1** (39-41): Clear tracks 0-2
+- **MIDI Note 39, 40, 41** (D#1, E1, F1): Clear tracks 0-2
 
 **Load Pattern from File (Queued for next cycle):**
 
-- **G1, G#1, A1** (43-45): Load `track_N_drums.txt` into tracks 0-2
+- **MIDI Note 42, 43, 44** (F3, F#1, G1): Load `track_N_drums.txt` into tracks 0-2
 
 **Export:**
 
-- **A#1** (46): Manually export all tracks (auto-exports after recording)
+- **MIDI Note 45** (A1): Manually export all tracks (auto-exports after recording)
 
 **Volume:**
 
-- **CC 45-47**: Drum volume for tracks 0-2
+- **CC 46, 47, 48**: Drum volume for tracks 0-2
+
+**Audio/Drum Mix:**
+
+- **CC 51, 52, 53**: Audio/Drum mix control for tracks 0-2
 
 ---
 
@@ -81,20 +78,20 @@ chuck src/chuloopa_drums_v2.ck
 
 ### Recording a Loop
 
-1. **Press & hold C1** on QuNeo
+1. **Press & hold MIDI Note 36** (C1) on your MIDI controller
 2. **Beatbox:** "BOOM tss tss BOOM"
 3. **System responds:**
    - Detects onsets (spectral flux)
    - Classifies each hit (kick/snare/hat)
    - **Plays drum samples immediately** (real-time feedback)
    - Stores timing data with delta_time precision
-4. **Release C1** to stop
+4. **Release Note 36** to stop
    - Auto-exports to `track_0_drums.txt`
    - Starts looping the drum pattern
 
 ### Loading a Saved Pattern
 
-1. **Press G1** mid-loop to queue load
+1. **Press MIDI Note 43** (G1) mid-loop to queue load
 2. Console: `>>> QUEUED: Track 0 will load from file at next loop cycle <<<`
 3. **Current loop continues** until boundary
 4. **At loop boundary:**
@@ -104,9 +101,9 @@ chuck src/chuloopa_drums_v2.ck
 
 ### Layering Multiple Tracks
 
-1. Record Track 0 (C1): Kick pattern
-2. Record Track 1 (C#1): Snare pattern
-3. Record Track 2 (D1): Hi-hat pattern
+1. Record Track 0 (Note 36/C1): Kick pattern
+2. Record Track 1 (Note 37/C#1): Snare pattern
+3. Record Track 2 (Note 38/D1): Hi-hat pattern
 4. All tracks stay perfectly in sync (master sync system)
 
 ---
@@ -259,16 +256,9 @@ CHULOOPA/
 - ChucK 1.5.x+ (with ChuGL support)
 - STK (Synthesis Toolkit) - included with ChucK
 
-**Python (for training):**
-
-- scikit-learn
-- pandas
-- numpy
-- joblib
-
 **Hardware:**
 
-- MIDI controller (QuNeo recommended)
+- MIDI controller
 - Microphone for beatbox input
 
 ---
