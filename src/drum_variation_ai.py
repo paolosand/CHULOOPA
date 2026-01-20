@@ -2,19 +2,18 @@
 """
 drum_variation_ai.py - AI-powered drum pattern variation generator for CHULOOPA
 
-This script monitors drum pattern files and generates variations using GrooVAE
-or fallback algorithmic methods. It overwrites the original files so that
-chuloopa_drums_v2.ck can load the variations via MIDI triggers.
+This script generates variations of drum patterns using Gemini AI or algorithmic
+methods. It overwrites the original files so that chuloopa_drums_v2.ck can load
+the variations via MIDI triggers.
 
 Architecture:
     1. Load drum pattern from track_N_drums.txt
-    2. Convert to GrooVAE-compatible format (quantized pianoroll)
-    3. Generate variation using GrooVAE (or fallback algorithm)
-    4. Convert back to CHULOOPA format with delta_times
-    5. Overwrite original file
+    2. Generate variation using Gemini AI (or fallback algorithm)
+    3. Convert back to CHULOOPA format with delta_times
+    4. Overwrite original file
 
 Usage:
-    # Generate variation for a specific track (manual mode)
+    # Generate variation for a specific track (uses gemini by default)
     python drum_variation_ai.py --track 0
 
     # Watch for file changes and auto-generate variations
@@ -22,14 +21,11 @@ Usage:
 
     # Use specific variation type
     python drum_variation_ai.py --track 0 --type humanize
-    python drum_variation_ai.py --track 0 --type groove_vae
+    python drum_variation_ai.py --track 0 --type gemini
     python drum_variation_ai.py --track 0 --type mutate
 
 Requirements:
-    pip install numpy watchdog
-
-    For GrooVAE:
-    pip install magenta note-seq tensorflow
+    pip install numpy watchdog google-genai
 """
 
 import os
@@ -38,29 +34,32 @@ import argparse
 import time
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional
 from pathlib import Path
 
 import numpy as np
+import json
 
-# Optional imports for GrooVAE
+# Load .env file if python-dotenv is available
 try:
-    import note_seq
-    from note_seq.protobuf import music_pb2
-    HAVE_NOTE_SEQ = True
+    from dotenv import load_dotenv
+    load_dotenv()  # Load from .env in current directory
+    load_dotenv(Path(__file__).parent / '.env')  # Also try src/.env
 except ImportError:
-    HAVE_NOTE_SEQ = False
-    print("Note: note_seq not installed. GrooVAE features disabled.")
-    print("      Install with: pip install note-seq")
+    pass  # python-dotenv not installed, rely on environment variables
 
+# Optional imports for Gemini
 try:
-    from magenta.models.music_vae import configs
-    from magenta.models.music_vae.trained_model import TrainedModel
-    HAVE_MAGENTA = True
+    from google import genai
+    HAVE_GEMINI = True
 except ImportError:
-    HAVE_MAGENTA = False
-    print("Note: magenta not installed. Using fallback algorithms.")
-    print("      Install with: pip install magenta")
+    HAVE_GEMINI = False
+    print("Note: google-genai not installed. Gemini features disabled.")
+    print("      Install with: pip install google-genai")
+
+# Gemini configuration
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+GEMINI_MODEL = 'gemini-3-flash-preview'
 
 # Optional file watching
 try:
@@ -75,23 +74,8 @@ except ImportError:
 # CONFIGURATION
 # =============================================================================
 
-# CHULOOPA drum class mapping to General MIDI drum pitches
-DRUM_CLASS_TO_MIDI = {
-    0: 36,  # kick -> Bass Drum 1
-    1: 38,  # snare -> Acoustic Snare
-    2: 42,  # hat -> Closed Hi-Hat
-}
-
-MIDI_TO_DRUM_CLASS = {v: k for k, v in DRUM_CLASS_TO_MIDI.items()}
-
-# GrooVAE configuration
-STEPS_PER_QUARTER = 4  # 16th notes
-QUARTERS_PER_BAR = 4
-STEPS_PER_BAR = STEPS_PER_QUARTER * QUARTERS_PER_BAR  # 16 steps per bar
-
 # Default paths
-DEFAULT_TRACK_DIR = Path(__file__).parent.parent  # CHULOOPA root
-DEFAULT_CHECKPOINT = DEFAULT_TRACK_DIR / "models" / "groovae_2bar_humanize" / "model.ckpt-3061"
+DEFAULT_TRACK_DIR = Path(__file__).parent  # src directory (where ChucK looks for files)
 
 
 # =============================================================================
@@ -201,218 +185,7 @@ class DrumPattern:
 
 
 # =============================================================================
-# GROOVAE INTEGRATION
-# =============================================================================
-
-def estimate_bpm_from_duration(duration: float, min_bpm: float = 60, max_bpm: float = 180) -> Tuple[float, int]:
-    """Estimate BPM from loop duration by assuming reasonable bar count.
-
-    Tries 1, 2, and 4 bars and picks the one that gives a BPM in the reasonable range.
-
-    Args:
-        duration: Loop duration in seconds
-        min_bpm: Minimum reasonable BPM
-        max_bpm: Maximum reasonable BPM
-
-    Returns:
-        Tuple of (estimated_bpm, assumed_bars)
-    """
-    for bars in [2, 1, 4]:  # Try 2 bars first (most common), then 1, then 4
-        # bars * 4 beats, BPM = (beats / duration) * 60
-        bpm = (bars * 4 * 60) / duration
-        if min_bpm <= bpm <= max_bpm:
-            return bpm, bars
-
-    # If none fit, default to 2 bars and clamp BPM
-    bpm = (2 * 4 * 60) / duration
-    bpm = max(min_bpm, min(max_bpm, bpm))
-    return bpm, 2
-
-
-class GrooVAEModel:
-    """Wrapper for GrooVAE model."""
-
-    def __init__(self, checkpoint_path: Optional[str] = None):
-        """Initialize GrooVAE model.
-
-        Args:
-            checkpoint_path: Path to GrooVAE checkpoint file prefix (e.g., path/model.ckpt-3061).
-                             If None, uses default checkpoint.
-        """
-        self.model = None
-        self.config = None
-
-        if not HAVE_MAGENTA:
-            print("GrooVAE not available - magenta not installed")
-            return
-
-        # Use groovae_2bar_humanize config
-        self.config = configs.CONFIG_MAP['groovae_2bar_humanize']
-
-        # Use default checkpoint if not specified
-        if checkpoint_path is None:
-            checkpoint_path = str(DEFAULT_CHECKPOINT)
-
-        self._load_checkpoint(checkpoint_path)
-
-    def _load_checkpoint(self, checkpoint_path: str):
-        """Load model from checkpoint.
-
-        Args:
-            checkpoint_path: Path to checkpoint file prefix (NOT directory).
-                             e.g., 'models/groovae_2bar_humanize/model.ckpt-3061'
-        """
-        if not HAVE_MAGENTA:
-            return
-
-        # Suppress TensorFlow warnings during model loading
-        import os
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-        try:
-            self.model = TrainedModel(
-                self.config,
-                batch_size=1,
-                checkpoint_dir_or_path=checkpoint_path
-            )
-            print(f"Loaded GrooVAE from: {checkpoint_path}")
-        except Exception as e:
-            print(f"Failed to load GrooVAE checkpoint: {e}")
-            print(f"  Hint: checkpoint_path should be the file prefix, e.g., 'path/model.ckpt-3061'")
-            self.model = None
-
-    def is_available(self) -> bool:
-        """Check if model is loaded and ready."""
-        return self.model is not None
-
-    def generate_variation(self, pattern: DrumPattern, temperature: float = 0.3) -> DrumPattern:
-        """Generate variation using GrooVAE latent space interpolation.
-
-        Args:
-            pattern: Input drum pattern
-            temperature: Amount of variation (0.0=identical, 1.0=very different)
-                         Default 0.3 for subtle musical variations.
-
-        Returns:
-            New DrumPattern with variation, preserving exact original loop_duration
-        """
-        if not self.is_available():
-            raise RuntimeError("GrooVAE model not loaded")
-
-        # Estimate BPM from loop duration
-        estimated_bpm, assumed_bars = estimate_bpm_from_duration(pattern.loop_duration)
-        print(f"  Estimated {estimated_bpm:.1f} BPM ({assumed_bars} bars)")
-
-        # Convert to NoteSequence with estimated tempo
-        note_sequence = pattern_to_note_sequence(pattern, estimated_bpm)
-
-        # Encode to latent space
-        z, mu, sigma = self.model.encode([note_sequence])
-
-        # Add variation by interpolating toward random point in latent space
-        z_random = np.random.randn(*z.shape)
-        z_varied = z + temperature * (z_random - z)
-
-        # Decode back to sequence (32 steps = 2 bars at 16th note resolution)
-        decoded = self.model.decode(z_varied, length=32)
-
-        # Convert back to DrumPattern, scaling to original duration
-        if decoded and len(decoded) > 0:
-            return note_sequence_to_pattern(decoded[0], pattern.loop_duration)
-
-        return pattern.copy()
-
-
-def pattern_to_note_sequence(pattern: DrumPattern, bpm: float = 120.0) -> 'music_pb2.NoteSequence':
-    """Convert DrumPattern to Magenta NoteSequence.
-
-    Args:
-        pattern: The drum pattern to convert
-        bpm: Tempo in beats per minute
-
-    Returns:
-        NoteSequence with drum notes
-    """
-    if not HAVE_NOTE_SEQ:
-        raise RuntimeError("note_seq not installed")
-
-    sequence = music_pb2.NoteSequence()
-    sequence.ticks_per_quarter = 480
-
-    tempo = sequence.tempos.add()
-    tempo.qpm = bpm
-    tempo.time = 0.0
-
-    for hit in pattern.hits:
-        note = sequence.notes.add()
-        note.pitch = DRUM_CLASS_TO_MIDI.get(hit.drum_class, 36)
-        note.velocity = int(hit.velocity * 127)
-        note.start_time = hit.timestamp
-        note.end_time = hit.timestamp + 0.1  # Drums are short
-        note.is_drum = True
-
-    sequence.total_time = pattern.loop_duration
-
-    return sequence
-
-
-def note_sequence_to_pattern(sequence: 'music_pb2.NoteSequence',
-                              target_duration: float) -> DrumPattern:
-    """Convert Magenta NoteSequence back to DrumPattern.
-
-    Scales all timestamps to fit within target_duration.
-    """
-    if not HAVE_NOTE_SEQ:
-        raise RuntimeError("note_seq not installed")
-
-    hits = []
-
-    # First pass: collect all notes and find actual time span
-    raw_notes = []
-    for note in sequence.notes:
-        if not note.is_drum:
-            continue
-
-        drum_class = MIDI_TO_DRUM_CLASS.get(note.pitch)
-        if drum_class is None:
-            # Map unknown drums to closest CHULOOPA class
-            if note.pitch in [35, 36]:  # Bass drums
-                drum_class = 0
-            elif note.pitch in [37, 38, 39, 40]:  # Snares/claps
-                drum_class = 1
-            else:  # Hi-hats and cymbals
-                drum_class = 2
-
-        raw_notes.append((note.start_time, drum_class, note.velocity))
-
-    if not raw_notes:
-        return DrumPattern(hits=[], loop_duration=target_duration)
-
-    # Calculate actual span of notes in the output
-    min_time = min(n[0] for n in raw_notes)
-    max_time = max(n[0] for n in raw_notes)
-    source_span = max_time - min_time if max_time > min_time else 1.0
-
-    # Scale factor to fit notes within target duration
-    # Leave a small margin at the end for the last delta_time
-    usable_duration = target_duration * 0.95
-    scale_factor = usable_duration / source_span if source_span > 0 else 1.0
-
-    # Second pass: create hits with scaled timestamps
-    for start_time, drum_class, velocity in raw_notes:
-        scaled_time = (start_time - min_time) * scale_factor
-        hits.append(DrumHit(
-            drum_class=drum_class,
-            timestamp=scaled_time,
-            velocity=velocity / 127.0,
-            delta_time=0.0  # Will be recalculated
-        ))
-
-    return DrumPattern(hits=hits, loop_duration=target_duration)
-
-
-# =============================================================================
-# FALLBACK ALGORITHMIC VARIATIONS
+# ALGORITHMIC VARIATIONS
 # =============================================================================
 
 def humanize_pattern(pattern: DrumPattern,
@@ -593,6 +366,199 @@ def shift_pattern(pattern: DrumPattern,
     return result
 
 
+def groove_preserve(pattern: DrumPattern,
+                    timing_variance: float = 0.015,
+                    velocity_variance: float = 0.08,
+                    accent_shift: float = 0.1,
+                    swap_probability: float = 0.05) -> DrumPattern:
+    """Create variation while strictly preserving the groove structure.
+
+    This keeps your exact hit positions and drum choices, adding only:
+    - Small timing humanization (±15ms default)
+    - Velocity variations with musical accent patterns
+    - Rare instrument swaps (5% default)
+
+    Args:
+        pattern: Input pattern
+        timing_variance: Max timing shift in seconds (default: 15ms)
+        velocity_variance: Base velocity variation (default: 0.08)
+        accent_shift: Additional velocity boost for accented beats (default: 0.1)
+        swap_probability: Probability of swapping drum class (default: 0.05)
+
+    Returns:
+        Variation with identical structure but human feel
+    """
+    result = pattern.copy()
+
+    if not result.hits:
+        return result
+
+    # Analyze pattern to find strong beats (for accent pattern)
+    # Assume 4/4 time, estimate beat positions
+    beat_duration = result.loop_duration / 4
+    half_beat = beat_duration / 2
+
+    for hit in result.hits:
+        # 1. Timing humanization (Gaussian, tighter than humanize_pattern)
+        # Kicks tend to be more on-beat, hats/snares can be looser
+        if hit.drum_class == 0:  # kick - tighter timing
+            timing_shift = random.gauss(0, timing_variance / 3)
+        else:  # snare/hat - slightly looser
+            timing_shift = random.gauss(0, timing_variance / 2)
+
+        hit.timestamp = max(0, hit.timestamp + timing_shift)
+        hit.timestamp = min(hit.timestamp, result.loop_duration - 0.01)
+
+        # 2. Velocity variation with musical accent pattern
+        # Determine if this hit is on a strong beat
+        beat_position = hit.timestamp % beat_duration
+        is_downbeat = beat_position < (beat_duration * 0.1)  # First 10% of beat
+        is_backbeat = abs(beat_position - half_beat) < (beat_duration * 0.1)
+
+        # Base velocity variation
+        vel_shift = random.gauss(0, velocity_variance / 2)
+
+        # Accent pattern: boost downbeats and backbeats slightly
+        if is_downbeat and hit.drum_class == 0:  # Kick on downbeat
+            vel_shift += accent_shift * random.uniform(0.5, 1.0)
+        elif is_backbeat and hit.drum_class == 1:  # Snare on backbeat
+            vel_shift += accent_shift * random.uniform(0.3, 0.8)
+
+        hit.velocity = max(0.1, min(1.0, hit.velocity + vel_shift))
+
+        # 3. Rare drum class swap (very conservative)
+        if random.random() < swap_probability:
+            # For now, keep all classes - swapping disrupts groove too much
+            pass
+
+    return result
+
+
+# =============================================================================
+# GEMINI VARIATION GENERATOR
+# =============================================================================
+
+def pattern_to_gemini_prompt(pattern: DrumPattern) -> str:
+    """Convert DrumPattern to Gemini prompt format."""
+    lines = [
+        f"Loop duration: {pattern.loop_duration:.6f} seconds",
+        f"Total hits: {len(pattern.hits)}",
+        "",
+        "Pattern (DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME):",
+        "# Classes: 0=kick, 1=snare, 2=hat"
+    ]
+    for hit in pattern.hits:
+        lines.append(f"{hit.drum_class},{hit.timestamp:.6f},{hit.velocity:.6f},{hit.delta_time:.6f}")
+    return "\n".join(lines)
+
+
+def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern:
+    """Parse Gemini's pattern output back to DrumPattern."""
+    hits = []
+    for line in pattern_text.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split(',')
+        if len(parts) >= 4:
+            try:
+                hits.append(DrumHit(
+                    drum_class=int(parts[0]),
+                    timestamp=float(parts[1]),
+                    velocity=float(parts[2]),
+                    delta_time=float(parts[3])
+                ))
+            except (ValueError, IndexError):
+                continue
+    return DrumPattern(hits=hits, loop_duration=loop_duration)
+
+
+def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPattern:
+    """Generate variation using Gemini AI.
+
+    Args:
+        pattern: Input drum pattern
+        temperature: Sampling temperature (0.0-1.0, default 0.7)
+
+    Returns:
+        New DrumPattern with variation, preserving exact original loop_duration
+    """
+    if not HAVE_GEMINI:
+        print("Warning: google-genai not installed, falling back to groove_preserve")
+        return groove_preserve(pattern)
+
+    if not GEMINI_API_KEY:
+        print("Warning: GEMINI_API_KEY not set, falling back to groove_preserve")
+        return groove_preserve(pattern)
+
+    try:
+        # Client reads API key from GEMINI_API_KEY environment variable
+        client = genai.Client()
+
+        system_prompt = """You are a drum loop generator. Given an input drum pattern you will output a variation of an existing drum pattern given the previous pattern and the output varients target "spice" level. While maintaining the same key groove with and ensuring that the total loop duration is exactly the same. Ensure you always understand the users groove first before trying to variate.
+
+Return the output in the following json format:
+{"reasoning": "", "pattern": ""}
+
+The pattern field should contain the drum data in the exact same CSV format as the input:
+DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
+Where:
+- DRUM_CLASS: 0=kick, 1=snare, 2=hat
+- TIMESTAMP: seconds from loop start
+- VELOCITY: 0.0-1.0
+- DELTA_TIME: seconds until next hit (last hit's delta_time = time until loop end)
+
+CRITICAL: The sum of all delta_times must equal the loop duration exactly.
+
+SPICE LEVEL: A float from 0.0 to 1.0 indicating how much variation to apply:
+- 0.0 = minimal variation (very close to original)
+- 0.5 = moderate variation
+- 1.0 = maximum variation (more creative changes)"""
+
+        user_prompt = pattern_to_gemini_prompt(pattern)
+
+        print(f"  Calling Gemini API ({GEMINI_MODEL})...")
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=system_prompt + "\n\nInput pattern:\n" + user_prompt,
+            config={"temperature": temperature}
+        )
+
+        # Extract text from response
+        response_text = response.text
+
+        # Try to extract JSON from response (may be wrapped in markdown code blocks)
+        json_text = response_text
+        if "```json" in response_text:
+            json_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            json_text = response_text.split("```")[1].split("```")[0]
+
+        # Parse JSON response
+        result = json.loads(json_text.strip())
+        print(f"  Gemini reasoning: {result.get('reasoning', 'No reasoning provided')}")
+
+        # Parse pattern back to DrumPattern
+        variation = parse_gemini_pattern(result['pattern'], pattern.loop_duration)
+
+        if not variation.hits:
+            print("  Warning: Gemini returned empty pattern, falling back to groove_preserve")
+            return groove_preserve(pattern)
+
+        print(f"  Generated {len(variation.hits)} hits (original: {len(pattern.hits)})")
+        return variation
+
+    except json.JSONDecodeError as e:
+        print(f"  Warning: Failed to parse Gemini JSON response: {e}")
+        print(f"  Response was: {response_text[:200]}...")
+        print("  Falling back to groove_preserve")
+        return groove_preserve(pattern)
+    except Exception as e:
+        print(f"  Warning: Gemini API call failed: {e}")
+        print("  Falling back to groove_preserve")
+        return groove_preserve(pattern)
+
+
 # =============================================================================
 # FILE WATCHING
 # =============================================================================
@@ -601,7 +567,7 @@ if HAVE_WATCHDOG:
     class DrumFileHandler(FileSystemEventHandler):
         """Watch for changes to drum pattern files."""
 
-        def __init__(self, variation_type: str = 'humanize',
+        def __init__(self, variation_type: str = 'gemini',
                      auto_generate: bool = True,
                      cooldown: float = 2.0):
             """
@@ -644,7 +610,7 @@ if HAVE_WATCHDOG:
                     print(f"Error generating variation: {e}")
 
 
-def watch_directory(directory: str, variation_type: str = 'humanize'):
+def watch_directory(directory: str, variation_type: str = 'gemini'):
     """Watch directory for drum file changes."""
     if not HAVE_WATCHDOG:
         print("Error: watchdog not installed. Install with: pip install watchdog")
@@ -672,41 +638,40 @@ def watch_directory(directory: str, variation_type: str = 'humanize'):
 # MAIN VARIATION GENERATOR
 # =============================================================================
 
-# Global GrooVAE model instance
-_groovae_model: Optional[GrooVAEModel] = None
-
-
-def get_groovae_model(checkpoint_path: Optional[str] = None) -> Optional[GrooVAEModel]:
-    """Get or create GrooVAE model singleton."""
-    global _groovae_model
-
-    if _groovae_model is None:
-        _groovae_model = GrooVAEModel(checkpoint_path)
-
-    return _groovae_model if _groovae_model.is_available() else None
-
-
 def generate_variation(pattern: DrumPattern,
-                       variation_type: str = 'humanize',
+                       variation_type: str = 'gemini',
                        **kwargs) -> DrumPattern:
     """Generate a variation of the input pattern.
 
     Args:
         pattern: Input drum pattern
         variation_type: One of:
+            - 'gemini': (DEFAULT) Use Gemini AI for intelligent variations
+            - 'groove_preserve': Preserve structure, add subtle feel
             - 'humanize': Add subtle timing/velocity variations
             - 'mutate': Swap/add/remove hits
             - 'densify': Add more hits
             - 'simplify': Remove hits
             - 'shift': Rotate pattern in time
-            - 'groove_vae': Use GrooVAE model (if available)
             - 'random': Apply random combination of variations
         **kwargs: Additional arguments for specific variation types
 
     Returns:
         New DrumPattern with variation applied
     """
-    if variation_type == 'humanize':
+    if variation_type == 'gemini':
+        return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+
+    elif variation_type == 'groove_preserve':
+        return groove_preserve(
+            pattern,
+            timing_variance=kwargs.get('timing_variance', 0.015),
+            velocity_variance=kwargs.get('velocity_variance', 0.08),
+            accent_shift=kwargs.get('accent_shift', 0.1),
+            swap_probability=kwargs.get('swap_probability', 0.05)
+        )
+
+    elif variation_type == 'humanize':
         return humanize_pattern(
             pattern,
             timing_variance=kwargs.get('timing_variance', 0.02),
@@ -739,17 +704,6 @@ def generate_variation(pattern: DrumPattern,
             shift_amount=kwargs.get('shift_amount', None)
         )
 
-    elif variation_type == 'groove_vae':
-        model = get_groovae_model(kwargs.get('checkpoint_path'))
-        if model:
-            return model.generate_variation(
-                pattern,
-                temperature=kwargs.get('temperature', 0.5)
-            )
-        else:
-            print("GrooVAE not available, falling back to humanize")
-            return humanize_pattern(pattern)
-
     elif variation_type == 'random':
         # Apply random combination of variations
         result = pattern.copy()
@@ -771,12 +725,12 @@ def generate_variation(pattern: DrumPattern,
         return result
 
     else:
-        print(f"Unknown variation type: {variation_type}, using humanize")
-        return humanize_pattern(pattern)
+        print(f"Unknown variation type: {variation_type}, using gemini")
+        return gemini_variation(pattern)
 
 
 def generate_variation_for_file(filepath: str,
-                                 variation_type: str = 'humanize',
+                                 variation_type: str = 'gemini',
                                  backup: bool = False,
                                  **kwargs) -> bool:
     """Load pattern from file, generate variation, and overwrite.
@@ -836,17 +790,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Generate variation for track 0
+    # Generate variation for track 0 (uses gemini by default)
     python drum_variation_ai.py --track 0
 
-    # Use GrooVAE model
-    python drum_variation_ai.py --track 0 --type groove_vae
+    # Use Gemini with custom temperature
+    python drum_variation_ai.py --track 0 --type gemini --temperature 0.5
+
+    # Simple humanization (timing/velocity only)
+    python drum_variation_ai.py --track 0 --type humanize
 
     # Watch for file changes
     python drum_variation_ai.py --watch
 
     # Generate variation for specific file
     python drum_variation_ai.py --file track_0_drums.txt --type mutate
+
+Variation Types:
+    gemini           (default) Uses Gemini AI for intelligent variations
+    groove_preserve  Keeps exact structure, adds subtle feel/accents
+    humanize         Simple timing/velocity variations
+    mutate           Swaps/adds/removes hits
+    densify          Adds fill hits in gaps
+    simplify         Removes some hits
+    shift            Rotates pattern in time
+    random           Combines multiple variation types
         """
     )
 
@@ -856,10 +823,10 @@ Examples:
     parser.add_argument('--file', '-f', type=str,
                         help='Path to drum pattern file')
 
-    parser.add_argument('--type', '-T', type=str, default='humanize',
-                        choices=['humanize', 'mutate', 'densify', 'simplify',
-                                 'shift', 'groove_vae', 'random'],
-                        help='Variation type (default: humanize)')
+    parser.add_argument('--type', '-T', type=str, default='gemini',
+                        choices=['gemini', 'groove_preserve', 'humanize', 'mutate',
+                                 'densify', 'simplify', 'shift', 'random'],
+                        help='Variation type (default: gemini)')
 
     parser.add_argument('--watch', '-w', action='store_true',
                         help='Watch for file changes and auto-generate')
@@ -870,11 +837,8 @@ Examples:
     parser.add_argument('--backup', '-b', action='store_true',
                         help='Create backup before overwriting')
 
-    parser.add_argument('--checkpoint', '-c', type=str,
-                        help='Path to GrooVAE checkpoint (for groove_vae type)')
-
-    parser.add_argument('--temperature', type=float, default=0.5,
-                        help='GrooVAE sampling temperature (0.0-1.0)')
+    parser.add_argument('--temperature', type=float, default=0.7,
+                        help='Gemini sampling temperature (0.0-1.0, default 0.7)')
 
     args = parser.parse_args()
 
@@ -905,7 +869,6 @@ Examples:
 
     # Generate variation
     kwargs = {
-        'checkpoint_path': args.checkpoint,
         'temperature': args.temperature,
     }
 

@@ -1,3 +1,28 @@
+# PAOLO UPDATED README as of 1/19:
+
+A lot has changed since the original version of this project. The final semi-working condition of this project works such that
+
+1. NO MORE MAGENTA VARIATIONS: When experimenting with magenta (shown in chuloopa/magenta_variations), I found that the conversion from my chuck output format to a piano roll was difficult and did not result in any acceptable responses. In my frustration, turning to gemini out the box with my requirements (make a variation with the same total loop duration and keep tempo), gemini was able to consistently successfully generate new variations of the beat. Super simple solution but incredibly reliable results.
+2. The current pipeline now works such that
+   - Launch chuck script ("chuck chuloopa_main_v2.ck")
+   - Record your drum loop through a mic (ensure mic levels are the same as when the samples were recorded)
+   - Drum loop plays back to you and a transcribed copy is saved to track_x_drums.txt
+   - run python script to create variation ("python drum_variation_ai.py -- track x") and wait for the finished output.
+   - load the newly modfied track_X_drums.txt file into the chuck script
+
+Next step is to finalize the UI and user flow and better connecting the chuck script and the python script
+
+CHUCK PYTHON INTEGRATIONS
+
+- Ideally after a drum loop is recorded, we instantly trigger the python script to create variations of that drum loop.
+- while we currently generate the loops one at a time, we can instead maybe opt to generate 5 variants and have them saved to a variants directory.
+- if the user selects to load a new variant we simply select a new random file from that directory.
+
+CHUCK UI
+
+- Improve UI significantly, super boring right now. Think of an exciting way to visualize this using samples found here /Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHUGL
+- visualize what happens when the loops are being played + what changes when the variations are being played. CHULOOPA spicy variations.
+
 # CHULOOPA - Main Source Code
 
 **An GEMINI-powered intelligent looping system in ChucK**
