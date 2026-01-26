@@ -513,7 +513,9 @@ CRITICAL: The sum of all delta_times must equal the loop duration exactly.
 SPICE LEVEL: A float from 0.0 to 1.0 indicating how much variation to apply:
 - 0.0 = minimal variation (very close to original)
 - 0.5 = moderate variation
-- 1.0 = maximum variation (more creative changes)"""
+- 1.0 = maximum variation (more creative changes)
+
+SPICE LEVEL for this request: 0.9"""
 
         user_prompt = pattern_to_gemini_prompt(pattern)
 

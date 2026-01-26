@@ -1,12 +1,12 @@
 # CHULOOPA
 
-**An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
+**An intelligent drum looper that transforms beatbox into transcribed drum patterns with Gemini AI-powered variations.**
 
 ## Overview
 
-CHULOOPA is a real-time drum looping system built in ChucK that uses machine learning to transcribe vocal beatboxing into drum patterns (kick, snare, hat). The system provides immediate audio feedback during recording, automatically exports symbolic drum data, and enables seamless pattern switching for live performance.
+CHULOOPA is a real-time drum looping system built in ChucK that uses machine learning to transcribe vocal beatboxing into drum patterns (kick, snare, hat). The system provides immediate audio feedback during recording, automatically exports symbolic drum data, generates AI-powered variations, and enables seamless pattern switching for live performance.
 
-**Key Innovation:** Making drum programming accessible to amateur beatboxers through personalized ML classification.
+**Key Innovation:** Making drum programming accessible to amateur beatboxers through personalized ML classification combined with AI-powered pattern variations that maintain musical coherence.
 
 ### Core Features
 
@@ -15,6 +15,7 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 - **KNN Classifier** - User-trainable personalized drum detection
 - **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
 - **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
+- **AI Variation Generation** - Gemini-powered drum pattern variations with consistent tempo and loop duration
 - **ChuGL Visualization** - Real-time visual feedback per track
 
 ## Quick Start
@@ -44,7 +45,17 @@ chuck src/chuloopa_drums_v2.ck
 
 **Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file.
 
-### 3. MIDI Controls
+### 3. (Optional) Generate AI Variations
+
+After recording loops, create AI variations:
+
+```bash
+python src/drum_variation_ai.py --track 0
+```
+
+**Requirements:** Set `GEMINI_API_KEY` environment variable with your Gemini API key.
+
+### 4. MIDI Controls
 
 **Recording (Press & Hold):**
 
@@ -99,6 +110,17 @@ chuck src/chuloopa_drums_v2.ck
    - New drums from file start immediately
    - Zero overlap, zero drift!
 
+### Generating AI Variations
+
+1. After recording a drum pattern, export is auto-saved to `track_N_drums.txt`
+2. Run the variation generator:
+   ```bash
+   python drum_variation_ai.py --track 0
+   ```
+3. Gemini API generates a variation maintaining total loop duration and tempo
+4. New variation overwrites `track_0_drums.txt`
+5. Load the variation back into ChucK (Note 43/G1) to hear the AI-generated pattern
+
 ### Layering Multiple Tracks
 
 1. Record Track 0 (Note 36/C1): Kick pattern
@@ -110,6 +132,22 @@ chuck src/chuloopa_drums_v2.ck
 
 ## Technical Architecture
 
+### Complete Pipeline
+
+```
+1. Beatbox Input (Microphone)
+   ↓
+2. Real-time Transcription (Onset Detection + KNN Classification)
+   ↓
+3. Drum Sample Playback (Instant Feedback)
+   ↓
+4. Symbolic Data Export (track_N_drums.txt with delta_time)
+   ↓
+5. AI Variation Generation (Gemini API)
+   ↓
+6. Variation Playback (Load back into ChucK)
+```
+
 ### Drums-Only Mode
 
 CHULOOPA V2 operates in **drums-only mode**:
@@ -118,6 +156,7 @@ CHULOOPA V2 operates in **drums-only mode**:
 - ✅ Real-time drum sample playback during recording
 - ✅ Looped drum sample playback after recording
 - ✅ Clean pattern switching at loop boundaries
+- ✅ AI variations maintain loop duration and tempo
 
 ### Master Sync System
 
@@ -167,6 +206,32 @@ Exported files include precise loop timing:
 
 **Key:** Last hit's delta_time (0.444082s) ensures perfect loop timing!
 
+### AI Variation Generation
+
+**Tool:** `src/drum_variation_ai.py`
+
+**Usage:**
+```bash
+python src/drum_variation_ai.py --track 0  # Generate variation for track 0
+```
+
+**How it works:**
+1. Reads symbolic drum data from `track_N_drums.txt`
+2. Sends pattern to Gemini API with constraints:
+   - Maintain total loop duration
+   - Keep consistent tempo
+   - Preserve drum pattern structure (kick/snare/hat classes)
+3. Gemini generates musically coherent variation
+4. Overwrites original file with new variation
+5. Load back into ChucK using MIDI Note 43-45
+
+**Why Gemini over Magenta:**
+- Magenta required complex piano roll conversion from ChucK's format
+- Conversion process was unreliable and produced unacceptable results
+- Gemini works directly with symbolic CSV format
+- Consistently maintains loop duration and tempo constraints
+- Simple, reliable, and convenient alternative
+
 ---
 
 ## File Structure
@@ -178,6 +243,7 @@ CHULOOPA/
 │   ├── chuloopa_drums.ck            # Original version (no file loading)
 │   ├── chuloopa_main.ck             # OLD: Melody-based system (archived)
 │   ├── drum_sample_recorder.ck      # Training data collector
+│   ├── drum_variation_ai.py         # Gemini AI variation generator
 │   └── feature_extraction.ck        # ChucK feature extraction
 │
 ├── samples/                          # Drum samples
@@ -200,21 +266,33 @@ CHULOOPA/
 
 ## Next Steps
 
-### Phase 2: AI Variation Generation
+### Phase 2: AI Variation Generation ✅ (In Progress)
 
-**Coming Soon:**
+**Completed:**
 
-- [ ] GrooVAE integration for drum pattern variations
-- [ ] Pattern evolution and humanization
-- [ ] Style transfer between beatbox performances
+- [x] Gemini AI integration for drum pattern variations
+- [x] Maintains total loop duration and tempo consistency
+- [x] Reliable, consistent variation generation
 
-### Phase 3: Enhanced Visuals
+**Next Priorities:**
+
+- [ ] **Automatic Chuck-Python Integration**
+  - Trigger `drum_variation_ai.py` automatically after recording
+  - Generate multiple variants (5+) and save to variants directory
+  - Random variant selection on load button press
+
+- [ ] **Improved User Flow**
+  - Seamless pipeline from recording → variation generation → loading
+  - Background variation generation while user continues playing
+
+### Phase 3: Enhanced Visuals & UI
 
 **Planned:**
 
-- [ ] Improved ChuGL visualizations
+- [ ] Significantly improved ChuGL visualizations (currently basic)
+- [ ] Visualize loop playback vs variation playback differences
 - [ ] Per-drum-hit visual feedback
-- [ ] Pattern similarity visualization
+- [ ] **Bonus:** Drag-and-drop UI for custom kick/snare/hat samples
 
 ---
 
@@ -222,7 +300,7 @@ CHULOOPA/
 
 **Target Conference:** ICMC 2025
 
-**Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification for Live Performance"_
+**Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification with AI Variations for Live Performance"_
 
 **Novel Contributions:**
 
@@ -230,7 +308,10 @@ CHULOOPA/
 2. Minimal training data (10 samples per class vs. 100s)
 3. Live performance focus (<50ms latency)
 4. Personalized sample playback
-5. End-to-end system from training to performance
+5. AI-powered variation generation maintaining musical constraints
+6. End-to-end system from training to performance to variation
+
+**Design Decision:** Initial experiments with Magenta's piano roll conversion proved unreliable. Switching to Gemini API with direct symbolic format produced consistently reliable variations while maintaining loop duration and tempo constraints.
 
 ---
 
@@ -255,6 +336,12 @@ CHULOOPA/
 
 - ChucK 1.5.x+ (with ChuGL support)
 - STK (Synthesis Toolkit) - included with ChucK
+
+**Python (for AI variations):**
+
+- Python 3.10+
+- google-generativeai (Gemini API)
+- Required: `GEMINI_API_KEY` environment variable
 
 **Hardware:**
 
@@ -282,6 +369,19 @@ CHULOOPA/
 - Check console for drift warnings
 - Verify delta_time in exported files
 
+**AI variation generation fails:**
+
+- Ensure `GEMINI_API_KEY` environment variable is set
+- Check that `track_N_drums.txt` file exists and has valid data
+- Verify internet connection for Gemini API access
+- Check Python dependencies: `pip install google-generativeai`
+
+**Variation doesn't maintain loop duration:**
+
+- This should not happen with Gemini implementation
+- Check console output from `drum_variation_ai.py` for errors
+- Verify the generated file has correct total loop duration in header
+
 ---
 
 ## Credits
@@ -293,6 +393,7 @@ CHULOOPA/
 
 **Inspired by:**
 
-- Magenta's GrooVAE
+- Google's Gemini AI (variation generation)
+- Magenta's GrooVAE (initial exploration)
 - Living Looper (nn_tilde)
 - Intelligent Instruments Lab's Notochord
