@@ -1,0 +1,19 @@
+CLAUDE.md
+.DS_Store
+
+# Virtual environments
+venv_magenta/
+notochord_env/
+venv/
+env/
+
+# Large model files
+models/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
