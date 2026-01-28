@@ -211,11 +211,13 @@ Exported files include precise loop timing:
 **Tool:** `src/drum_variation_ai.py`
 
 **Usage:**
+
 ```bash
 python src/drum_variation_ai.py --track 0  # Generate variation for track 0
 ```
 
 **How it works:**
+
 1. Reads symbolic drum data from `track_N_drums.txt`
 2. Sends pattern to Gemini API with constraints:
    - Maintain total loop duration
@@ -226,6 +228,7 @@ python src/drum_variation_ai.py --track 0  # Generate variation for track 0
 5. Load back into ChucK using MIDI Note 43-45
 
 **Why Gemini over Magenta:**
+
 - Magenta required complex piano roll conversion from ChucK's format
 - Conversion process was unreliable and produced unacceptable results
 - Gemini works directly with symbolic CSV format
@@ -298,7 +301,7 @@ CHULOOPA/
 
 ## Research Goals
 
-**Target Conference:** ICMC 2025
+**Target Conference:** ACM Creativity and Cognition 2026
 
 **Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification with AI Variations for Live Performance"_
 
