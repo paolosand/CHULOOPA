@@ -661,8 +661,11 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'gemin
 
     # Notify ChucK that variation is ready
     if osc_client:
+        print(f"  Sending OSC: /chuloopa/variations_ready (1) to port {OSC_SEND_PORT}")
         osc_client.send_message("/chuloopa/variations_ready", 1)
         osc_client.send_message("/chuloopa/generation_progress", "Complete!")
+    else:
+        print("  WARNING: OSC client not initialized, cannot send ready notification")
 
     print(f"\n✓ Generated variation (spice: {current_spice_level:.2f})")
     print(f"{'='*60}\n")

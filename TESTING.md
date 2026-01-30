@@ -42,11 +42,13 @@ Make sure your MIDI controller is connected with:
 
 ### Step 1: Start Python Watch Mode
 
+**IMPORTANT: Must run from src directory**
+
 Open a terminal and run:
 
 ```bash
-cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA"
-python src/drum_variation_ai.py --watch
+cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA/src"
+python drum_variation_ai.py --watch
 ```
 
 **Expected output:**
@@ -69,11 +71,13 @@ Ready! Press Ctrl+C to stop
 
 ### Step 2: Start ChucK
 
+**IMPORTANT: Must run from src directory**
+
 In a **second terminal**, run:
 
 ```bash
-cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA"
-chuck src/chuloopa_drums_v2.ck
+cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA/src"
+chuck chuloopa_drums_v2.ck
 ```
 
 **Expected output:**
@@ -157,35 +161,31 @@ Loading: src/tracks/track_0/track_0_drums.txt
   Loaded 12 hits, duration: 2.183s
   Current spice level: 0.50
 
-  Generating variation 1/3 (spice: 0.50)
+  Generating variation (spice: 0.50)
   Calling Gemini API (gemini-3-flash-preview)...
   Gemini reasoning: [AI explanation of variation approach]
   Generated 15 hits (original: 12)
   Saved: src/tracks/track_0/variations/track_0_drums_var1.txt
+  Sending OSC: /chuloopa/variations_ready (1) to port 5001
 
-  Generating variation 2/3 (spice: 0.50)
-  ...
-
-  Generating variation 3/3 (spice: 0.50)
-  ...
-
-✓ Generated 3 variations (spice: 0.50)
+✓ Generated variation (spice: 0.50)
 ============================================================
 ```
 
 **In ChucK terminal:**
 ```
-Python: Generating variation 1/3...
-Python: Generating variation 2/3...
-Python: Generating variation 3/3...
+Python: Generating variation...
+OSC received: /chuloopa/generation_progress
+Python: Complete!
+OSC received: /chuloopa/variations_ready
 
-✓ Python: 3 variations ready!
-  Press D1 (Note 38) to toggle variation mode
+✓ Python: Variation ready!
+  Press D1 (Note 38) to load variation
 ```
 
-**ChuGL window:** Sphere should turn **green** and pulse (variations ready).
+**ChuGL window:** Sphere should turn **green** and pulse (variation ready).
 
-### Step 4: Toggle Variation Mode
+### Step 4: Load Variation
 
 **Press D1** on your MIDI controller.
 
@@ -194,46 +194,24 @@ Python: Generating variation 3/3...
 **In ChucK terminal:**
 ```
 ╔═══════════════════════════════════════╗
-║  VARIATION MODE: ON                  ║
+║  LOADING VARIATION                   ║
 ╚═══════════════════════════════════════╝
 
 ╔═══════════════════════════════════════╗
-║  LOADING VARIATION 2                 ║
+║  LOADING VARIATION 1                 ║
 ╚═══════════════════════════════════════╝
-Loading: tracks/track_0/variations/track_0_drums_var2.txt
+Loading: /path/to/src/tracks/track_0/variations/track_0_drums_var1.txt
 ✓ Loaded 15 drum hits
 ✓ Loop length: 2.183 seconds
 
->>> VARIATION 2 LOADED (Playback ID: 1) <<<
-
-Auto-cycling every 1 loop(s)
+>>> VARIATION LOADED (Playback ID: 1) <<<
 ```
 
-**ChuGL window:** Sphere should turn **blue** (variation mode active).
+**ChuGL window:** Sphere should turn **blue** (variation loaded).
 
-**Audio:** You should hear a variation of your loop playing with subtle differences.
+**Audio:** You should hear a variation of your loop playing with different timing, velocities, and possibly ghost notes.
 
-### Step 5: Watch Auto-Cycling
-
-Wait for the loop to complete (every ~2 seconds in this example).
-
-**Expected behavior:**
-
-At each loop boundary:
-```
-Auto-cycling to variation 3
-
-╔═══════════════════════════════════════╗
-║  LOADING VARIATION 3                 ║
-╚═══════════════════════════════════════╝
-...
-
->>> VARIATION 3 LOADED <<<
-```
-
-The variations should **cycle randomly** - you'll hear different variations each loop cycle, making the drum pattern feel "alive" and dynamic.
-
-### Step 6: Adjust Spice Level and Regenerate
+### Step 5: Adjust Spice Level and Regenerate
 
 1. **Turn the CC 18 knob** on your controller
 
@@ -249,6 +227,8 @@ Spice level: 75%
 **Expected in ChucK:**
 ```
 Sent regenerate request to Python
+OSC received: /chuloopa/generation_progress
+Python: Generating variation...
 ```
 
 **Expected in Python:**
@@ -260,36 +240,39 @@ Loading: src/tracks/track_0/track_0_drums.txt
   Loaded 12 hits, duration: 2.183s
   Current spice level: 0.75
 
-  Generating variation 1/3 (spice: 0.75)
+  Generating variation (spice: 0.75)
   ...
+  Sending OSC: /chuloopa/variations_ready (1) to port 5001
 ```
 
-The variations should be more creative/different at higher spice levels.
+The variation should be more creative/different at higher spice levels.
 
-### Step 7: Toggle Back to Original
+3. **Press D1** again to load the new variation (if you're on original) or it will auto-reload if you're already in variation mode
 
-**Press D1** again to exit variation mode.
+### Step 6: Toggle Back to Original
+
+**Press D1** again to return to original.
 
 **Expected:**
 ```
 ╔═══════════════════════════════════════╗
-║  VARIATION MODE: OFF                 ║
+║  LOADING ORIGINAL                    ║
 ╚═══════════════════════════════════════╝
 
 ╔═══════════════════════════════════════╗
 ║  LOADING DRUM DATA FROM FILE         ║
 ╚═══════════════════════════════════════╝
-Loading: tracks/track_0/track_0_drums.txt
+Loading: /path/to/src/tracks/track_0/track_0_drums.txt
 ✓ Loaded 12 drum hits
 
 Playing original loop
 ```
 
-**ChuGL:** Sphere turns **red** (original mode).
+**ChuGL:** Sphere turns **red** (original).
 
 **Audio:** You should hear your original recorded loop.
 
-### Step 8: Clear and Start Over
+### Step 7: Clear and Start Over
 
 **Press C#1** to clear the track.
 
@@ -358,7 +341,7 @@ python TESTMIDIINPUT.py
 
 ## File Structure After Testing
 
-After recording and generating variations, your directory should look like:
+After recording and generating a variation, your directory should look like:
 
 ```
 src/
@@ -366,34 +349,26 @@ src/
 │   └── track_0/
 │       ├── track_0_drums.txt          # Your original recording
 │       └── variations/
-│           ├── track_0_drums_var1.txt
-│           ├── track_0_drums_var2.txt
-│           └── track_0_drums_var3.txt
+│           └── track_0_drums_var1.txt  # Generated variation
 ├── chuloopa_drums_v2.ck
 └── drum_variation_ai.py
 ```
 
 ## Advanced Testing
 
-### Test Different Variation Cycle Intervals
-
-Edit `src/chuloopa_drums_v2.ck`:
-
-```chuck
-2 => int VARIATION_CYCLE_LOOPS;  // Change from 1 to 2 (cycles every 2 loops)
-```
-
 ### Test Manual Variation Generation
 
-Instead of watch mode, generate manually:
+Instead of watch mode, generate manually (from src directory):
 
 ```bash
+cd src
+
 # Generate for track 0 with high spice
-python src/drum_variation_ai.py --track 0 --type gemini --temperature 0.9
+python drum_variation_ai.py --track 0 --type gemini --temperature 0.9
 
 # Generate with different algorithms
-python src/drum_variation_ai.py --track 0 --type groove_preserve
-python src/drum_variation_ai.py --track 0 --type mutate
+python drum_variation_ai.py --track 0 --type groove_preserve
+python drum_variation_ai.py --track 0 --type mutate
 ```
 
 ### Test Without Gemini API
@@ -409,24 +384,24 @@ Should automatically use `groove_preserve` algorithm.
 
 ## Success Criteria
 
-✅ Python watch mode starts without errors
-✅ ChucK starts with OSC communication established
+✅ Python watch mode starts without errors (from src directory)
+✅ ChucK starts with OSC communication established (from src directory)
 ✅ Recording captures drum hits with real-time feedback
-✅ Python auto-generates 3 variations after recording
-✅ ChucK receives variations_ready OSC message
-✅ Sphere turns green when variations ready
-✅ Variation mode toggles on/off with D1
-✅ Variations auto-cycle at loop boundaries
-✅ Spice level updates in real-time
-✅ Regenerate button triggers new variations
-✅ All 3 variations sound cohesive but slightly different
-✅ Toggle back to original works correctly
+✅ Python auto-generates variation after recording
+✅ ChucK receives variations_ready OSC message (see debug output)
+✅ Sphere turns green when variation ready
+✅ D1 button loads variation (sphere turns blue)
+✅ Variation sounds different from original (timing/velocity/ghost notes)
+✅ Spice level updates in real-time (UI and OSC)
+✅ Regenerate button (D#1) triggers new variation
+✅ Higher spice = more creative variation
+✅ D1 toggles back to original works correctly (sphere turns red)
 
 ## Next Steps
 
 Once testing is complete:
-- Adjust `VARIATION_CYCLE_LOOPS` to your preference
 - Experiment with different spice levels for different musical contexts
 - Try longer/shorter loops
 - Test with different beatbox styles
-- Perform live with variation mode!
+- Generate multiple variations by regenerating with different spice levels
+- Perform live - toggle between original and variation on the fly!

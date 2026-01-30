@@ -308,10 +308,10 @@ SndBuf snare_sample[NUM_TRACKS];
 SndBuf hat_sample[NUM_TRACKS];
 Gain drum_gain[NUM_TRACKS];
 
-// Sample paths
-"samples/kick.wav" => string KICK_SAMPLE;
-"samples/snare.wav" => string SNARE_SAMPLE;
-"samples/hat.WAV" => string HAT_SAMPLE;  // Note: uppercase .WAV
+// Sample paths (work from project root or src directory)
+me.dir() + "/samples/kick.wav" => string KICK_SAMPLE;
+me.dir() + "/samples/snare.wav" => string SNARE_SAMPLE;
+me.dir() + "/samples/hat.WAV" => string HAT_SAMPLE;  // Note: uppercase .WAV
 
 for(0 => int i; i < NUM_TRACKS; i++) {
     // Setup drum sample players WITHOUT envelopes
@@ -692,7 +692,7 @@ fun void exportSymbolicData(int track) {
         return;
     }
 
-    "tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
+    me.dir() + "/tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
     FileIO fout;
     fout.open(filename, FileIO.WRITE);
 
@@ -764,7 +764,7 @@ fun void queueLoadFromFile(int track) {
 fun int loadDrumDataFromFile(int track) {
     if(track < 0 || track >= NUM_TRACKS) return 0;
 
-    "tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
+    me.dir() + "/tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
 
     <<< "" >>>;
     <<< "╔═══════════════════════════════════════╗" >>>;
@@ -947,7 +947,7 @@ fun int loadVariationFile(int track, int var_num) {
     if(track < 0 || track >= NUM_TRACKS) return 0;
     if(var_num < 1 || var_num > 3) return 0;
 
-    "tracks/track_" + track + "/variations/track_" + track + "_drums_var" + var_num + ".txt" => string filename;
+    me.dir() + "/tracks/track_" + track + "/variations/track_" + track + "_drums_var" + var_num + ".txt" => string filename;
 
     <<< "" >>>;
     <<< "╔═══════════════════════════════════════╗" >>>;
@@ -1226,6 +1226,9 @@ fun void oscListener() {
         oin => now;
 
         while(oin.recv(msg)) {
+            // Debug: print all received messages
+            <<< "OSC received:", msg.address >>>;
+
             if(msg.address == "/chuloopa/variations_ready") {
                 msg.getInt(0) => int num_variations;
                 1 => variations_ready;
@@ -1242,6 +1245,9 @@ fun void oscListener() {
             else if(msg.address == "/chuloopa/error") {
                 msg.getString(0) => string error;
                 <<< "ERROR from Python:", error >>>;
+            }
+            else {
+                <<< "Unknown OSC message:", msg.address >>>;
             }
         }
     }
