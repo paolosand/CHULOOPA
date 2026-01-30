@@ -36,7 +36,6 @@
 //---------------------------------------------------------------------
 
 // === VARIATION MODE CONFIGURATION ===
-1 => int VARIATION_CYCLE_LOOPS;      // How many loops before switching variation (1 = every loop)
 0.5 => float DEFAULT_SPICE_LEVEL;    // Default spice level (0.0-1.0)
 
 // === MIDI CONFIGURATION (SINGLE TRACK FOCUS) ===
@@ -369,19 +368,15 @@ int queued_load_track[NUM_TRACKS];  // Which tracks should load from file at nex
 int queued_clear_track[NUM_TRACKS]; // Which tracks should clear at next cycle
 
 // === VARIATION MODE STATE ===
-int variation_mode_active;           // 0 = playing original, 1 = playing variations
+int variation_mode_active;           // 0 = playing original, 1 = playing variation
 int variations_ready;                // 0 = not ready, 1 = ready to use
 float current_spice_level;           // 0.0-1.0
-int current_variation_index;         // Which variation is currently loaded (1-3)
-int variation_loop_counter;          // Count loops before switching
 string variation_status_message;     // Status message from Python
 
 // Initialize variation mode state
 0 => variation_mode_active;
 0 => variations_ready;
 DEFAULT_SPICE_LEVEL => current_spice_level;
-1 => current_variation_index;
-0 => variation_loop_counter;
 "" => variation_status_message;
 
 // Initialize track states
@@ -1070,11 +1065,9 @@ fun int loadVariationFile(int track, int var_num) {
     1 => drum_playback_active[track];
     0.8 => drum_gain[track].gain;
 
-    var_num => current_variation_index;  // Remember which variation is loaded
-
     spork ~ drumPlaybackLoop(track);
 
-    <<< ">>> VARIATION", var_num, "LOADED (Playback ID:", drum_playback_id[track], ") <<<" >>>;
+    <<< ">>> VARIATION LOADED (Playback ID:", drum_playback_id[track], ") <<<" >>>;
     <<< "" >>>;
 
     return 1;
@@ -1165,17 +1158,6 @@ fun void drumPlaybackLoop(int track) {
         if(remaining > 0::second) {
             remaining => now;
         }
-
-        // Check for variation auto-cycling (at loop boundary)
-        if(variation_mode_active && drum_playback_id[track] == my_playback_id) {
-            variation_loop_counter + 1 => variation_loop_counter;
-
-            if(variation_loop_counter >= VARIATION_CYCLE_LOOPS) {
-                0 => variation_loop_counter;
-                cycleToNextVariation();
-                return;  // Exit this playback loop, new one will start
-            }
-        }
     }
 
     <<< "Track", track, "- Drum playback stopped" >>>;
@@ -1248,8 +1230,8 @@ fun void oscListener() {
                 msg.getInt(0) => int num_variations;
                 1 => variations_ready;
                 <<< "" >>>;
-                <<< "✓ Python:", num_variations, "variations ready!" >>>;
-                <<< "  Press D1 (Note 38) to toggle variation mode" >>>;
+                <<< "✓ Python: Variation ready!" >>>;
+                <<< "  Press D1 (Note 38) to load variation" >>>;
                 <<< "" >>>;
             }
             else if(msg.address == "/chuloopa/generation_progress") {
@@ -1273,7 +1255,7 @@ fun void toggleVariationMode() {
     }
 
     if(!variations_ready) {
-        <<< "Cannot toggle variation mode: variations not ready" >>>;
+        <<< "Cannot toggle variation mode: variation not ready" >>>;
         <<< "Record a loop or press D#1 (Note 39) to regenerate" >>>;
         return;
     }
@@ -1282,24 +1264,21 @@ fun void toggleVariationMode() {
         // Switch to variation mode
         <<< "" >>>;
         <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  VARIATION MODE: ON                  ║" >>>;
+        <<< "║  LOADING VARIATION                   ║" >>>;
         <<< "╚═══════════════════════════════════════╝" >>>;
 
         1 => variation_mode_active;
-        0 => variation_loop_counter;
 
-        // Load a random variation immediately
-        Math.random2(1, 3) => int var_num;
-        loadVariationFile(0, var_num);
+        // Load the variation
+        loadVariationFile(0, 1);
 
-        <<< "Auto-cycling every", VARIATION_CYCLE_LOOPS, "loop(s)" >>>;
         <<< "" >>>;
     }
     else {
         // Switch back to original
         <<< "" >>>;
         <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  VARIATION MODE: OFF                 ║" >>>;
+        <<< "║  LOADING ORIGINAL                    ║" >>>;
         <<< "╚═══════════════════════════════════════╝" >>>;
 
         0 => variation_mode_active;
@@ -1310,23 +1289,6 @@ fun void toggleVariationMode() {
         <<< "Playing original loop" >>>;
         <<< "" >>>;
     }
-}
-
-fun void cycleToNextVariation() {
-    if(!variation_mode_active) return;
-    if(!has_loop[0]) return;
-
-    // Pick a random variation different from current
-    current_variation_index => int current;
-    0 => int new_var;
-
-    // Keep trying until we get a different one
-    while(new_var == 0 || new_var == current) {
-        Math.random2(1, 3) => new_var;
-    }
-
-    <<< "Auto-cycling to variation", new_var >>>;
-    loadVariationFile(0, new_var);
 }
 
 // === MAIN ONSET DETECTION LOOP ===
@@ -1556,18 +1518,18 @@ fun void visualizationLoop() {
         if(has_loop[0]) {
             // Determine sphere color based on mode
             if(variation_mode_active) {
-                // Blue for variation mode
+                // Blue for variation loaded
                 track_sphere[0].color(@(0.2, 0.5, 0.9));
                 track_sphere[0].sca(0.9);
             }
             else if(variations_ready && !variation_mode_active) {
-                // Green pulse for variations ready
+                // Green pulse for variation ready
                 Math.sin(now / second * 3.0) * 0.2 + 0.8 => float pulse;
                 track_sphere[0].color(@(0.2, 0.9, 0.3));
                 track_sphere[0].sca(pulse);
             }
             else {
-                // Red for original mode
+                // Red for original
                 track_sphere[0].color(@(0.9, 0.2, 0.2));
                 track_sphere[0].sca(0.8);
             }
@@ -1616,7 +1578,6 @@ if(min.num() == 0) {
 <<< "  Receiving on:", OSC_RECEIVE_PORT >>>;
 <<< "" >>>;
 <<< "Variation Settings:" >>>;
-<<< "  Auto-cycle every:", VARIATION_CYCLE_LOOPS, "loop(s)" >>>;
 <<< "  Default spice:", DEFAULT_SPICE_LEVEL >>>;
 <<< "" >>>;
 <<< "MODE: DRUMS ONLY (Real-time drum feedback)" >>>;
@@ -1713,8 +1674,8 @@ spork ~ oscListener();  // NEW: Listen for OSC messages from Python
 <<< "" >>>;
 <<< "Quick Start:" >>>;
 <<< "  1. Press C1 to record a beatbox loop" >>>;
-<<< "  2. Wait for Python to generate 3 variations" >>>;
-<<< "  3. Press D1 to toggle variation mode (auto-cycles)" >>>;
+<<< "  2. Wait for Python to generate variation" >>>;
+<<< "  3. Press D1 to load variation" >>>;
 <<< "  4. Adjust CC 18 knob and press D#1 to regenerate" >>>;
 <<< "" >>>;
 <<< "Make sure drum_variation_ai.py is running in watch mode!" >>>;

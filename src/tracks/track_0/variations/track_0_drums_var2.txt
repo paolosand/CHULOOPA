@@ -1,0 +1,13 @@
+# Track Drum Data (AI Generated Variation)
+# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
+# Classes: 0=kick, 1=snare, 2=hat
+# DELTA_TIME: Duration until next hit (for last hit: time until loop end)
+# Total loop duration: 3.210159 seconds
+0,0.000000,0.238991,0.510839
+0,0.510839,0.111915,0.423764
+0,0.934603,0.175001,0.315397
+2,1.250000,0.120000,0.326054
+0,1.576054,0.202531,0.723946
+0,2.300000,0.085000,0.254195
+1,2.554195,0.248499,0.345805
+2,2.900000,0.110000,0.310159

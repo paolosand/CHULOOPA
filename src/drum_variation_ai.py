@@ -519,7 +519,7 @@ def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPatt
 
         system_prompt = f"""You are a drum loop generator. Given an input drum pattern you will output a variation of an existing drum pattern given the previous pattern and the output variant's target "spice" level. While maintaining the same key groove and ensuring that the total loop duration is exactly the same. Ensure you always understand the user's groove first before trying to variate.
 
-CRITICAL: When generating variations, ensure they are COHESIVE with each other - they should share the same creative direction and musical approach, with only subtle differences in timing, velocity, and ghost notes to create a "live" feel. Think of them as three takes of the same creative variation, not three different ideas. The goal is that when played sequentially, they sound like a "living" drummer playing the same groove with natural human variation.
+Add natural human variation through subtle timing shifts, velocity changes, and ghost notes to make the loop feel "alive" like a real drummer playing the groove.
 
 Return the output in the following json format:
 {{"reasoning": "", "pattern": ""}}
@@ -628,7 +628,7 @@ def handle_track_cleared(address):
 
 
 def generate_variations_for_track(track_file: Path, variation_type: str = 'gemini'):
-    """Generate 3 variations for a track file and send OSC notification."""
+    """Generate 1 variation for a track file and send OSC notification."""
     global osc_client, current_spice_level
 
     print(f"Loading: {track_file}")
@@ -648,24 +648,23 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'gemin
     variations_dir = DEFAULT_VARIATIONS_DIR
     variations_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate 3 variations
-    for i in range(1, 4):
-        if osc_client:
-            osc_client.send_message("/chuloopa/generation_progress", f"Generating variation {i}/3...")
-
-        print(f"\n  Generating variation {i}/3 (spice: {current_spice_level:.2f})")
-        varied = generate_variation(pattern, variation_type, temperature=current_spice_level)
-
-        output_file = variations_dir / f"track_0_drums_var{i}.txt"
-        varied.to_file(str(output_file))
-        print(f"  Saved: {output_file}")
-
-    # Notify ChucK that variations are ready
+    # Generate 1 variation
     if osc_client:
-        osc_client.send_message("/chuloopa/variations_ready", 3)
+        osc_client.send_message("/chuloopa/generation_progress", f"Generating variation...")
+
+    print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
+    varied = generate_variation(pattern, variation_type, temperature=current_spice_level)
+
+    output_file = variations_dir / f"track_0_drums_var1.txt"
+    varied.to_file(str(output_file))
+    print(f"  Saved: {output_file}")
+
+    # Notify ChucK that variation is ready
+    if osc_client:
+        osc_client.send_message("/chuloopa/variations_ready", 1)
         osc_client.send_message("/chuloopa/generation_progress", "Complete!")
 
-    print(f"\n✓ Generated 3 variations (spice: {current_spice_level:.2f})")
+    print(f"\n✓ Generated variation (spice: {current_spice_level:.2f})")
     print(f"{'='*60}\n")
 
 
@@ -881,7 +880,7 @@ def generate_variation_for_file(filepath: str,
                                  variation_type: str = 'gemini',
                                  backup: bool = False,
                                  **kwargs) -> bool:
-    """Load pattern from file, generate 3 variations, and save to variations directory.
+    """Load pattern from file, generate 1 variation, and save to variations directory.
 
     Args:
         filepath: Path to drum pattern file
@@ -915,16 +914,15 @@ def generate_variation_for_file(filepath: str,
         variations_dir = filepath_obj.parent / "variations"
         variations_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate 3 variations
-        for i in range(1, 4):
-            print(f"\n  Generating variation {i}/3 (spice: {current_spice_level:.2f})")
-            varied = generate_variation(pattern, variation_type, temperature=current_spice_level, **kwargs)
+        # Generate 1 variation
+        print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
+        varied = generate_variation(pattern, variation_type, temperature=current_spice_level, **kwargs)
 
-            output_file = variations_dir / f"{filepath_obj.stem}_var{i}.txt"
-            varied.to_file(str(output_file))
-            print(f"  Saved: {output_file}")
+        output_file = variations_dir / f"{filepath_obj.stem}_var1.txt"
+        varied.to_file(str(output_file))
+        print(f"  Saved: {output_file}")
 
-        print(f"\n✓ Generated 3 variations successfully!")
+        print(f"\n✓ Generated variation successfully!")
 
         return True
 
@@ -951,7 +949,7 @@ Examples:
     # The watch mode will:
     #   - Listen for OSC messages from ChucK (spice level, regenerate requests)
     #   - Watch src/tracks/track_0/track_0_drums.txt for changes
-    #   - Auto-generate 3 variations to src/tracks/track_0/variations/
+    #   - Auto-generate 1 variation to src/tracks/track_0/variations/
     #   - Send OSC notifications back to ChucK when ready
 
     # Manual generation for track 0
@@ -1047,11 +1045,11 @@ OSC Communication:
     )
 
     if success:
-        print("\n✓ 3 variations generated successfully!")
-        print("Files saved to variations/ subdirectory")
-        print("Use MIDI trigger (D1/Note 38) in CHULOOPA to toggle variation mode.")
+        print("\n✓ Variation generated successfully!")
+        print("File saved to variations/ subdirectory")
+        print("Use MIDI trigger (D1/Note 38) in CHULOOPA to load variation.")
     else:
-        print("\n✗ Failed to generate variations.")
+        print("\n✗ Failed to generate variation.")
         sys.exit(1)
 
 
