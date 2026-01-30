@@ -91,7 +91,7 @@ DEFAULT_VARIATIONS_DIR = DEFAULT_TRACK_DIR / "variations"
 # OSC configuration
 OSC_RECEIVE_PORT = 5000  # Python listens on this port (ChucK sends to this)
 OSC_SEND_PORT = 5001     # Python sends to this port (ChucK listens on this)
-OSC_HOST = "localhost"
+OSC_HOST = "127.0.0.1"   # Use IP instead of "localhost" for better compatibility
 
 # Global OSC client (set up in watch mode)
 osc_client = None
