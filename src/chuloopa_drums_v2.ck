@@ -364,6 +364,7 @@ int track_loaded_from_file[NUM_TRACKS];
 // NEW: Queued action system for smooth transitions
 int queued_load_track[NUM_TRACKS];  // Which tracks should load from file at next cycle
 int queued_clear_track[NUM_TRACKS]; // Which tracks should clear at next cycle
+int queued_toggle_variation;        // Toggle variation mode at next cycle
 
 // === VARIATION MODE STATE ===
 int variation_mode_active;           // 0 = playing original, 1 = playing variation
@@ -376,6 +377,7 @@ string variation_status_message;     // Status message from Python
 0 => variations_ready;
 DEFAULT_SPICE_LEVEL => current_spice_level;
 "" => variation_status_message;
+0 => queued_toggle_variation;
 
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -1188,6 +1190,13 @@ fun void masterSyncCoordinator() {
                 <<< "" >>>;
                 <<< "=== LOOP BOUNDARY: Processing queued actions ===" >>>;
 
+                // Process queued variation toggle
+                if(queued_toggle_variation) {
+                    <<< "Executing queued variation toggle" >>>;
+                    executeToggleVariation();
+                    0 => queued_toggle_variation;  // Clear queue
+                }
+
                 // Process all queued loads
                 for(0 => int i; i < NUM_TRACKS; i++) {
                     if(queued_load_track[i]) {
@@ -1265,12 +1274,21 @@ fun void toggleVariationMode() {
         return;
     }
 
-    if(!variations_ready) {
+    if(!variations_ready && variation_mode_active == 0) {
         <<< "Cannot toggle variation mode: variation not ready" >>>;
         <<< "Record a loop or press D#1 (Note 39) to regenerate" >>>;
         return;
     }
 
+    // Queue the toggle for next loop boundary
+    1 => queued_toggle_variation;
+    <<< "" >>>;
+    <<< ">>> QUEUED: Variation toggle will occur at next loop boundary <<<" >>>;
+    <<< "" >>>;
+}
+
+// Internal function: Actually toggle variation (called at loop boundary)
+fun void executeToggleVariation() {
     if(variation_mode_active == 0) {
         // Switch to variation mode
         <<< "" >>>;
