@@ -35,34 +35,26 @@
 //   chuck src/chuloopa_drums_v2.ck
 //---------------------------------------------------------------------
 
-// === MIDI CONFIGURATION ===
-36 => int NOTE_RECORD_TRACK_0;   // C1
-37 => int NOTE_RECORD_TRACK_1;   // C#1
-38 => int NOTE_RECORD_TRACK_2;   // D1
+// === VARIATION MODE CONFIGURATION ===
+1 => int VARIATION_CYCLE_LOOPS;      // How many loops before switching variation (1 = every loop)
+0.5 => float DEFAULT_SPICE_LEVEL;    // Default spice level (0.0-1.0)
 
-39 => int NOTE_CLEAR_TRACK_0;    // D#1
-40 => int NOTE_CLEAR_TRACK_1;    // E1
-41 => int NOTE_CLEAR_TRACK_2;    // F1
+// === MIDI CONFIGURATION (SINGLE TRACK FOCUS) ===
+36 => int NOTE_RECORD_TRACK;     // C1 - Record track (press & hold)
+37 => int NOTE_CLEAR_TRACK;      // C#1 - Clear track
+38 => int NOTE_TOGGLE_VARIATION; // D1 - Toggle variation mode ON/OFF
+39 => int NOTE_REGENERATE;       // D#1 - Regenerate variations with current spice
 
-42 => int NOTE_LOAD_TRACK_0;     // F#1 - NEW: Load from file
-43 => int NOTE_LOAD_TRACK_1;     // G1 - NEW: Load from file
-44 => int NOTE_LOAD_TRACK_2;     // G#1 - NEW: Load from file
-
-45 => int NOTE_EXPORT_DATA;      // A1
-
-46 => int CC_VOLUME_TRACK_0;
-47 => int CC_VOLUME_TRACK_1;
-48 => int CC_VOLUME_TRACK_2;
-
-// Audio/Drum mix ratio per track
-51 => int CC_MIX_TRACK_0;
-52 => int CC_MIX_TRACK_1;
-53 => int CC_MIX_TRACK_2;
+18 => int CC_SPICE_LEVEL;        // CC 18 - Spice level knob (0-127 -> 0.0-1.0)
 
 0 => int MIDI_DEVICE;
 
+// === OSC CONFIGURATION ===
+5000 => int OSC_SEND_PORT;       // Send to Python on port 5000
+5001 => int OSC_RECEIVE_PORT;    // Receive from Python on port 5001
+
 // === CONFIGURATION ===
-3 => int NUM_TRACKS;
+1 => int NUM_TRACKS;  // Single track focus for now
 30::second => dur MAX_LOOP_DURATION;
 
 // === VOLUME SETTINGS ===
@@ -204,6 +196,40 @@ fun void quantizeTrack(int track) {
     <<< "  Quantized", moves_count, "hits" >>>;
 }
 
+// === OSC SETUP ===
+OscOut oout;
+oout.dest("localhost", OSC_SEND_PORT);
+
+OscIn oin;
+OscMsg msg;
+OSC_RECEIVE_PORT => oin.port;
+oin.addAddress("/chuloopa/variations_ready");
+oin.addAddress("/chuloopa/generation_progress");
+oin.addAddress("/chuloopa/error");
+
+// OSC sender functions
+fun void sendSpiceLevel(float spice) {
+    oout.start("/chuloopa/spice");
+    spice => oout.add;
+    oout.send();
+}
+
+fun void sendRegenerate() {
+    oout.start("/chuloopa/regenerate");
+    oout.send();
+    <<< "Sent regenerate request to Python" >>>;
+}
+
+fun void sendTrackCleared() {
+    oout.start("/chuloopa/track_cleared");
+    oout.send();
+}
+
+fun void sendRecordingStarted() {
+    oout.start("/chuloopa/recording_started");
+    oout.send();
+}
+
 // === CHUGL VISUALIZATION SETUP ===
 GG.scene() @=> GScene @ scene;
 GG.camera() @=> GCamera @ camera;
@@ -226,6 +252,15 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 GDirLight light --> scene;
 light.intensity(0.8);
 light.rotX(-45);
+
+// Add text display for spice level
+GText spice_text --> scene;
+spice_text.text("SPICE: 0.5");
+spice_text.posX(4.0);
+spice_text.posY(3.0);
+spice_text.posZ(0.0);
+spice_text.sca(0.5);
+spice_text.color(@(1.0, 1.0, 1.0));
 
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
@@ -332,6 +367,22 @@ int track_loaded_from_file[NUM_TRACKS];
 // NEW: Queued action system for smooth transitions
 int queued_load_track[NUM_TRACKS];  // Which tracks should load from file at next cycle
 int queued_clear_track[NUM_TRACKS]; // Which tracks should clear at next cycle
+
+// === VARIATION MODE STATE ===
+int variation_mode_active;           // 0 = playing original, 1 = playing variations
+int variations_ready;                // 0 = not ready, 1 = ready to use
+float current_spice_level;           // 0.0-1.0
+int current_variation_index;         // Which variation is currently loaded (1-3)
+int variation_loop_counter;          // Count loops before switching
+string variation_status_message;     // Status message from Python
+
+// Initialize variation mode state
+0 => variation_mode_active;
+0 => variations_ready;
+DEFAULT_SPICE_LEVEL => current_spice_level;
+1 => current_variation_index;
+0 => variation_loop_counter;
+"" => variation_status_message;
 
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -646,7 +697,7 @@ fun void exportSymbolicData(int track) {
         return;
     }
 
-    "track_" + track + "_drums.txt" => string filename;
+    "tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
     FileIO fout;
     fout.open(filename, FileIO.WRITE);
 
@@ -718,7 +769,7 @@ fun void queueLoadFromFile(int track) {
 fun int loadDrumDataFromFile(int track) {
     if(track < 0 || track >= NUM_TRACKS) return 0;
 
-    "track_" + track + "_drums.txt" => string filename;
+    "tracks/track_" + track + "/track_" + track + "_drums.txt" => string filename;
 
     <<< "" >>>;
     <<< "╔═══════════════════════════════════════╗" >>>;
@@ -896,6 +947,139 @@ fun int loadDrumDataFromFile(int track) {
     return 1;
 }
 
+// Load a specific variation file
+fun int loadVariationFile(int track, int var_num) {
+    if(track < 0 || track >= NUM_TRACKS) return 0;
+    if(var_num < 1 || var_num > 3) return 0;
+
+    "tracks/track_" + track + "/variations/track_" + track + "_drums_var" + var_num + ".txt" => string filename;
+
+    <<< "" >>>;
+    <<< "╔═══════════════════════════════════════╗" >>>;
+    <<< "║  LOADING VARIATION", var_num, "                 ║" >>>;
+    <<< "╚═══════════════════════════════════════╝" >>>;
+    <<< "Loading:", filename >>>;
+
+    FileIO fin;
+    fin.open(filename, FileIO.READ);
+
+    if(!fin.good()) {
+        <<< "ERROR: Could not open file:", filename >>>;
+        return 0;
+    }
+
+    // Stop existing drum playback
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    0 => drum_playback_active[track];
+
+    // Clear existing data
+    clearSymbolicData(track);
+
+    // Load data (same logic as loadDrumDataFromFile)
+    int loaded_classes[0];
+    float loaded_timestamps[0];
+    float loaded_velocities[0];
+    float loaded_delta_times[0];
+
+    0.0 => float max_timestamp;
+    0.0 => float last_delta_time;
+    0 => int line_count;
+    0 => int has_delta_time_column;
+
+    while(fin.more()) {
+        fin.readLine() => string line;
+        line_count++;
+
+        if(line.length() == 0) continue;
+        if(line.substring(0, 1) == "#") continue;
+
+        StringTokenizer tok;
+        tok.set(line);
+        tok.delims(",");
+
+        if(!tok.more()) continue;
+
+        Std.atoi(tok.next()) => int drum_class;
+        if(!tok.more()) continue;
+        Std.atof(tok.next()) => float timestamp;
+        if(!tok.more()) continue;
+        Std.atof(tok.next()) => float velocity;
+
+        0.0 => float delta_time;
+        if(tok.more()) {
+            Std.atof(tok.next()) => delta_time;
+            1 => has_delta_time_column;
+            delta_time => last_delta_time;
+        }
+
+        if(drum_class < 0 || drum_class > 2) continue;
+
+        loaded_classes << drum_class;
+        loaded_timestamps << timestamp;
+        loaded_velocities << velocity;
+        loaded_delta_times << delta_time;
+
+        if(timestamp > max_timestamp) {
+            timestamp => max_timestamp;
+        }
+    }
+
+    fin.close();
+
+    if(loaded_classes.size() == 0) {
+        <<< "ERROR: No valid drum data found in variation file" >>>;
+        return 0;
+    }
+
+    // Copy to track arrays
+    for(0 => int i; i < loaded_classes.size(); i++) {
+        track_drum_classes[track] << loaded_classes[i];
+        track_drum_timestamps[track] << loaded_timestamps[i];
+        track_drum_velocities[track] << loaded_velocities[i];
+    }
+
+    // Calculate loop duration
+    0.0 => float file_loop_duration;
+    if(has_delta_time_column && last_delta_time > 0.0) {
+        max_timestamp + last_delta_time => file_loop_duration;
+    } else {
+        max_timestamp + 0.5 => file_loop_duration;
+    }
+
+    // Use existing loop duration if set
+    if(has_loop[track] && loop_length[track] > 0.0) {
+        loop_length[track] => float target_duration;
+        file_loop_duration => float original_duration;
+
+        if(original_duration > 0.001) {
+            target_duration / original_duration => float scale_ratio;
+            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
+                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
+            }
+        }
+    } else {
+        file_loop_duration => loop_length[track];
+        loop_length[track]::second => recorded_duration[track];
+    }
+
+    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
+
+    1 => track_loaded_from_file[track];
+    1 => has_loop[track];
+    1 => drum_playback_active[track];
+    0.8 => drum_gain[track].gain;
+
+    var_num => current_variation_index;  // Remember which variation is loaded
+
+    spork ~ drumPlaybackLoop(track);
+
+    <<< ">>> VARIATION", var_num, "LOADED (Playback ID:", drum_playback_id[track], ") <<<" >>>;
+    <<< "" >>>;
+
+    return 1;
+}
+
 // === DRUM PLAYBACK FUNCTIONS ===
 
 fun void playDrumHit(int track, int drum_class, float velocity) {
@@ -981,6 +1165,17 @@ fun void drumPlaybackLoop(int track) {
         if(remaining > 0::second) {
             remaining => now;
         }
+
+        // Check for variation auto-cycling (at loop boundary)
+        if(variation_mode_active && drum_playback_id[track] == my_playback_id) {
+            variation_loop_counter + 1 => variation_loop_counter;
+
+            if(variation_loop_counter >= VARIATION_CYCLE_LOOPS) {
+                0 => variation_loop_counter;
+                cycleToNextVariation();
+                return;  // Exit this playback loop, new one will start
+            }
+        }
     }
 
     <<< "Track", track, "- Drum playback stopped" >>>;
@@ -1039,6 +1234,99 @@ fun void masterSyncCoordinator() {
             100::ms => now;
         }
     }
+}
+
+// === OSC LISTENER ===
+fun void oscListener() {
+    <<< "OSC listener started on port", OSC_RECEIVE_PORT >>>;
+
+    while(true) {
+        oin => now;
+
+        while(oin.recv(msg)) {
+            if(msg.address == "/chuloopa/variations_ready") {
+                msg.getInt(0) => int num_variations;
+                1 => variations_ready;
+                <<< "" >>>;
+                <<< "✓ Python:", num_variations, "variations ready!" >>>;
+                <<< "  Press D1 (Note 38) to toggle variation mode" >>>;
+                <<< "" >>>;
+            }
+            else if(msg.address == "/chuloopa/generation_progress") {
+                msg.getString(0) => string status;
+                status => variation_status_message;
+                <<< "Python:", status >>>;
+            }
+            else if(msg.address == "/chuloopa/error") {
+                msg.getString(0) => string error;
+                <<< "ERROR from Python:", error >>>;
+            }
+        }
+    }
+}
+
+// === VARIATION MODE FUNCTIONS ===
+fun void toggleVariationMode() {
+    if(!has_loop[0]) {
+        <<< "Cannot toggle variation mode: no loop recorded" >>>;
+        return;
+    }
+
+    if(!variations_ready) {
+        <<< "Cannot toggle variation mode: variations not ready" >>>;
+        <<< "Record a loop or press D#1 (Note 39) to regenerate" >>>;
+        return;
+    }
+
+    if(variation_mode_active == 0) {
+        // Switch to variation mode
+        <<< "" >>>;
+        <<< "╔═══════════════════════════════════════╗" >>>;
+        <<< "║  VARIATION MODE: ON                  ║" >>>;
+        <<< "╚═══════════════════════════════════════╝" >>>;
+
+        1 => variation_mode_active;
+        0 => variation_loop_counter;
+
+        // Load a random variation immediately
+        Math.random2(1, 3) => int var_num;
+        loadVariationFile(0, var_num);
+
+        <<< "Auto-cycling every", VARIATION_CYCLE_LOOPS, "loop(s)" >>>;
+        <<< "" >>>;
+    }
+    else {
+        // Switch back to original
+        <<< "" >>>;
+        <<< "╔═══════════════════════════════════════╗" >>>;
+        <<< "║  VARIATION MODE: OFF                 ║" >>>;
+        <<< "╚═══════════════════════════════════════╝" >>>;
+
+        0 => variation_mode_active;
+
+        // Load original file
+        loadDrumDataFromFile(0);
+
+        <<< "Playing original loop" >>>;
+        <<< "" >>>;
+    }
+}
+
+fun void cycleToNextVariation() {
+    if(!variation_mode_active) return;
+    if(!has_loop[0]) return;
+
+    // Pick a random variation different from current
+    current_variation_index => int current;
+    0 => int new_var;
+
+    // Keep trying until we get a different one
+    while(new_var == 0 || new_var == current) {
+        Math.random2(1, 3) => new_var;
+    }
+
+    <<< "Auto-cycling to variation", new_var >>>;
+    loadVariationFile(0, new_var);
 }
 
 // === MAIN ONSET DETECTION LOOP ===
@@ -1249,27 +1537,57 @@ fun void visualizationLoop() {
     while(true) {
         GG.nextFrame() => now;
 
-        for(0 => int i; i < NUM_TRACKS; i++) {
-            if(has_loop[i]) {
-                // Pulse on drum hits (check recent activity)
-                0.8 => float scale;
-                track_sphere[i].sca(scale);
-                track_sphere[i].rotY(0.02);
-            } else {
-                track_sphere[i].sca(0.3);
-                track_sphere[i].rotY(0.005);
+        // Update spice level display
+        "SPICE: " + ((current_spice_level * 100) $ int) + "%" => string spice_str;
+        spice_text.text(spice_str);
+
+        // Color-code spice level: blue (0.0) -> orange (0.5) -> red (1.0)
+        if(current_spice_level < 0.5) {
+            // Blue to orange
+            current_spice_level * 2.0 => float t;
+            spice_text.color(@(0.2 + t * 0.8, 0.5 + t * 0.5, 1.0 - t * 1.0));
+        } else {
+            // Orange to red
+            (current_spice_level - 0.5) * 2.0 => float t;
+            spice_text.color(@(1.0, 1.0 - t * 0.5, 0.0));
+        }
+
+        // Update sphere visualization for track 0
+        if(has_loop[0]) {
+            // Determine sphere color based on mode
+            if(variation_mode_active) {
+                // Blue for variation mode
+                track_sphere[0].color(@(0.2, 0.5, 0.9));
+                track_sphere[0].sca(0.9);
             }
+            else if(variations_ready && !variation_mode_active) {
+                // Green pulse for variations ready
+                Math.sin(now / second * 3.0) * 0.2 + 0.8 => float pulse;
+                track_sphere[0].color(@(0.2, 0.9, 0.3));
+                track_sphere[0].sca(pulse);
+            }
+            else {
+                // Red for original mode
+                track_sphere[0].color(@(0.9, 0.2, 0.2));
+                track_sphere[0].sca(0.8);
+            }
+            track_sphere[0].rotY(0.02);
+        } else {
+            // Gray when no loop
+            track_sphere[0].color(@(0.3, 0.3, 0.3));
+            track_sphere[0].sca(0.3);
+            track_sphere[0].rotY(0.005);
         }
     }
 }
 
 // === MIDI LISTENER ===
 MidiIn min;
-MidiMsg msg;
+MidiMsg midi_msg;
 
 <<< "" >>>;
 <<< "=====================================================" >>>;
-<<< "          CHULOOPA - Drum Looper System V2" >>>;
+<<< "      CHULOOPA - AI Drum Variation System" >>>;
 <<< "=====================================================" >>>;
 
 if(min.num() == 0) {
@@ -1280,82 +1598,90 @@ if(min.num() == 0) {
     }
 }
 
-<<< "Tracks:", NUM_TRACKS >>>;
-<<< "Max loop duration:", MAX_LOOP_DURATION / second, "sec" >>>;
 <<< "" >>>;
 <<< "Drum Samples Loaded:" >>>;
 <<< "  Kick:", kick_sample[0].samples(), "samples" >>>;
 <<< "  Snare:", snare_sample[0].samples(), "samples" >>>;
 <<< "  Hat:", hat_sample[0].samples(), "samples" >>>;
 <<< "" >>>;
-<<< "MIDI Controls:" >>>;
-<<< "  RECORD: C1 (36), C#1 (37), D1 (38)" >>>;
-<<< "  CLEAR: D#1 (39), E1 (40), F1 (41)" >>>;
-<<< "  LOAD FILE: G1 (43), G#1 (44), A1 (45)" >>>;
-<<< "  EXPORT: A#1 (46)" >>>;
-<<< "  VOLUME: CC 45-47" >>>;
+<<< "MIDI Controls (Single Track):" >>>;
+<<< "  C1  (36): Record track (press & hold)" >>>;
+<<< "  C#1 (37): Clear track" >>>;
+<<< "  D1  (38): Toggle variation mode ON/OFF" >>>;
+<<< "  D#1 (39): Regenerate variations" >>>;
+<<< "  CC  18:   Spice level knob (0.0-1.0)" >>>;
 <<< "" >>>;
-<<< "MODE: DRUMS ONLY (Real-time drum feedback during recording)" >>>;
+<<< "OSC Communication:" >>>;
+<<< "  Sending to: localhost:", OSC_SEND_PORT >>>;
+<<< "  Receiving on:", OSC_RECEIVE_PORT >>>;
+<<< "" >>>;
+<<< "Variation Settings:" >>>;
+<<< "  Auto-cycle every:", VARIATION_CYCLE_LOOPS, "loop(s)" >>>;
+<<< "  Default spice:", DEFAULT_SPICE_LEVEL >>>;
+<<< "" >>>;
+<<< "MODE: DRUMS ONLY (Real-time drum feedback)" >>>;
 <<< "=====================================================" >>>;
 
 int ignore_cc[128];
-for(0 => int i; i < 32; i++) 1 => ignore_cc[i];
+for(0 => int i; i < 128; i++) 1 => ignore_cc[i];
 
-0 => ignore_cc[CC_VOLUME_TRACK_0];
-0 => ignore_cc[CC_VOLUME_TRACK_1];
-0 => ignore_cc[CC_VOLUME_TRACK_2];
-0 => ignore_cc[CC_MIX_TRACK_0];
-0 => ignore_cc[CC_MIX_TRACK_1];
-0 => ignore_cc[CC_MIX_TRACK_2];
+0 => ignore_cc[CC_SPICE_LEVEL];  // Only listen to CC 18 (spice)
 
 fun void midiListener() {
     while(true) {
         min => now;
 
-        while(min.recv(msg)) {
-            msg.data1 => int status;
-            msg.data2 => int data1;
-            msg.data3 => int data2;
+        while(min.recv(midi_msg)) {
+            midi_msg.data1 => int status;
+            midi_msg.data2 => int data1;
+            midi_msg.data3 => int data2;
             status & 0xF0 => int messageType;
 
             // Control Change
             if(messageType == 0xB0) {
                 if(!ignore_cc[data1]) {
-                    if(data1 == CC_VOLUME_TRACK_0) setTrackVolume(0, data2 / 127.0);
-                    else if(data1 == CC_VOLUME_TRACK_1) setTrackVolume(1, data2 / 127.0);
-                    else if(data1 == CC_VOLUME_TRACK_2) setTrackVolume(2, data2 / 127.0);
-                    else if(data1 == CC_MIX_TRACK_0) setTrackAudioDrumMix(0, data2 / 127.0);
-                    else if(data1 == CC_MIX_TRACK_1) setTrackAudioDrumMix(1, data2 / 127.0);
-                    else if(data1 == CC_MIX_TRACK_2) setTrackAudioDrumMix(2, data2 / 127.0);
+                    // Spice level knob
+                    if(data1 == CC_SPICE_LEVEL) {
+                        data2 / 127.0 => current_spice_level;
+                        sendSpiceLevel(current_spice_level);
+                        <<< "Spice level:", (current_spice_level * 100) $ int, "%" >>>;
+                    }
                 }
             }
 
             // Note On
             else if(messageType == 0x90 && data2 > 0) {
-                // Recording
-                if(data1 == NOTE_RECORD_TRACK_0) startRecording(0);
-                else if(data1 == NOTE_RECORD_TRACK_1) startRecording(1);
-                else if(data1 == NOTE_RECORD_TRACK_2) startRecording(2);
+                // Recording (C1)
+                if(data1 == NOTE_RECORD_TRACK) {
+                    startRecording(0);
+                    sendRecordingStarted();
+                }
 
-                // Clearing (queued for next cycle)
-                else if(data1 == NOTE_CLEAR_TRACK_0) { 1 => queued_clear_track[0]; <<< ">>> QUEUED: Track 0 will clear at next loop cycle <<<" >>>; }
-                else if(data1 == NOTE_CLEAR_TRACK_1) { 1 => queued_clear_track[1]; <<< ">>> QUEUED: Track 1 will clear at next loop cycle <<<" >>>; }
-                else if(data1 == NOTE_CLEAR_TRACK_2) { 1 => queued_clear_track[2]; <<< ">>> QUEUED: Track 2 will clear at next loop cycle <<<" >>>; }
+                // Clear track (C#1)
+                else if(data1 == NOTE_CLEAR_TRACK) {
+                    clearTrack(0);
+                    sendTrackCleared();
+                    0 => variations_ready;  // Variations no longer valid
+                    0 => variation_mode_active;  // Exit variation mode
+                }
 
-                // NEW: Load from file (queued for next cycle)
-                else if(data1 == NOTE_LOAD_TRACK_0) queueLoadFromFile(0);
-                else if(data1 == NOTE_LOAD_TRACK_1) queueLoadFromFile(1);
-                else if(data1 == NOTE_LOAD_TRACK_2) queueLoadFromFile(2);
+                // Toggle variation mode (D1)
+                else if(data1 == NOTE_TOGGLE_VARIATION) {
+                    toggleVariationMode();
+                }
 
-                // Export
-                else if(data1 == NOTE_EXPORT_DATA) exportAllSymbolicData();
+                // Regenerate variations (D#1)
+                else if(data1 == NOTE_REGENERATE) {
+                    sendRegenerate();
+                }
             }
 
             // Note Off
             else if(messageType == 0x80 || (messageType == 0x90 && data2 == 0)) {
-                if(data1 == NOTE_RECORD_TRACK_0) stopRecording(0);
-                else if(data1 == NOTE_RECORD_TRACK_1) stopRecording(1);
-                else if(data1 == NOTE_RECORD_TRACK_2) stopRecording(2);
+                // Stop recording (C1)
+                if(data1 == NOTE_RECORD_TRACK) {
+                    stopRecording(0);
+                }
             }
         }
     }
@@ -1379,10 +1705,19 @@ if(trainKNNFromCSV("training_samples.csv")) {
 spork ~ midiListener();
 spork ~ visualizationLoop();
 spork ~ mainOnsetDetectionLoop();
-spork ~ masterSyncCoordinator();  // NEW: Manages loop boundaries and queued actions
+spork ~ masterSyncCoordinator();
+spork ~ oscListener();  // NEW: Listen for OSC messages from Python
 
-<<< "CHULOOPA Drums V2 running! Ready to loop..." >>>;
-<<< "Press G1, G#1, or A1 to load drum patterns from files (queued for next cycle)!" >>>;
+<<< "" >>>;
+<<< "✓ CHULOOPA ready!" >>>;
+<<< "" >>>;
+<<< "Quick Start:" >>>;
+<<< "  1. Press C1 to record a beatbox loop" >>>;
+<<< "  2. Wait for Python to generate 3 variations" >>>;
+<<< "  3. Press D1 to toggle variation mode (auto-cycles)" >>>;
+<<< "  4. Adjust CC 18 knob and press D#1 to regenerate" >>>;
+<<< "" >>>;
+<<< "Make sure drum_variation_ai.py is running in watch mode!" >>>;
 <<< "" >>>;
 
 while(true) {

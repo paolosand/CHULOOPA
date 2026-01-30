@@ -1,0 +1,5 @@
+numpy>=1.26.4
+watchdog>=3.0.0
+google-genai>=0.2.0
+python-dotenv>=1.0.0
+python-osc>=1.8.0
