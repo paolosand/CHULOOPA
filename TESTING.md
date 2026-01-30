@@ -35,8 +35,11 @@ export GEMINI_API_KEY=your_api_key_here
 ### 3. Connect MIDI Controller
 
 Make sure your MIDI controller is connected with:
-- **CC 18** mapped to a knob (spice level)
-- **Notes 36-39** (C1, C#1, D1, D#1) mapped to buttons
+- **CC 18** mapped to a knob (spice level control)
+- **Note 36** (C1): Record button
+- **Note 37** (C#1): Clear button
+- **Note 38** (D1): Toggle variation button
+- **Note 39** (D#1): Regenerate button
 
 ## Testing Workflow
 
@@ -96,9 +99,9 @@ Drum Samples Loaded:
 MIDI Controls (Single Track):
   C1  (36): Record track (press & hold)
   C#1 (37): Clear track
-  D1  (38): Toggle variation mode ON/OFF
-  D#1 (39): Regenerate variations
-  CC  18:   Spice level knob (0.0-1.0)
+  D1  (38): Toggle variation mode ON/OFF (queued at loop boundary)
+  D#1 (39): Regenerate with current spice level
+  CC  18:   Spice level knob (0.0-1.0, real-time visual feedback)
 
 OSC Communication:
   Sending to: localhost: 5000
@@ -220,7 +223,10 @@ Loading: /path/to/src/tracks/track_0/variations/track_0_drums_var1.txt
 Spice level: 75%
 ```
 
-**ChuGL:** Spice text updates in real-time, color changes (blue → orange → red).
+**ChuGL:** Spice text updates in real-time with color coding:
+- **0.0-0.3**: Blue text (low spice, conservative variations)
+- **0.4-0.6**: Orange text (medium spice, balanced creativity)
+- **0.7-1.0**: Red text (high spice, experimental variations)
 
 2. **Press D#1** to regenerate with new spice level
 

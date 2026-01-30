@@ -11,12 +11,13 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 ### Core Features
 
 - **Real-time Beatbox Transcription** - Vocal input → Drum samples (instant feedback)
-- **3-Track Looper** - Master sync prevents drift across tracks
+- **Single-Track Looper** - Master sync system (multi-track coming in Phase 3)
 - **KNN Classifier** - User-trainable personalized drum detection
+- **AI Variation Generation** - Gemini-powered drum pattern variations with real-time spice control
+- **OSC Integration** - Automatic Python-ChucK communication for seamless AI workflow
 - **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
 - **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
-- **AI Variation Generation** - Gemini-powered drum pattern variations with consistent tempo and loop duration
-- **ChuGL Visualization** - Real-time visual feedback per track
+- **ChuGL Visualization** - Real-time visual feedback with color-coded states
 
 ## Quick Start
 
@@ -37,55 +38,79 @@ chuck src/drum_sample_recorder.ck
 
 This creates `training_samples.csv` with your personalized beatbox samples.
 
-### 2. Run CHULOOPA Drums V2
+### 2. Start Python Watch Mode (Terminal 1)
+
+**IMPORTANT: Must run from src directory**
 
 ```bash
-chuck src/chuloopa_drums_v2.ck
+cd src
+python drum_variation_ai.py --watch
 ```
 
-**Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file.
-
-### 3. (Optional) Generate AI Variations
-
-After recording loops, create AI variations:
-
-```bash
-python src/drum_variation_ai.py --track 0
-```
+This starts the AI variation engine that auto-generates variations when you record loops.
 
 **Requirements:** Set `GEMINI_API_KEY` environment variable with your Gemini API key.
 
-### 4. MIDI Controls
+### 3. Run CHULOOPA Drums V2 (Terminal 2)
+
+**IMPORTANT: Must run from src directory**
+
+```bash
+cd src
+chuck chuloopa_drums_v2.ck
+```
+
+**Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file. OSC connection to Python is established automatically.
+
+### 4. MIDI Controls (Single Track)
 
 **Recording (Press & Hold):**
 
-- **MIDI Note 36, 37, 38** (C1, C#1, D1): Record tracks 0-2
+- **MIDI Note 36** (C1): Record track 0
   - _Hear drum samples in real-time as you beatbox!_
   - Release to stop recording
+  - Python auto-generates variation when recording completes
 
-**Clearing (Queued for next cycle):**
+**Clearing:**
 
-- **MIDI Note 39, 40, 41** (D#1, E1, F1): Clear tracks 0-2
+- **MIDI Note 37** (C#1): Clear track 0
 
-**Load Pattern from File (Queued for next cycle):**
+**Variation Control:**
 
-- **MIDI Note 42, 43, 44** (F3, F#1, G1): Load `track_N_drums.txt` into tracks 0-2
+- **MIDI Note 38** (D1): Toggle variation mode ON/OFF
+  - Queued at loop boundary for smooth transitions
+  - ON: Plays AI-generated variation (sphere turns blue)
+  - OFF: Plays original recording (sphere turns red)
 
-**Export:**
+- **MIDI Note 39** (D#1): Regenerate variations with current spice level
+  - Python generates new variation using current CC 18 value
 
-- **MIDI Note 45** (A1): Manually export all tracks (auto-exports after recording)
+**Spice Control:**
 
-**Volume:**
+- **CC 18**: Spice level knob (0.0-1.0)
+  - **Low (0.0-0.3)**: Conservative, subtle variations (blue text)
+  - **Medium (0.4-0.6)**: Balanced creativity (orange text)
+  - **High (0.7-1.0)**: Bold, experimental variations (red text)
+  - Visual feedback updates in real-time in ChuGL window
 
-- **CC 46, 47, 48**: Drum volume for tracks 0-2
-
-**Audio/Drum Mix:**
-
-- **CC 51, 52, 53**: Audio/Drum mix control for tracks 0-2
+**Future (3-Track Version):**
+- Additional tracks will use Notes 40-45 and CC controls 46-53
 
 ---
 
 ## Complete Workflow
+
+### Initial Setup (One-Time)
+
+1. **Terminal 1:** Start Python watch mode
+   ```bash
+   cd src && python drum_variation_ai.py --watch
+   ```
+2. **Terminal 2:** Start ChucK
+   ```bash
+   cd src && chuck chuloopa_drums_v2.ck
+   ```
+3. **Verify:** Both terminals show "OSC connection established"
 
 ### Recording a Loop
 
@@ -97,35 +122,42 @@ python src/drum_variation_ai.py --track 0
    - **Plays drum samples immediately** (real-time feedback)
    - Stores timing data with delta_time precision
 4. **Release Note 36** to stop
-   - Auto-exports to `track_0_drums.txt`
+   - Auto-exports to `src/tracks/track_0/track_0_drums.txt`
    - Starts looping the drum pattern
+   - **Python auto-generates variation** (watch mode detects file change)
+   - ChucK sphere turns **green** when variation ready
 
-### Loading a Saved Pattern
+### Loading AI Variation
 
-1. **Press MIDI Note 43** (G1) mid-loop to queue load
-2. Console: `>>> QUEUED: Track 0 will load from file at next loop cycle <<<`
+1. **Press MIDI Note 38** (D1) to toggle variation ON
+2. Console: `>>> QUEUED: Variation toggle will occur at next loop boundary <<<`
 3. **Current loop continues** until boundary
 4. **At loop boundary:**
-   - Old drums stop cleanly
-   - New drums from file start immediately
-   - Zero overlap, zero drift!
+   - Loads `src/tracks/track_0/variations/track_0_drums_var1.txt`
+   - Sphere turns **blue** (variation mode)
+   - Hear AI-generated variation with different timing/velocities/ghost notes
 
-### Generating AI Variations
+### Adjusting Spice Level
 
-1. After recording a drum pattern, export is auto-saved to `track_N_drums.txt`
-2. Run the variation generator:
-   ```bash
-   python drum_variation_ai.py --track 0
-   ```
-3. Gemini API generates a variation maintaining total loop duration and tempo
-4. New variation overwrites `track_0_drums.txt`
-5. Load the variation back into ChucK (Note 43/G1) to hear the AI-generated pattern
+1. **Turn CC 18 knob** on your MIDI controller
+2. **Watch ChuGL window:** Text color changes (blue → orange → red)
+3. **Console shows:** "Spice level: 75%"
+4. **Press D#1** (Note 39) to regenerate with new spice
+5. **Python generates** new variation, sends OSC when ready
+6. **Press D1** to load the new variation
 
-### Layering Multiple Tracks
+### Toggling Back to Original
 
+1. **Press D1** again (already in variation mode)
+2. Sphere turns **red** (original mode)
+3. Hear your original recorded loop
+
+### Future: Layering Multiple Tracks
+
+Multi-track support coming in Phase 3:
 1. Record Track 0 (Note 36/C1): Kick pattern
-2. Record Track 1 (Note 37/C#1): Snare pattern
-3. Record Track 2 (Note 38/D1): Hi-hat pattern
+2. Record Track 1 (Note 40/E1): Snare pattern
+3. Record Track 2 (Note 41/F1): Hi-hat pattern
 4. All tracks stay perfectly in sync (master sync system)
 
 ---
@@ -135,17 +167,25 @@ python src/drum_variation_ai.py --track 0
 ### Complete Pipeline
 
 ```
-1. Beatbox Input (Microphone)
+1. Start Python Watch Mode (Terminal 1) + Start ChucK (Terminal 2)
    ↓
-2. Real-time Transcription (Onset Detection + KNN Classification)
+2. OSC Connection Established (Python ↔ ChucK)
    ↓
-3. Drum Sample Playback (Instant Feedback)
+3. Beatbox Input (Microphone)
    ↓
-4. Symbolic Data Export (track_N_drums.txt with delta_time)
+4. Real-time Transcription (Onset Detection + KNN Classification)
    ↓
-5. AI Variation Generation (Gemini API)
+5. Drum Sample Playback (Instant Feedback)
    ↓
-6. Variation Playback (Load back into ChucK)
+6. Symbolic Data Export (track_0_drums.txt with delta_time)
+   ↓
+7. Python Watchdog Detects File Change
+   ↓
+8. AI Variation Generation (Gemini API with current spice level)
+   ↓
+9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
+   ↓
+10. User Toggles Variation (D1) or Adjusts Spice (CC 18) + Regenerates (D#1)
 ```
 
 ### Drums-Only Mode
@@ -206,26 +246,95 @@ Exported files include precise loop timing:
 
 **Key:** Last hit's delta_time (0.444082s) ensures perfect loop timing!
 
+### OSC Integration (Python ↔ ChucK)
+
+The system uses OSC (Open Sound Control) for real-time bidirectional communication:
+
+**Ports:**
+- ChucK sends to: `localhost:5000` (Python receives)
+- Python sends to: `127.0.0.1:5001` (ChucK receives)
+
+**Important:** Use `127.0.0.1` instead of `localhost` for Python client - the pythonosc library doesn't resolve `localhost` properly on some systems.
+
+**OSC Messages:**
+
+| Address | Direction | Data Type | Purpose |
+|---------|-----------|-----------|---------|
+| `/chuloopa/generation_progress` | Python → ChucK | string | Status updates during generation |
+| `/chuloopa/variations_ready` | Python → ChucK | int | Signals variation is complete |
+| `/chuloopa/regenerate` | ChucK → Python | none | Request new variation with current spice |
+| `/chuloopa/spice_level` | ChucK → Python | float | Update spice level (0.0-1.0) |
+| `/chuloopa/clear` | ChucK → Python | none | Track cleared notification |
+
+**Workflow:**
+1. User records loop (C1) in ChucK
+2. ChucK exports `track_0_drums.txt`
+3. Python watchdog detects file change
+4. Python auto-generates variation with current spice level
+5. Python sends `/chuloopa/variations_ready` to ChucK
+6. ChucK sphere turns green (variation ready)
+7. User presses D1 to load variation
+
+### ChuGL Visual Feedback
+
+The visualization window shows a single sphere with color-coded states:
+
+**Sphere Colors:**
+- **Gray**: No loop recorded
+- **Red**: Playing original loop
+- **Green** (pulsing): Variation ready (press D1 to load)
+- **Blue**: Playing variation
+
+**Spice Level Display:**
+
+Text shows current spice level with color coding:
+- **0.0-0.3**: Blue text (conservative variations)
+- **0.4-0.6**: Orange text (balanced creativity)
+- **0.7-1.0**: Red text (experimental variations)
+
+Updates in real-time as you turn CC 18 knob!
+
 ### AI Variation Generation
 
 **Tool:** `src/drum_variation_ai.py`
 
-**Usage:**
+**Watch Mode (Primary Usage):**
 
 ```bash
-python src/drum_variation_ai.py --track 0  # Generate variation for track 0
+cd src
+python drum_variation_ai.py --watch
+```
+
+Automatically generates variations when you record loops. Keep this running in a separate terminal.
+
+**Manual Mode (Optional):**
+
+```bash
+cd src
+python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 ```
 
 **How it works:**
 
-1. Reads symbolic drum data from `track_N_drums.txt`
-2. Sends pattern to Gemini API with constraints:
+1. **File watching:** Python watchdog monitors `src/tracks/track_0/track_0_drums.txt`
+2. **Auto-trigger:** When file changes (after recording), generation starts automatically
+3. **Gemini API call:** Sends pattern with constraints:
    - Maintain total loop duration
    - Keep consistent tempo
+   - Apply spice level for creativity control
    - Preserve drum pattern structure (kick/snare/hat classes)
-3. Gemini generates musically coherent variation
-4. Overwrites original file with new variation
-5. Load back into ChucK using MIDI Note 43-45
+4. **Save variation:** Writes to `src/tracks/track_0/variations/track_0_drums_var1.txt`
+5. **OSC notification:** Sends `/chuloopa/variations_ready` to ChucK
+6. **User loads:** Press D1 to hear the variation
+
+**Spice Level Control:**
+
+The "spice" parameter (0.0-1.0) controls variation creativity:
+- **Low spice (0.0-0.3):** Subtle timing/velocity adjustments, maintains original structure
+- **Medium spice (0.4-0.6):** Balanced changes, occasional ghost notes
+- **High spice (0.7-1.0):** Bold transformations, polyrhythmic variations
+
+Adjust with CC 18 knob, then press D#1 to regenerate.
 
 **Why Gemini over Magenta:**
 
@@ -233,6 +342,7 @@ python src/drum_variation_ai.py --track 0  # Generate variation for track 0
 - Conversion process was unreliable and produced unacceptable results
 - Gemini works directly with symbolic CSV format
 - Consistently maintains loop duration and tempo constraints
+- OSC integration enables seamless live workflow
 - Simple, reliable, and convenient alternative
 
 ---
@@ -243,59 +353,83 @@ python src/drum_variation_ai.py --track 0  # Generate variation for track 0
 CHULOOPA/
 ├── src/
 │   ├── chuloopa_drums_v2.ck         # Main system (CURRENT)
-│   ├── chuloopa_drums.ck            # Original version (no file loading)
-│   ├── chuloopa_main.ck             # OLD: Melody-based system (archived)
+│   ├── drum_variation_ai.py         # AI variation generator with OSC
 │   ├── drum_sample_recorder.ck      # Training data collector
-│   ├── drum_variation_ai.py         # Gemini AI variation generator
-│   └── feature_extraction.ck        # ChucK feature extraction
+│   ├── feature_extraction.ck        # ChucK feature extraction
+│   │
+│   ├── tracks/                       # Generated drum data (auto-created)
+│   │   └── track_0/
+│   │       ├── track_0_drums.txt    # Original recording
+│   │       └── variations/
+│   │           └── track_0_drums_var1.txt  # AI-generated variation
+│   │
+│   ├── osc_test_chuck.ck            # OSC test (ChucK sender)
+│   ├── osc_test_python.ck           # OSC test (ChucK receiver)
+│   ├── osc_test_python.py           # OSC test (Python sender)
+│   └── osc_test_python_alt.py       # OSC test (127.0.0.1 fix)
 │
 ├── samples/                          # Drum samples
 │   ├── kick.wav
 │   ├── snare.wav
 │   └── hat.WAV
 │
+├── requirements.txt                  # Python dependencies (OSC, Gemini, etc.)
 ├── train_classifier.py               # KNN training script
 ├── training_samples.csv              # Training data (generated)
-├── track_0_drums.txt                 # Exported drum patterns (generated)
-├── track_1_drums.txt
-├── track_2_drums.txt
+├── drum_classifier.pkl               # Trained KNN model (generated)
+│
+├── docs/plans/
+│   └── 2026-01-29-ai-variation-automation-design.md  # OSC integration design
 │
 ├── README.md                         # This file
 ├── QUICK_START.md                    # Step-by-step guide
+├── TESTING.md                        # Testing guide for OSC integration
 └── CLAUDE.md                         # AI assistant context
 ```
+
+**Note:** `src/tracks/track_0/` directory is auto-created on first recording.
 
 ---
 
 ## Next Steps
 
-### Phase 2: AI Variation Generation ✅ (In Progress)
+### Phase 2: AI Variation Generation ✅ (Current - January 2026)
 
 **Completed:**
 
 - [x] Gemini AI integration for drum pattern variations
-- [x] Maintains total loop duration and tempo consistency
-- [x] Reliable, consistent variation generation
+- [x] OSC communication (Python ↔ ChucK)
+- [x] Automatic variation generation (file watching)
+- [x] Real-time spice level control (CC 18)
+- [x] Visual feedback (ChuGL sphere states)
+- [x] Queued variation toggle at loop boundaries
+- [x] Single-track focused workflow
 
-**Next Priorities:**
+**In Progress:**
 
-- [ ] **Automatic Chuck-Python Integration**
-  - Trigger `drum_variation_ai.py` automatically after recording
-  - Generate multiple variants (5+) and save to variants directory
-  - Random variant selection on load button press
+- [ ] Multi-variation support (generate 3-5 variants, random selection on toggle)
+- [ ] Improved ChuGL visualizations (per-drum-hit feedback)
 
-- [ ] **Improved User Flow**
-  - Seamless pipeline from recording → variation generation → loading
-  - Background variation generation while user continues playing
+### Phase 3: Multi-Track Support (Planned - Q1 2026)
 
-### Phase 3: Enhanced Visuals & UI
+**Goals:**
+
+- [ ] Expand to 3 simultaneous tracks
+- [ ] Per-track variation control (independent spice levels)
+- [ ] Track volume and mix controls (CC 46-53)
+- [ ] Visual feedback for all tracks (3 spheres)
+- [ ] Cross-track variation coherence
+
+### Phase 4: Enhanced Features (Future)
 
 **Planned:**
 
-- [ ] Significantly improved ChuGL visualizations (currently basic)
-- [ ] Visualize loop playback vs variation playback differences
-- [ ] Per-drum-hit visual feedback
-- [ ] **Bonus:** Drag-and-drop UI for custom kick/snare/hat samples
+- [ ] Drag-and-drop UI for custom drum samples
+- [ ] Pattern similarity visualization
+- [ ] Real-time classification confidence display
+- [ ] Save/load preset collections
+- [ ] MIDI sync output for DAW integration
+- [ ] Live pattern evolution mode (gradual variation over time)
 
 ---
 
@@ -303,18 +437,20 @@ CHULOOPA/
 
 **Target Conference:** ACM Creativity and Cognition 2026
 
-**Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification with AI Variations for Live Performance"_
+**Paper Title:** _"Personal Drum Machines: User-Trainable Beatbox Classification with Real-Time AI Variations for Live Performance"_
 
 **Novel Contributions:**
 
 1. User-trainable beatbox classifier (personalized, not generic)
 2. Minimal training data (10 samples per class vs. 100s)
 3. Live performance focus (<50ms latency)
-4. Personalized sample playback
-5. AI-powered variation generation maintaining musical constraints
-6. End-to-end system from training to performance to variation
+4. **OSC-based Python-ChucK integration for seamless AI workflow**
+5. **Real-time spice control with visual feedback**
+6. AI-powered variation generation maintaining musical constraints
+7. Queued action system for musical loop boundary transitions
+8. End-to-end system from training to performance to variation
 
-**Design Decision:** Initial experiments with Magenta's piano roll conversion proved unreliable. Switching to Gemini API with direct symbolic format produced consistently reliable variations while maintaining loop duration and tempo constraints.
+**Design Decision:** Initial experiments with Magenta's piano roll conversion proved unreliable. Switching to Gemini API with direct symbolic format and OSC communication produced consistently reliable variations while maintaining loop duration and tempo constraints, enabling seamless live performance workflows.
 
 ---
 
@@ -343,28 +479,55 @@ CHULOOPA/
 **Python (for AI variations):**
 
 - Python 3.10+
-- google-generativeai (Gemini API)
-- Required: `GEMINI_API_KEY` environment variable
+- `python-osc` - OSC communication
+- `watchdog` - File watching for auto-generation
+- `google-generativeai` - Gemini API
+- `numpy` - Algorithmic variations
+- `python-dotenv` - Environment variables
+
+Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+**Required:** `GEMINI_API_KEY` environment variable for AI variations
 
 **Hardware:**
 
-- MIDI controller
+- MIDI controller with CC 18 knob support
 - Microphone for beatbox input
 
 ---
 
 ## Troubleshooting
 
+**Python watch mode not starting:**
+
+- Must run from `src` directory: `cd src && python drum_variation_ai.py --watch`
+- Check dependencies: `pip install -r requirements.txt`
+- Verify port 5000 is available: `lsof -i :5000`
+- Kill conflicting processes: `kill <PID>`
+
+**ChucK not receiving OSC messages:**
+
+- Verify ChucK script running from `src` directory
+- Check port 5001 is available: `lsof -i :5001`
+- Python must use `127.0.0.1` not `localhost` (pythonosc issue)
+- Look for "OSC listener started on port 5001" in ChucK output
+- Test with `src/osc_test_python_alt.py` and `src/osc_test_python.ck`
+
 **No MIDI devices found:**
 
 - Check MIDI controller connection
 - Verify MIDI port in code (line 62: `0 => int MIDI_DEVICE;`)
+- Test MIDI: `python TESTMIDIINPUT.py`
 
 **Classifier accuracy poor:**
 
 - Record more training samples (20+ per class)
 - Ensure consistent beatbox technique
-- Retrain classifier: `python train_classifier.py`
+- Delete `training_samples.csv` and re-record with `drum_sample_recorder.ck`
+- ChucK auto-trains on startup
 
 **Drums out of sync:**
 
@@ -375,15 +538,29 @@ CHULOOPA/
 **AI variation generation fails:**
 
 - Ensure `GEMINI_API_KEY` environment variable is set
-- Check that `track_N_drums.txt` file exists and has valid data
-- Verify internet connection for Gemini API access
-- Check Python dependencies: `pip install google-generativeai`
+- Check internet connection for Gemini API access
+- System auto-falls back to `groove_preserve` algorithm if Gemini fails
+- Check Python terminal for error details
+- Verify `src/tracks/track_0/track_0_drums.txt` exists
 
 **Variation doesn't maintain loop duration:**
 
 - This should not happen with Gemini implementation
-- Check console output from `drum_variation_ai.py` for errors
-- Verify the generated file has correct total loop duration in header
+- Check Python terminal for "duration mismatch" warnings
+- Verify generated file has correct total loop duration in header
+
+**Spice knob not working:**
+
+- Verify CC 18 is mapped correctly: `python TESTMIDIINPUT.py`
+- Check ChucK console for "Spice level: XX%" messages
+- ChuGL window must be open to see visual feedback
+- Turn knob slowly to see updates
+
+**OSC port conflicts:**
+
+- Kill conflicting processes: `lsof -i :5000` and `lsof -i :5001`
+- Restart both Python and ChucK
+- Check firewall settings if on macOS
 
 ---
 

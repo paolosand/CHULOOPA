@@ -7,10 +7,14 @@
 CHULOOPA Drums is a real-time drum looping system that:
 1. **Transcribes** your beatbox into drum patterns (kick, snare, hat)
 2. **Plays back** drum samples in real-time as you beatbox
-3. **Loops** your drum patterns perfectly in sync
-4. **Loads/swaps** patterns from files at loop boundaries
+3. **Auto-generates** AI variations via OSC (Python ↔ ChucK)
+4. **Loops** your drum patterns with seamless variation switching
+5. **Real-time spice control** for adjusting variation creativity
 
-**Key Feature:** Personalized ML classifier trained on YOUR voice!
+**Key Features:**
+- Personalized ML classifier trained on YOUR voice
+- OSC integration for automatic AI workflow
+- Live spice control with visual feedback
 
 ---
 
@@ -18,13 +22,22 @@ CHULOOPA Drums is a real-time drum looping system that:
 
 **Requirements:**
 - ChucK 1.5.x+ (with ChuGL support)
-- MIDI controller
+- Python 3.10+ with dependencies
+- MIDI controller with CC 18 knob
 - Microphone for beatbox input
 
-**No installation needed!** Just navigate to CHULOOPA:
+**Install Python dependencies:**
 
 ```bash
 cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA"
+pip install -r requirements.txt
+```
+
+**Set up Gemini API key:**
+
+```bash
+export GEMINI_API_KEY=your_api_key_here
+# Or create a .env file with: GEMINI_API_KEY=your_api_key_here
 ```
 
 ---
@@ -79,32 +92,71 @@ Press 1/2/3 to record samples, Q to quit
 
 ---
 
-### Step 2: Run CHULOOPA Drums V2
+### Step 2: Start Python Watch Mode (Terminal 1)
+
+**IMPORTANT: Must run from src directory**
 
 ```bash
-chuck src/chuloopa_drums_v2.ck
+cd src
+python drum_variation_ai.py --watch
 ```
 
 You'll see:
 ```
-╔═══════════════════════════════════════╗
-║  KNN CLASSIFIER READY                ║
-╚═══════════════════════════════════════╝
+=============================================================
+  CHULOOPA Drum Variation AI
+=============================================================
 
-MODE: DRUMS ONLY (Real-time drum feedback during recording)
+OSC client initialized - sending to 127.0.0.1:5001
+OSC server listening on localhost:5000
+
+Watching for drum file changes in: tracks/track_0
+Variation type: gemini
+Current spice level: 0.50
+
+Ready! Press Ctrl+C to stop
 ```
 
-A visualization window will open showing 3 color-coded spheres (tracks).
+**Keep this terminal open!** It will auto-generate variations when you record loops.
+
+### Step 3: Run CHULOOPA Drums V2 (Terminal 2)
+
+**IMPORTANT: Must run from src directory**
+
+In a **second terminal**, run:
+
+```bash
+cd src
+chuck chuloopa_drums_v2.ck
+```
+
+You'll see:
+```
+=====================================================
+      CHULOOPA - AI Drum Variation System
+=====================================================
+
+OSC Communication:
+  Sending to: localhost:5000
+  Receiving on: 5001
+
+MODE: DRUMS ONLY (Real-time drum feedback)
+=====================================================
+
+✓ CHULOOPA ready!
+```
+
+A visualization window will open showing a sphere (red = no loop yet).
 
 ---
 
-### Step 3: Record Your First Drum Loop
+### Step 4: Record Your First Drum Loop
 
 **Press and HOLD MIDI Note 36** (C1) on your MIDI controller
 
 **Beatbox into the mic:** "BOOM tss tss BOOM tss tss"
 
-**What happens:**
+**What happens in ChucK terminal:**
 - System detects each sound (onset detection)
 - Classifies: kick, hat, hat, kick, hat, hat
 - **Plays drum samples IMMEDIATELY** (real-time feedback!)
@@ -112,136 +164,174 @@ A visualization window will open showing 3 color-coded spheres (tracks).
 
 **Release Note 36** to stop recording
 
-**What happens:**
-- Auto-exports to `track_0_drums.txt`
+**What happens in ChucK:**
+- Auto-exports to `src/tracks/track_0/track_0_drums.txt`
 - Starts looping your drum pattern
 - Console: `>>> DRUM PLAYBACK ENABLED (Drums Only Mode) <<<`
+
+**What happens in Python terminal (automatically!):**
+```
+Detected change: tracks/track_0/track_0_drums.txt
+
+Loading: tracks/track_0/track_0_drums.txt
+  Loaded 12 hits, duration: 2.183s
+  Current spice level: 0.50
+
+  Generating variation (spice: 0.50)
+  Calling Gemini API...
+  Saved: tracks/track_0/variations/track_0_drums_var1.txt
+  Sending OSC: /chuloopa/variations_ready
+
+✓ Generated variation (spice: 0.50)
+```
+
+**Back in ChucK:**
+```
+Python: Complete!
+OSC received: /chuloopa/variations_ready
+
+✓ Python: Variation ready!
+  Press D1 (Note 38) to load variation
+```
+
+**ChuGL window:** Sphere turns **green** (variation ready!)
 
 **You should now hear your drums looping!**
 
 ---
 
-### Step 4: Add More Tracks
+### Step 5: Load the AI Variation
 
-**Record Track 1 (Note 37/C#1):**
-- Press and HOLD MIDI Note 37
-- Beatbox: "tss tss tss tss" (hi-hat pattern)
-- Release
-- Track 1 loops in sync with Track 0!
-
-**Record Track 2 (Note 38/D1):**
-- Press and HOLD MIDI Note 38
-- Beatbox: "PAH...PAH...PAH" (snare backbeat)
-- Release
-- All 3 tracks now loop together perfectly!
-
-**Important:** First track becomes MASTER - all tracks sync to it!
-
----
-
-### Step 5: Load a Saved Pattern
-
-**During playback, press MIDI Note 43** (G1) (mid-loop is fine!)
+**Press MIDI Note 38** (D1) to toggle variation ON
 
 Console shows:
 ```
->>> QUEUED: Track 0 will load from file at next loop cycle <<<
+>>> QUEUED: Variation toggle will occur at next loop boundary <<<
 ```
 
 **Current loop continues** until the end
 
 **At loop boundary:**
 ```
-=== LOOP BOUNDARY: Processing queued actions ===
-Executing queued load for track 0
->>> TRACK 0 LOADED FROM FILE (DRUM-ONLY MODE, Playback ID: 1) <<<
+╔═══════════════════════════════════════╗
+║  LOADING VARIATION 1                 ║
+╚═══════════════════════════════════════╝
+
+>>> VARIATION LOADED (Playback ID: 1) <<<
 ```
 
-**New pattern starts immediately** - zero overlap, perfect sync!
+**ChuGL window:** Sphere turns **blue** (variation mode)
+
+**Audio:** You should hear a variation with different timing, velocities, and possibly ghost notes!
+
+**Press D1 again** to toggle back to original (sphere turns red)
 
 ---
 
-### Step 6: Adjust Volume
+### Step 6: Adjust Spice Level and Regenerate
 
-**Use CC controls on your MIDI controller:**
-- **CC 45**: Track 0 drum volume
-- **CC 46**: Track 1 drum volume
-- **CC 47**: Track 2 drum volume
+**Turn the CC 18 knob** on your MIDI controller
 
-**Audio/Drum Mix:**
-- **CC 51**: Track 0 audio/drum mix
-- **CC 52**: Track 1 audio/drum mix
-- **CC 53**: Track 2 audio/drum mix
+**In ChucK console:**
+```
+Spice level: 75%
+```
 
-Console shows: `Track 0 Volume: 80%`
+**In ChuGL window:**
+- Text color changes: blue (low) → orange (medium) → red (high)
+- Higher spice = more creative variations!
+
+**Press MIDI Note 39** (D#1) to regenerate with new spice level
+
+**In Python terminal:**
+```
+============================================================
+REGENERATE requested from ChucK
+============================================================
+Loading: tracks/track_0/track_0_drums.txt
+  Current spice level: 0.75
+
+  Generating variation (spice: 0.75)
+  ...
+✓ Generated variation (spice: 0.75)
+```
+
+**Press D1** to hear the new, spicier variation!
 
 ---
 
-### Step 7: Clear Tracks
+### Step 7: Clear Track and Start Over
 
-**Press MIDI Note 39, 40, or 41** (D#1, E1, F1) to queue track clearing
+**Press MIDI Note 37** (C#1) to clear the track
 
-Console: `>>> QUEUED: Track 0 will clear at next loop cycle <<<`
+Console:
+```
+>>> CLEARING TRACK 0 <<<
+Track 0 drum data cleared
+```
 
-Track clears at next boundary (smooth transition)
+**ChuGL:** Sphere turns **gray** (no loop)
+
+**Python:** Receives clear notification
+
+**Ready to record a new loop!**
 
 ---
 
-## MIDI Control Reference
+## MIDI Control Reference (Single Track)
 
 ### Recording (Press & Hold)
 | MIDI Note | Note Name | Function              |
 |-----------|-----------|----------------------|
-| 36        | C1        | Record Track 0       |
-| 37        | C#1       | Record Track 1       |
-| 38        | D1        | Record Track 2       |
+| 36        | C1        | Record track 0       |
 
-**Usage:** Press and HOLD to record, RELEASE to stop
+**Usage:** Press and HOLD to record, RELEASE to stop. Python auto-generates variation.
 
-### Clearing (Queued)
+### Clearing
 | MIDI Note | Note Name | Function              |
 |-----------|-----------|----------------------|
-| 39        | D#1       | Clear Track 0        |
-| 40        | E1        | Clear Track 1        |
-| 41        | F1        | Clear Track 2        |
+| 37        | C#1       | Clear track 0        |
 
-**Usage:** Single press (executes at next loop boundary)
+**Usage:** Single press (immediate)
 
-### Loading from File (Queued)
+### Variation Control
 | MIDI Note | Note Name | Function                      |
 |-----------|-----------|------------------------------|
-| 43        | G1        | Load track_0_drums.txt       |
-| 44        | G#1       | Load track_1_drums.txt       |
-| 45        | A1        | Load track_2_drums.txt       |
+| 38        | D1        | Toggle variation ON/OFF      |
+| 39        | D#1       | Regenerate with current spice |
 
-**Usage:** Single press (executes at next loop boundary)
+**Usage:**
+- D1: Single press (queued at loop boundary)
+- D#1: Single press (triggers Python regeneration)
 
-### Export
-| MIDI Note | Note Name | Function              |
-|-----------|-----------|----------------------|
-| 46        | A#1       | Export all tracks    |
+### Spice Control
+| CC Number | Function                   | Visual Feedback |
+|-----------|----------------------------|-----------------|
+| CC 18     | Spice level (0.0-1.0)      | Blue/Orange/Red |
 
-**Note:** Auto-exports after recording anyway!
+**Usage:** Turn knob to adjust creativity level
 
-### Volume Control
-| CC Number | Function                   |
-|-----------|----------------------------|
-| CC 45     | Track 0 Drum Volume        |
-| CC 46     | Track 1 Drum Volume        |
-| CC 47     | Track 2 Drum Volume        |
-
-### Audio/Drum Mix Control
-| CC Number | Function                   |
-|-----------|----------------------------|
-| CC 51     | Track 0 Audio/Drum Mix     |
-| CC 52     | Track 1 Audio/Drum Mix     |
-| CC 53     | Track 2 Audio/Drum Mix     |
+### Future (3-Track Version)
+Additional controls for Track 1 and Track 2 will use Notes 40-45 and CC 46-53
 
 ---
 
 ## Understanding the Output Files
 
-### track_N_drums.txt Format
+### File Structure
+
+After recording, you'll have:
+
+```
+src/
+└── tracks/
+    └── track_0/
+        ├── track_0_drums.txt           # Your original recording
+        └── variations/
+            └── track_0_drums_var1.txt  # AI-generated variation
+```
+
+### track_0_drums.txt Format (Original)
 
 ```
 # Track 0 Drum Data
@@ -262,13 +352,36 @@ Track clears at next boundary (smooth transition)
 
 **The delta_time on the last hit is critical for perfect loop timing!**
 
+### track_0_drums_var1.txt Format (Variation)
+
+Same format as original, but with AI-modified:
+- Hit timing (subtle tempo variations)
+- Velocities (dynamic changes)
+- Ghost notes (additional quiet hits)
+- Maintained total loop duration (same as original)
+
 ---
 
 ## Troubleshooting
 
+### "Python watch mode won't start"
+**Solution:**
+- Must run from `src` directory: `cd src && python drum_variation_ai.py --watch`
+- Install dependencies: `pip install -r requirements.txt`
+- Check port 5000 is free: `lsof -i :5000`
+- Kill conflicting process: `kill <PID>`
+
+### "ChucK not receiving OSC messages"
+**Solution:**
+- Must run from `src` directory: `cd src && chuck chuloopa_drums_v2.ck`
+- Check port 5001 is free: `lsof -i :5001`
+- Look for "OSC listener started on port 5001" in ChucK output
+- Verify Python is using `127.0.0.1` not `localhost`
+
 ### "No MIDI devices found!"
 **Solution:**
 - Check MIDI controller is connected
+- Test MIDI: `python TESTMIDIINPUT.py`
 - Verify MIDI port: Edit line 62 in `chuloopa_drums_v2.ck`
   ```chuck
   0 => int MIDI_DEVICE;  // Try changing to 1, 2, etc.
@@ -318,6 +431,25 @@ If it does happen:
 - Verify `track_N_drums.txt` has delta_time column
 - Check total loop duration in file header
 
+### "Variation not being generated automatically"
+**Solution:**
+- Check Python terminal for errors
+- Verify `GEMINI_API_KEY` is set
+- System falls back to `groove_preserve` algorithm if Gemini fails
+- Check that `src/tracks/track_0/track_0_drums.txt` was created
+
+### "Spice knob not working"
+**Solution:**
+- Verify CC 18 is mapped: `python TESTMIDIINPUT.py`
+- Turn knob slowly to see "Spice level: XX%" in ChucK console
+- ChuGL window must be open to see visual feedback
+
+### "Sphere not changing color"
+**Solution:**
+- Make sure ChuGL window is open and visible
+- Check ChucK console for OSC messages
+- Restart both Python and ChucK
+
 ### "Loaded drums play at the same time as buffer drums"
 **This is fixed in V2!** Each playback session has a unique ID.
 - Old hits check their ID and abort if it doesn't match
@@ -358,45 +490,65 @@ If it does happen:
 
 ## Next Steps
 
+### Experiment with AI Variations
+- Try different spice levels (CC 18) for different musical contexts
+- Regenerate (D#1) multiple times to find interesting variations
+- Toggle between original and variation during performance
+- Record longer/shorter loops to test variation quality
+
 ### Customize Your System
-- Adjust onset detection sensitivity (line 76)
+- Adjust onset detection sensitivity (line 76 in `chuloopa_drums_v2.ck`)
 - Change loop duration limit (line 66): `30::second => dur MAX_LOOP_DURATION;`
 - Modify drum samples in `samples/` directory
 - Edit training data in `training_samples.csv`
+- Adjust spice ranges in Python script
 
-### Integrate AI Variations
-**Coming Soon:**
-- GrooVAE for drum pattern generation
-- Pattern evolution and humanization
-- Style transfer between performances
+### Coming Soon
+**Phase 3: Multi-Track Support**
+- 3 simultaneous tracks with independent variations
+- Per-track spice control
+- Visual feedback for all tracks
 
-### Improve Visuals
-**Coming Soon:**
+**Phase 4: Enhanced Features**
+- Multi-variation support (5+ variants, random selection)
 - Per-drum-hit visual feedback
-- Pattern similarity visualization
-- Real-time classification confidence display
+- Pattern evolution mode (gradual variation over time)
 
 ---
 
 ## Example Session
 
 ```bash
-# Terminal: Record training samples (one-time setup)
-chuck src/drum_sample_recorder.ck
+# Step 1: Record training samples (one-time setup)
+cd src
+chuck drum_sample_recorder.ck
 # Record 10 kicks, 10 snares, 10 hats, press Q
 
-# Terminal: Run CHULOOPA (classifier trains automatically)
-chuck src/chuloopa_drums_v2.ck
+# Step 2: Start Python watch mode (Terminal 1)
+cd src
+python drum_variation_ai.py --watch
+# Keep running!
+
+# Step 3: Start ChucK (Terminal 2, new terminal)
+cd src
+chuck chuloopa_drums_v2.ck
 
 # On your MIDI controller:
 # 1. Press & hold Note 36 (C1), beatbox "BOOM tss BOOM tss", release
-# 2. Press & hold Note 37 (C#1), beatbox "tss tss tss tss", release
-# 3. Press & hold Note 38 (D1), beatbox "PAH...PAH", release
-# 4. Adjust volumes with CC 45-47
-# 5. Press Note 43 (G1) to reload track 0 from file
-# 6. Press Note 39 (D#1) to clear track 0
+#    → Python auto-generates variation
+#    → Sphere turns green (variation ready)
+# 2. Press Note 38 (D1) to load variation
+#    → Sphere turns blue (variation playing)
+# 3. Turn CC 18 knob to adjust spice level
+#    → Text color changes in ChuGL window
+# 4. Press Note 39 (D#1) to regenerate with new spice
+#    → Python generates new variation
+# 5. Press Note 38 (D1) to hear new variation
+# 6. Press Note 38 (D1) again to toggle back to original
+#    → Sphere turns red (original playing)
+# 7. Press Note 37 (C#1) to clear track
 
-# Press Ctrl+C to stop
+# Press Ctrl+C in both terminals to stop
 ```
 
 ---
@@ -406,22 +558,25 @@ chuck src/chuloopa_drums_v2.ck
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v2.ck         ← Main system (START HERE!)
+│   ├── chuloopa_drums_v2.ck         ← Main ChucK system (START HERE!)
+│   ├── drum_variation_ai.py         ← AI variation engine with OSC
 │   ├── drum_sample_recorder.ck      ← Training sample collector
-│   └── chuloopa_main.ck             ← OLD: Melody system (archived)
+│   │
+│   └── tracks/                       ← Generated drum data (auto-created)
+│       └── track_0/
+│           ├── track_0_drums.txt    ← Original recording
+│           └── variations/
+│               └── track_0_drums_var1.txt  ← AI variation
 │
 ├── samples/                          ← Drum samples
 │   ├── kick.wav
 │   ├── snare.wav
 │   └── hat.WAV
 │
-├── train_classifier.py               ← Trains KNN model
+├── requirements.txt                  ← Python dependencies
+├── train_classifier.py               ← KNN training script
 ├── training_samples.csv              ← Your training data (generated)
-├── drum_classifier.pkl               ← Your model (generated)
-│
-├── track_0_drums.txt                 ← Exported patterns (generated)
-├── track_1_drums.txt
-└── track_2_drums.txt
+└── drum_classifier.pkl               ← Your model (generated)
 ```
 
 ---
