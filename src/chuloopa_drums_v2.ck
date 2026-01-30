@@ -655,6 +655,25 @@ fun int classifyOnset(int track, float flux) {
 
 // === SYMBOLIC DATA FUNCTIONS ===
 
+fun void saveDrumHit(int track, int drum_class, float velocity) {
+    if(is_recording[track]) {
+        // Calculate timestamp relative to loop start
+        (now - record_start_time[track]) / second => float timestamp;
+
+        // Store drum hit
+        track_drum_classes[track] << drum_class;
+        track_drum_timestamps[track] << timestamp;
+        track_drum_velocities[track] << velocity;
+
+        // Play drum hit immediately for real-time feedback during recording
+        playDrumHit(track, drum_class, velocity);
+
+        ["KICK", "SNARE", "HAT"] @=> string class_names[];
+        <<< "Track", track, "-", class_names[drum_class], "at", timestamp, "sec |",
+            "Total hits:", track_drum_classes[track].size() >>>;
+    }
+}
+
 // Clear symbolic data for a track
 fun void clearSymbolicData(int track) {
     track_drum_classes[track].clear();
@@ -1288,37 +1307,32 @@ fun void mainOnsetDetectionLoop() {
     FRAME_SIZE::samp => now;
 
     <<< "Main onset detection loop started" >>>;
-    <<< "Real-time drum playback enabled (always on)" >>>;
 
     while(true) {
-        // Always perform onset detection on track 0 (for real-time feedback)
-        spectralFlux(0) => float flux;
-        updateFluxHistory(0, flux);
-        getAdaptiveThreshold(0) => float threshold;
+        // Check which track is recording
+        -1 => int active_track;
+        for(0 => int i; i < NUM_TRACKS; i++) {
+            if(is_recording[i]) {
+                i => active_track;
+                break;
+            }
+        }
 
-        if(detectOnset(0, flux, threshold)) {
-            // Classify the onset
-            classifyOnset(0, flux) => int drum_class;
+        // If a track is recording, perform onset detection
+        if(active_track >= 0) {
+            spectralFlux(active_track) => float flux;
+            updateFluxHistory(active_track, flux);
+            getAdaptiveThreshold(active_track) => float threshold;
 
-            // Calculate velocity from flux
-            Math.min(1.0, flux / 0.1) => float velocity;
+            if(detectOnset(active_track, flux, threshold)) {
+                // Classify the onset
+                classifyOnset(active_track, flux) => int drum_class;
 
-            // ALWAYS play drum sample (real-time feedback)
-            playDrumHit(0, drum_class, velocity);
+                // Calculate velocity from flux
+                Math.min(1.0, flux / 0.1) => float velocity;
 
-            // Only save to symbolic data if recording
-            if(is_recording[0]) {
-                // Calculate timestamp relative to loop start
-                (now - record_start_time[0]) / second => float timestamp;
-
-                // Store drum hit
-                track_drum_classes[0] << drum_class;
-                track_drum_timestamps[0] << timestamp;
-                track_drum_velocities[0] << velocity;
-
-                ["KICK", "SNARE", "HAT"] @=> string class_names[];
-                <<< "Track 0 -", class_names[drum_class], "at", timestamp, "sec |",
-                    "Total hits:", track_drum_classes[0].size() >>>;
+                // Save to symbolic data
+                saveDrumHit(active_track, drum_class, velocity);
             }
         }
 
