@@ -593,7 +593,7 @@ def handle_spice_change(address, spice_level):
     """Handle spice level change from ChucK."""
     global current_spice_level
     current_spice_level = max(0.0, min(1.0, spice_level))
-    print(f"Spice level updated: {current_spice_level:.2f}")
+    print(f"\n>>> OSC RECEIVED from ChucK: /chuloopa/spice = {current_spice_level:.2f} <<<\n")
 
 
 def handle_regenerate(address):
@@ -661,9 +661,14 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'gemin
 
     # Notify ChucK that variation is ready
     if osc_client:
-        print(f"  Sending OSC: /chuloopa/variations_ready (1) to port {OSC_SEND_PORT}")
-        osc_client.send_message("/chuloopa/variations_ready", 1)
-        osc_client.send_message("/chuloopa/generation_progress", "Complete!")
+        print(f"  Sending OSC: /chuloopa/variations_ready (1) to {OSC_HOST}:{OSC_SEND_PORT}")
+        try:
+            osc_client.send_message("/chuloopa/variations_ready", 1)
+            print(f"  Sending OSC: /chuloopa/generation_progress to {OSC_HOST}:{OSC_SEND_PORT}")
+            osc_client.send_message("/chuloopa/generation_progress", "Complete!")
+            print(f"  OSC messages sent successfully")
+        except Exception as e:
+            print(f"  ERROR sending OSC: {e}")
     else:
         print("  WARNING: OSC client not initialized, cannot send ready notification")
 
@@ -746,6 +751,10 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     # Setup OSC client (for sending to ChucK)
     osc_client = udp_client.SimpleUDPClient(OSC_HOST, OSC_SEND_PORT)
     print(f"OSC client initialized - sending to {OSC_HOST}:{OSC_SEND_PORT}")
+
+    # Send test message to verify connection
+    print("Sending test message to ChucK...")
+    osc_client.send_message("/chuloopa/generation_progress", "Python OSC test - connection established!")
 
     # Setup OSC server (for receiving from ChucK)
     disp = dispatcher.Dispatcher()
