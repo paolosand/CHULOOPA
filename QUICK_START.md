@@ -58,23 +58,32 @@ You'll see:
 ║  DRUM SAMPLE RECORDER                ║
 ╚═══════════════════════════════════════╝
 
-Press 1/2/3 to record samples, Q to quit
+Press K/S/H to record samples, Q to quit
 ```
+
+**A visualization window opens with:**
+- **Left cube (kick)**: Pulses with radial expansion
+- **Center octahedron (snare)**: Pulses with vertical compression
+- **Right dodecahedron (hat)**: Pulses with asymmetric wobble
+- **Instruction text**: Guides you through the workflow step-by-step
 
 **Record 10 samples of each drum:**
 
-1. **Press 1**: Record KICK samples
+1. **Press K**: Record KICK samples
    - Say "BOOM" into the mic (make a deep kick sound)
    - Repeat 10 times
+   - Watch the left cube grow and pulse with each recording
    - Each sample: 1 second long
 
-2. **Press 2**: Record SNARE samples
+2. **Press S**: Record SNARE samples
    - Say "PAH" or "TSH" into the mic (sharp snare sound)
    - Repeat 10 times
+   - Watch the center octahedron grow and pulse
 
-3. **Press 3**: Record HI-HAT samples
+3. **Press H**: Record HI-HAT samples
    - Say "TSS" or "TSK" into the mic (high-pitched hat sound)
    - Repeat 10 times
+   - Watch the right dodecahedron grow and pulse
 
 4. **Press Q**: Quit and save
    - Creates `training_samples.csv` (30 samples)
@@ -522,7 +531,9 @@ If it does happen:
 # Step 1: Record training samples (one-time setup)
 cd src
 chuck drum_sample_recorder.ck
-# Record 10 kicks, 10 snares, 10 hats, press Q
+# Press K/S/H to record 10 kicks, 10 snares, 10 hats
+# Watch the geometries grow and pulse
+# Press Q to quit
 
 # Step 2: Start Python watch mode (Terminal 1)
 cd src
