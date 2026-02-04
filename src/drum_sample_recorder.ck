@@ -616,6 +616,180 @@ fun void keyboardListener() {
     }
 }
 
+// === VISUALIZATION LOOP ===
+
+fun void visualizationLoop() {
+    while(true) {
+        GG.nextFrame() => now;
+
+        // === UPDATE GROWTH SYSTEM ===
+        for(0 => int i; i < 3; i++) {
+            // Calculate target scale based on sample count
+            getScaleMultiplier(label_counts[i]) => float target_scale;
+
+            // Smooth interpolation (exponential easing)
+            current_scales[i] + (target_scale - current_scales[i]) * 0.1 => current_scales[i];
+
+            // Calculate brightness and color
+            getBrightnessMultiplier(label_counts[i]) => float brightness;
+
+            vec3 target_color;
+            if(i == 0) kick_target_color => target_color;
+            else if(i == 1) snare_target_color => target_color;
+            else hat_target_color => target_color;
+
+            lerpColor(dim_color, target_color, brightness) @=> vec3 current_color;
+
+            // Calculate emission (glow at higher sample counts)
+            brightness * 0.8 => float emission_intensity;
+            @(target_color.x * emission_intensity,
+              target_color.y * emission_intensity,
+              target_color.z * emission_intensity) @=> vec3 emission;
+
+            // Apply to materials
+            if(i == 0) {
+                kick_mat.color(current_color);
+                kick_mat.emission(emission);
+            } else if(i == 1) {
+                snare_mat.color(current_color);
+                snare_mat.emission(emission);
+            } else {
+                hat_mat.color(current_color);
+                hat_mat.emission(emission);
+            }
+        }
+
+        // === APPLY PULSE DEFORMATIONS ===
+
+        // Kick - Radial expansion
+        BASE_SCALE * current_scales[0] * (1.0 + kick_impulse * 0.4) => float kick_scale;
+        kick_geo.sca(kick_scale);
+
+        // Snare - Vertical compression
+        BASE_SCALE * current_scales[1] => float snare_base;
+        snare_geo.scaX(snare_base * (1.0 + snare_impulse * 0.3));
+        snare_geo.scaZ(snare_base * (1.0 + snare_impulse * 0.3));
+        snare_geo.scaY(snare_base * (1.0 - snare_impulse * 0.4));
+
+        // Hat - Asymmetric wobble
+        BASE_SCALE * current_scales[2] => float hat_base;
+        hat_geo.scaX(hat_base * (1.0 + hat_impulse * 0.2));
+        hat_geo.scaY(hat_base * (1.0 + hat_impulse * 0.15));
+        hat_geo.scaZ(hat_base * (1.0 - hat_impulse * 0.3));
+
+        // Decay impulses (exponential decay ~200ms)
+        kick_impulse * 0.92 => kick_impulse;
+        snare_impulse * 0.92 => snare_impulse;
+        hat_impulse * 0.92 => hat_impulse;
+
+        // === UPDATE LABEL TEXT COLORS (Active vs Inactive) ===
+        if(current_label == "kick") {
+            kick_label.color(@(1.0, 1.0, 1.0));
+            kick_label.sca(0.20);
+        } else {
+            kick_label.color(@(0.7, 0.7, 0.7));
+            kick_label.sca(0.18);
+        }
+
+        if(current_label == "snare") {
+            snare_label.color(@(1.0, 1.0, 1.0));
+            snare_label.sca(0.20);
+        } else {
+            snare_label.color(@(0.7, 0.7, 0.7));
+            snare_label.sca(0.18);
+        }
+
+        if(current_label == "hat") {
+            hat_label.color(@(1.0, 1.0, 1.0));
+            hat_label.sca(0.20);
+        } else {
+            hat_label.color(@(0.7, 0.7, 0.7));
+            hat_label.sca(0.18);
+        }
+
+        // === UPDATE INSTRUCTION TEXT (State Machine) ===
+
+        // Determine current state
+        if(label_counts[0] >= 10 && label_counts[1] >= 10 && label_counts[2] >= 10) {
+            // State 4: All complete
+            if(instruction_state != 4) {
+                4 => instruction_state;
+                instruction_text.text("TRAINING COMPLETE! PRESS Q TO EXPORT (TOTAL: " + getTotalSamples() + ")");
+                instruction_text.color(@(0.5, 1.5, 0.5));
+            }
+            // Large pulsing scale
+            0.24 + 0.04 * Math.sin((now / second) * Math.PI * 2.0) => float pulse_scale;
+            instruction_text.sca(pulse_scale);
+
+        } else if(current_label != "none") {
+            getLabelIdx(current_label) => int current_idx;
+
+            if(label_counts[current_idx] >= 10) {
+                // State 2: Drum complete (show for 2 seconds)
+                if(instruction_state != 2) {
+                    2 => instruction_state;
+                    now => state2_start_time;
+
+                    // Determine next drum
+                    if(label_counts[0] < 10) {
+                        instruction_text.text("GREAT! PRESS K FOR KICKS");
+                    } else if(label_counts[1] < 10) {
+                        instruction_text.text("EXCELLENT! PRESS S FOR SNARES");
+                    } else if(label_counts[2] < 10) {
+                        instruction_text.text("PERFECT! PRESS H FOR HI-HATS");
+                    } else {
+                        instruction_text.text("PERFECT! PRESS Q TO EXPORT");
+                    }
+
+                    instruction_text.color(@(0.3, 1.0, 0.3));
+                    instruction_text.sca(0.22);
+                }
+
+                // After 2 seconds, return to state 0
+                if(now - state2_start_time > 2::second) {
+                    0 => instruction_state;
+                }
+
+            } else {
+                // State 1: Active recording
+                if(instruction_state != 1) {
+                    1 => instruction_state;
+                }
+
+                // Update text with count
+                if(current_label == "kick") {
+                    instruction_text.text("BEATBOX KICKS NOW! (" + label_counts[0] + "/10)");
+                    instruction_text.color(@(0.9, 0.2, 0.2));  // Red
+                } else if(current_label == "snare") {
+                    instruction_text.text("BEATBOX SNARES NOW! (" + label_counts[1] + "/10)");
+                    instruction_text.color(@(1.0, 0.6, 0.1));  // Orange
+                } else if(current_label == "hat") {
+                    instruction_text.text("BEATBOX HI-HATS NOW! (" + label_counts[2] + "/10)");
+                    instruction_text.color(@(0.2, 0.8, 0.9));  // Cyan
+                }
+
+                // Gentle pulsing scale
+                0.22 + 0.01 * Math.sin((now / second) * Math.PI * 2.0) => float pulse_scale;
+                instruction_text.sca(pulse_scale);
+            }
+
+        } else {
+            // State 0: Initial or between drums
+            if(instruction_state != 0) {
+                0 => instruction_state;
+                instruction_text.text("PRESS K (KICK) | S (SNARE) | H (HAT) TO BEGIN");
+                instruction_text.color(@(1.0, 1.0, 1.0));
+                instruction_text.sca(0.22);
+            }
+        }
+
+        // Slow rotation for visual interest (optional)
+        kick_geo.rotY((now / second) * 0.3);
+        snare_geo.rotY((now / second) * 0.3);
+        hat_geo.rotY((now / second) * 0.3);
+    }
+}
+
 // === MAIN PROGRAM ===
 
 <<< "" >>>;
@@ -651,6 +825,7 @@ fun void keyboardListener() {
 <<< "READY! Press K/S/H to start labeling..." >>>;
 <<< "" >>>;
 
+spork ~ visualizationLoop();
 spork ~ onsetDetectionLoop();
 spork ~ keyboardListener();
 
