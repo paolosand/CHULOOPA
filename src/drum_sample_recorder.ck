@@ -36,10 +36,10 @@ HOP_SIZE::samp => dur HOP;
 // === CHUGL VISUALIZATION SETUP ===
 GG.scene() @=> GScene @ scene;
 
-// Camera setup (matching chuloopa_drums_v2.ck)
+// Camera setup - fixed position for good viewing without zoom
 GOrbitCamera camera --> scene;
 GG.scene().camera(camera);
-camera.posZ(6.0);
+camera.posZ(8.0);
 
 // === LIGHTING ===
 GDirLight main_light --> scene;
@@ -446,6 +446,11 @@ fun void recordSample(string label, time onset_time, float flux) {
         label_counts[0], "S:", label_counts[1], "H:", label_counts[2] >>>;
     <<< "  Features: flux=" + features[0] + " energy=" + features[1] +
         " band1=" + features[2] + " band5=" + features[6] + " centroid=" + features[7] >>>;
+
+    // Trigger visual pulse
+    if(label == "kick") 1.0 => kick_impulse;
+    else if(label == "snare") 1.0 => snare_impulse;
+    else if(label == "hat") 1.0 => hat_impulse;
 }
 
 // === DATA EXPORT ===
