@@ -223,6 +223,40 @@ fun void playLabeledClick(string label) {
     env.keyOff();
 }
 
+// === VISUALIZATION HELPER FUNCTIONS ===
+
+// Calculate logarithmic growth multiplier (0.5 to 1.0+)
+fun float getScaleMultiplier(int samples) {
+    return 0.5 + 0.5 * Math.log(samples + 1) / Math.log(11);
+}
+
+// Calculate brightness multiplier (0.3 to 1.0+)
+fun float getBrightnessMultiplier(int samples) {
+    return 0.3 + 0.7 * Math.log(samples + 1) / Math.log(11);
+}
+
+// Lerp between two vec3 colors
+fun vec3 lerpColor(vec3 a, vec3 b, float t) {
+    return @(
+        a.x + (b.x - a.x) * t,
+        a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t
+    );
+}
+
+// Get label index from string
+fun int getLabelIdx(string label) {
+    if(label == "kick") return 0;
+    else if(label == "snare") return 1;
+    else if(label == "hat") return 2;
+    else return -1;
+}
+
+// Get total samples across all drums
+fun int getTotalSamples() {
+    return label_counts[0] + label_counts[1] + label_counts[2];
+}
+
 // === ONSET DETECTION FUNCTIONS (same as drum_onset_detector.ck) ===
 
 fun float spectralFlux() {
