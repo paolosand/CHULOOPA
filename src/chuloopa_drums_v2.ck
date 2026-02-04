@@ -437,6 +437,7 @@ int queued_toggle_variation;        // Toggle variation mode at next cycle
 int variation_mode_active;           // 0 = playing original, 1 = playing variation
 int variations_ready;                // 0 = not ready, 1 = ready to use
 int generation_requested;            // 0 = not requested, 1 = user pressed generate
+int generation_failed;               // 0 = no failure, 1 = last generation failed
 float current_spice_level;           // 0.0-1.0
 string variation_status_message;     // Status message from Python
 
@@ -444,6 +445,7 @@ string variation_status_message;     // Status message from Python
 0 => variation_mode_active;
 0 => variations_ready;
 0 => generation_requested;
+0 => generation_failed;
 DEFAULT_SPICE_LEVEL => current_spice_level;
 "" => variation_status_message;
 0 => queued_toggle_variation;
@@ -1332,9 +1334,21 @@ fun void oscListener() {
             if(msg.address == "/chuloopa/variations_ready") {
                 msg.getInt(0) => int num_variations;
                 1 => variations_ready;
+                0 => generation_failed;  // Clear failure flag on success
                 <<< "" >>>;
                 <<< "✓ Python: Variation ready!" >>>;
                 <<< "  Press D1 (Note 38) to load variation" >>>;
+                <<< "" >>>;
+            }
+            else if(msg.address == "/chuloopa/generation_failed") {
+                msg.getString(0) => string reason;
+                0 => variations_ready;  // Mark as not ready
+                1 => generation_failed;  // Set failure flag
+                // Keep generation_requested = 1 so user can try again
+                <<< "" >>>;
+                <<< "✗ Python: Generation FAILED!" >>>;
+                <<< "  Reason:", reason >>>;
+                <<< "  Press D#1 (Note 39) to try again" >>>;
                 <<< "" >>>;
             }
             else if(msg.address == "/chuloopa/generation_progress") {
@@ -1844,6 +1858,30 @@ fun void visualizationLoop() {
             // No loop OR generation not requested: hide bottle
             bottle.posY(-100);
         }
+        else if(generation_failed) {
+            // Generation FAILED: BLINKING RED (urgent - try again!)
+            bottle.posY(bottle_base_y + bob_offset);
+            Math.sin(time_sec * 8.0) => float blink;  // Faster blink for urgency
+
+            // Blink between bright red and dim red
+            if(bottle.materials.size() > 0) {
+                bottle.materials[0] $ PhongMaterial @=> PhongMaterial @ mat;
+                if(mat != null) {
+                    if(blink > 0) {
+                        // REALLY BRIGHT RED
+                        mat.color(@(2.0, 0.3, 0.3));
+                        mat.specular(@(2.0, 0.5, 0.5));
+                        mat.emission(@(3.0, 0.5, 0.5));  // Extremely bright red emission
+                    }
+                    else {
+                        // Dim red
+                        mat.color(@(1.0, 0.2, 0.2));
+                        mat.specular(@(1.0, 0.3, 0.3));
+                        mat.emission(@(1.5, 0.3, 0.3));
+                    }
+                }
+            }
+        }
         else if(variations_ready && !variation_mode_active) {
             // Variation ready: BLINKING GREEN with high exposure
             bottle.posY(bottle_base_y + bob_offset);
@@ -1979,6 +2017,7 @@ fun void midiListener() {
                 else if(data1 == NOTE_REGENERATE) {
                     1 => generation_requested;     // Mark that generation was requested
                     0 => variations_ready;          // Reset ready flag (waiting for Python)
+                    0 => generation_failed;         // Clear failure flag (trying again)
                     sendRegenerate();
                     <<< "Generation requested - waiting for Python to generate variation..." >>>;
                 }

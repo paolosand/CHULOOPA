@@ -503,15 +503,17 @@ def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPatt
         temperature: Sampling temperature (0.0-1.0, default 0.7)
 
     Returns:
-        New DrumPattern with variation, preserving exact original loop_duration
+        Tuple of (DrumPattern, success: bool)
+        - DrumPattern: New pattern with variation (or fallback)
+        - success: True if AI generated, False if fallback was used
     """
     if not HAVE_GEMINI:
         print("Warning: google-genai not installed, falling back to groove_preserve")
-        return groove_preserve(pattern)
+        return groove_preserve(pattern), False
 
     if not GEMINI_API_KEY:
         print("Warning: GEMINI_API_KEY not set, falling back to groove_preserve")
-        return groove_preserve(pattern)
+        return groove_preserve(pattern), False
 
     try:
         # Client reads API key from GEMINI_API_KEY environment variable
@@ -569,20 +571,20 @@ SPICE LEVEL for this request: {temperature}"""
 
         if not variation.hits:
             print("  Warning: Gemini returned empty pattern, falling back to groove_preserve")
-            return groove_preserve(pattern)
+            return groove_preserve(pattern), False
 
         print(f"  Generated {len(variation.hits)} hits (original: {len(pattern.hits)})")
-        return variation
+        return variation, True  # Success!
 
     except json.JSONDecodeError as e:
         print(f"  Warning: Failed to parse Gemini JSON response: {e}")
         print(f"  Response was: {response_text[:200]}...")
         print("  Falling back to groove_preserve")
-        return groove_preserve(pattern)
+        return groove_preserve(pattern), False
     except Exception as e:
         print(f"  Warning: Gemini API call failed: {e}")
         print("  Falling back to groove_preserve")
-        return groove_preserve(pattern)
+        return groove_preserve(pattern), False
 
 
 # =============================================================================
@@ -653,26 +655,39 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'gemin
         osc_client.send_message("/chuloopa/generation_progress", f"Generating variation...")
 
     print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
-    varied = generate_variation(pattern, variation_type, temperature=current_spice_level)
+    varied, success = generate_variation(pattern, variation_type, temperature=current_spice_level)
 
     output_file = variations_dir / f"track_0_drums_var1.txt"
     varied.to_file(str(output_file))
     print(f"  Saved: {output_file}")
 
-    # Notify ChucK that variation is ready
+    # Notify ChucK based on success/failure
     if osc_client:
-        print(f"  Sending OSC: /chuloopa/variations_ready (1) to {OSC_HOST}:{OSC_SEND_PORT}")
         try:
-            osc_client.send_message("/chuloopa/variations_ready", 1)
-            print(f"  Sending OSC: /chuloopa/generation_progress to {OSC_HOST}:{OSC_SEND_PORT}")
-            osc_client.send_message("/chuloopa/generation_progress", "Complete!")
-            print(f"  OSC messages sent successfully")
+            if success:
+                # AI generation succeeded
+                print(f"  Sending OSC: /chuloopa/variations_ready (1) to {OSC_HOST}:{OSC_SEND_PORT}")
+                osc_client.send_message("/chuloopa/variations_ready", 1)
+                print(f"  Sending OSC: /chuloopa/generation_progress to {OSC_HOST}:{OSC_SEND_PORT}")
+                osc_client.send_message("/chuloopa/generation_progress", "Complete!")
+                print(f"  OSC messages sent successfully")
+            else:
+                # AI generation failed, fallback was used
+                print(f"  Sending OSC: /chuloopa/generation_failed to {OSC_HOST}:{OSC_SEND_PORT}")
+                osc_client.send_message("/chuloopa/generation_failed", "API call failed - try again")
+                print(f"  Sending OSC: /chuloopa/generation_progress to {OSC_HOST}:{OSC_SEND_PORT}")
+                osc_client.send_message("/chuloopa/generation_progress", "Failed - try again")
+                print(f"  OSC messages sent successfully")
         except Exception as e:
             print(f"  ERROR sending OSC: {e}")
     else:
         print("  WARNING: OSC client not initialized, cannot send ready notification")
 
-    print(f"\n✓ Generated variation (spice: {current_spice_level:.2f})")
+    if success:
+        print(f"\n✓ Generated variation (spice: {current_spice_level:.2f})")
+    else:
+        print(f"\n✗ Generation FAILED - used fallback (spice: {current_spice_level:.2f})")
+        print(f"  Press D#1 in ChucK to try again")
     print(f"{'='*60}\n")
 
 
