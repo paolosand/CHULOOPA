@@ -37,7 +37,7 @@ HOP_SIZE::samp => dur HOP;
 GG.scene() @=> GScene @ scene;
 
 // Camera setup - fixed position for good viewing without zoom
-GOrbitCamera camera --> scene;
+GCamera camera --> scene;
 GG.scene().camera(camera);
 camera.posZ(8.0);
 
