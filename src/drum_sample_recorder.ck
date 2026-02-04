@@ -150,6 +150,35 @@ now => last_onset_time;
 
 // === LABELING STATE ===
 "none" => string current_label;  // "kick", "snare", "hat", or "none"
+
+// === VISUALIZATION STATE ===
+// Impulse variables for pulse animations
+0.0 => float kick_impulse;
+0.0 => float snare_impulse;
+0.0 => float hat_impulse;
+
+// Current visual state (for smooth interpolation)
+float current_scales[3];  // [kick, snare, hat]
+0.5 => current_scales[0] => current_scales[1] => current_scales[2];  // Start at 50%
+
+// Target colors for each drum type
+vec3 kick_target_color;
+@(0.9, 0.2, 0.2) => kick_target_color;  // Bright red
+
+vec3 snare_target_color;
+@(1.0, 0.6, 0.1) => snare_target_color;  // Bright orange
+
+vec3 hat_target_color;
+@(0.2, 0.8, 0.9) => hat_target_color;  // Bright cyan
+
+vec3 dim_color;
+@(0.3, 0.3, 0.4) => dim_color;  // Starting dim blue-gray
+
+// Instruction state machine
+0 => int instruction_state;  // 0=initial, 1=recording, 2=drum_complete, 3=almost_done, 4=all_complete
+time state2_start_time;  // For 2-second "GREAT!" message duration
+now => state2_start_time;
+
 int label_counts[3];  // [kicks, snares, hats]
 0 => label_counts[0] => label_counts[1] => label_counts[2];
 
