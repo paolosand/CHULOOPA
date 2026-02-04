@@ -304,8 +304,8 @@ fun void exportTrainingData() {
         return;
     }
 
-    // Export to CSV with comma-separated values
-    "training_samples.csv" => string filename;
+    // Export to CSV with comma-separated values (save to src directory)
+    me.dir() + "/training_samples.csv" => string filename;
     FileIO fout;
     fout.open(filename, FileIO.WRITE);
 

@@ -599,7 +599,7 @@ def handle_spice_change(address, spice_level):
 def handle_regenerate(address):
     """Handle regenerate request from ChucK."""
     print(f"\n{'='*60}")
-    print("REGENERATE requested from ChucK")
+    print("GENERATE requested from ChucK (D#1 / Note 39)")
     print(f"{'='*60}")
 
     track_file = DEFAULT_TRACK_DIR / "track_0_drums.txt"
@@ -770,8 +770,8 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     server_thread.daemon = True
     server_thread.start()
 
-    # Setup file watcher
-    handler = DrumFileHandler(variation_type=variation_type)
+    # Setup file watcher (auto_generate=False means only generate on OSC request)
+    handler = DrumFileHandler(variation_type=variation_type, auto_generate=False)
     observer = Observer()
     observer.schedule(handler, directory, recursive=False)
     observer.start()
@@ -779,7 +779,8 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     print(f"\nWatching for drum file changes in: {directory}")
     print(f"Variation type: {variation_type}")
     print(f"Current spice level: {current_spice_level:.2f}")
-    print("\nReady! Press Ctrl+C to stop\n")
+    print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
+    print("Press Ctrl+C to stop\n")
 
     try:
         while True:

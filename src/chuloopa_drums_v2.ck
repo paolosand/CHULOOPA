@@ -12,24 +12,21 @@
 //   5. LOAD FROM FILE: Swap buffer playback with saved txt patterns
 //   6. Visual feedback (ChuGL) reacts to drum hits
 //
-// MIDI Mapping (QuNeo):
+// MIDI Mapping (Single Track):
 //   RECORDING:
-//     C1, C#1, D1 (36-38):    Press & hold to record tracks 0-2
-//                             Release to stop recording
+//     C1 (36):                Press & hold to record track
+//                             Release to stop recording (auto-exports)
+//
 //   CLEARING:
-//     D#1, E1, F1 (39-41):    Press to clear tracks 0-2
+//     C#1 (37):               Clear track and reset variation state
 //
-//   LOAD FROM FILE:
-//     G1, G#1, A1 (43-45):    Load track_N_drums.txt into tracks 0-2
+//   VARIATION CONTROL:
+//     D1 (38):                Toggle variation mode ON/OFF (queued at loop boundary)
+//     D#1 (39):               Generate variation with current spice level
 //
-//   MANUAL EXPORT (optional):
-//     A#1 (46):               Export all track drum data (already auto-exported)
-//
-//   VOLUME:
-//     CC 45-47:               Volume control for tracks 0-2
-//
-//   AUDIO/DRUM MIX:
-//     CC 51-53:               Audio/Drum mix control for tracks 0-2
+//   SPICE CONTROL:
+//     CC 18:                  Spice level knob (0-127 -> 0.0-1.0)
+//                             Adjusts creativity of AI variations
 //
 // Usage:
 //   chuck src/chuloopa_drums_v2.ck
@@ -230,34 +227,104 @@ fun void sendRecordingStarted() {
 // === CHUGL VISUALIZATION SETUP ===
 GG.scene() @=> GScene @ scene;
 GG.camera() @=> GCamera @ camera;
-camera.posZ(8.0);
+camera.posZ(6.0);
 
-// Create 3 spheres for track visualization
-GSphere track_sphere[NUM_TRACKS];
-for(0 => int i; i < NUM_TRACKS; i++) {
-    track_sphere[i] --> scene;
-    track_sphere[i].posX(-3.0 + (i * 3.0));
-    track_sphere[i].posY(0);
-    track_sphere[i].sca(0.8);
+// === LIGHTING ===
+GDirLight main_light --> scene;
+main_light.intensity(1.2);
+main_light.rotX(-30);
 
-    if(i == 0) track_sphere[i].color(@(0.9, 0.2, 0.2));      // Red (kick)
-    else if(i == 1) track_sphere[i].color(@(0.2, 0.7, 0.9)); // Blue (snare)
-    else if(i == 2) track_sphere[i].color(@(0.9, 0.9, 0.2)); // Yellow (hat)
+GDirLight rim_light --> scene;
+rim_light.intensity(0.6);
+rim_light.rotY(180);
+rim_light.rotX(30);
+
+// Front light for bottle (fixes back-lit appearance)
+GDirLight bottle_light --> scene;
+bottle_light.intensity(0.8);
+bottle_light.rotY(-45);  // From front-right
+bottle_light.rotX(-15);  // Slightly from above
+
+// === BLOOM EFFECT + ACES TONEMAP ===
+GG.outputPass() @=> OutputPass output_pass;
+GG.renderPass() --> BloomPass bloom_pass --> output_pass;
+bloom_pass.input(GG.renderPass().colorOutput());
+output_pass.input(bloom_pass.colorOutput());
+bloom_pass.intensity(0.4);
+bloom_pass.radius(0.8);
+bloom_pass.levels(6);
+bloom_pass.threshold(0.3);
+
+// ACES tonemap for CRT old TV effect
+output_pass.tonemap(4);  // 4 = ACES
+output_pass.exposure(0.5);
+
+// === CENTRAL POLYHEDRON (Spice-based geometry switching) ===
+// More faces = more spice/complexity
+1.0 => float BASE_SCALE;
+
+GCube cube_shape --> scene;
+cube_shape.sca(BASE_SCALE);
+cube_shape.color(@(0.9, 0.2, 0.2));
+
+GPolyhedron octahedron_shape(PolyhedronGeometry.OCTAHEDRON) --> scene;
+octahedron_shape.sca(BASE_SCALE);
+octahedron_shape.color(@(0.9, 0.2, 0.2));
+octahedron_shape.posY(-100);  // Hide initially
+
+GPolyhedron dodec_shape(PolyhedronGeometry.DODECAHEDRON) --> scene;
+dodec_shape.sca(BASE_SCALE);
+dodec_shape.color(@(0.9, 0.2, 0.2));
+dodec_shape.posY(-100);  // Hide initially
+
+GPolyhedron icosahedron_shape(PolyhedronGeometry.ICOSAHEDRON) --> scene;
+icosahedron_shape.sca(BASE_SCALE);
+icosahedron_shape.color(@(0.9, 0.2, 0.2));
+icosahedron_shape.posY(-100);  // Hide initially
+
+// Track which shape is active (0=cube, 1=octa, 2=dodec, 3=icosa)
+0 => int active_shape_index;
+
+// === HOT SAUCE BOTTLE (VARIATION STATE INDICATOR) ===
+GModel bottle(me.dir() + "/assets/hot+sauce+bottle+3d+model.obj") --> scene;
+
+// Auto-scale bottle to reasonable size (similar to gmodel.ck)
+fun float max(vec3 v) {
+    return Math.max(Math.max(v.x, v.y), v.z);
 }
 
-// Add lighting
-GDirLight light --> scene;
-light.intensity(0.8);
-light.rotX(-45);
+max(bottle.max - bottle.min) => float bottle_size;
+0.35 / bottle_size => float bottle_scale;  // Small icon size (0.35 units)
+bottle.sca(bottle_scale);
 
-// Add text display for spice level
+// Position bottle next to spice text (to the right of the percentage)
+bottle.posX(1.2);  // To the right of "SPICE: XX%"
+bottle.posY(-100);  // Start hidden
+bottle.posZ(0.0);
+
+// Tilt to the right
+bottle.rotZ(-Math.PI / 8);  // Tilt right
+bottle.rotY(Math.PI / 6);   // Face forward slightly
+
+// Store base position for animation
+2.0 => float bottle_base_y;
+
+// === TEXT DISPLAYS ===
 GText spice_text --> scene;
-spice_text.text("SPICE: 0.5");
-spice_text.posX(4.0);
-spice_text.posY(3.0);
+spice_text.text("SPICE: 50%");
+spice_text.posX(0.0);
+spice_text.posY(2.0);
 spice_text.posZ(0.0);
-spice_text.sca(0.5);
-spice_text.color(@(1.0, 1.0, 1.0));
+spice_text.sca(0.25);
+spice_text.color(@(1.0, 0.6, 0.0));
+
+GText state_text --> scene;
+state_text.text("STATE: Idle");
+state_text.posX(0.0);
+state_text.posY(1.6);
+state_text.posZ(0.0);
+state_text.sca(0.22);
+state_text.color(@(0.8, 0.8, 0.8));
 
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
@@ -369,15 +436,28 @@ int queued_toggle_variation;        // Toggle variation mode at next cycle
 // === VARIATION MODE STATE ===
 int variation_mode_active;           // 0 = playing original, 1 = playing variation
 int variations_ready;                // 0 = not ready, 1 = ready to use
+int generation_requested;            // 0 = not requested, 1 = user pressed generate
 float current_spice_level;           // 0.0-1.0
 string variation_status_message;     // Status message from Python
 
 // Initialize variation mode state
 0 => variation_mode_active;
 0 => variations_ready;
+0 => generation_requested;
 DEFAULT_SPICE_LEVEL => current_spice_level;
 "" => variation_status_message;
 0 => queued_toggle_variation;
+
+// === DEFORMATION & ANIMATION STATE ===
+0.5 => float MAX_DEFORMATION;
+0.5 => float NOISE_SPEED;
+0.3 => float NOISE_AMOUNT;
+
+// Drum hit impulses for visual feedback
+0.0 => float kick_impulse => float snare_impulse => float hat_impulse;
+
+// Animation time
+now => time start_time;
 
 // Initialize track states
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -1083,14 +1163,20 @@ fun void playDrumHit(int track, int drum_class, float velocity) {
     if(drum_class == 0) {  // Kick
         0 => kick_sample[track].pos;  // Reset to beginning
         vel_gain * 0.6 => kick_sample[track].gain;  // Apply velocity
+        // Trigger visual impulse
+        vel_gain => kick_impulse;
     }
     else if(drum_class == 1) {  // Snare
         0 => snare_sample[track].pos;
         vel_gain * 0.5 => snare_sample[track].gain;
+        // Trigger visual impulse
+        vel_gain => snare_impulse;
     }
     else if(drum_class == 2) {  // Hat
         0 => hat_sample[track].pos;
         vel_gain * 0.4 => hat_sample[track].gain;
+        // Trigger visual impulse
+        vel_gain => hat_impulse;
     }
 }
 
@@ -1523,51 +1609,279 @@ fun void setTrackAudioDrumMix(int track, float mix) {
     <<< "Track", track, "- Drums Only Mode (mix control disabled)" >>>;
 }
 
+// === DEFORMATION FUNCTIONS ===
+fun void updateShapeDeformations(float time_sec) {
+    // Base organic morphing (noise-like)
+    Math.sin(time_sec * NOISE_SPEED) => float noise_x;
+    Math.cos(time_sec * NOISE_SPEED * 0.7) => float noise_y;
+    Math.sin(time_sec * NOISE_SPEED * 1.3) => float noise_z;
+
+    // Base scales with noise
+    BASE_SCALE + noise_x * NOISE_AMOUNT => float scale_x;
+    BASE_SCALE + noise_y * NOISE_AMOUNT => float scale_y;
+    BASE_SCALE + noise_z * NOISE_AMOUNT => float scale_z;
+
+    // Add drum hit deformations
+    if(kick_impulse > 0.0) {
+        // Kick: expand all axes (radial pulse)
+        scale_x + kick_impulse * 0.4 => scale_x;
+        scale_y + kick_impulse * 0.4 => scale_y;
+        scale_z + kick_impulse * 0.4 => scale_z;
+    }
+
+    if(snare_impulse > 0.0) {
+        // Snare: squeeze Y, expand X/Z (vertical compression)
+        scale_y - snare_impulse * 0.3 => scale_y;
+        scale_x + snare_impulse * 0.2 => scale_x;
+        scale_z + snare_impulse * 0.2 => scale_z;
+    }
+
+    if(hat_impulse > 0.0) {
+        // Hat: asymmetric wobble on X axis
+        scale_x + hat_impulse * 0.3 => scale_x;
+    }
+
+    // Apply spice multiplier (makes deformations more extreme)
+    if(current_spice_level > 0.5) {
+        (current_spice_level - 0.5) * 2.0 => float spice_factor;
+        scale_x * (1.0 + spice_factor * 0.4) => scale_x;
+        scale_y * (1.0 + spice_factor * 0.4) => scale_y;
+        scale_z * (1.0 + spice_factor * 0.4) => scale_z;
+    }
+
+    // Clamp scales
+    Math.max(0.3, Math.min(2.5, scale_x)) => scale_x;
+    Math.max(0.3, Math.min(2.5, scale_y)) => scale_y;
+    Math.max(0.3, Math.min(2.5, scale_z)) => scale_z;
+
+    // Apply scale to all shapes (only visible one matters)
+    cube_shape.scaX(scale_x);
+    cube_shape.scaY(scale_y);
+    cube_shape.scaZ(scale_z);
+
+    octahedron_shape.scaX(scale_x);
+    octahedron_shape.scaY(scale_y);
+    octahedron_shape.scaZ(scale_z);
+
+    dodec_shape.scaX(scale_x);
+    dodec_shape.scaY(scale_y);
+    dodec_shape.scaZ(scale_z);
+
+    icosahedron_shape.scaX(scale_x);
+    icosahedron_shape.scaY(scale_y);
+    icosahedron_shape.scaZ(scale_z);
+
+    // Decay impulses
+    kick_impulse * 0.9 => kick_impulse;
+    if(kick_impulse < 0.01) 0.0 => kick_impulse;
+
+    snare_impulse * 0.9 => snare_impulse;
+    if(snare_impulse < 0.01) 0.0 => snare_impulse;
+
+    hat_impulse * 0.9 => hat_impulse;
+    if(hat_impulse < 0.01) 0.0 => hat_impulse;
+}
+
 // === VISUALIZATION ===
 fun void visualizationLoop() {
+    <<< "Visualization loop started" >>>;
+
     while(true) {
         GG.nextFrame() => now;
+        (now - start_time) / second => float time_sec;
 
-        // Update spice level display
-        "SPICE: " + ((current_spice_level * 100) $ int) + "%" => string spice_str;
-        spice_text.text(spice_str);
+        // Update shape deformations
+        updateShapeDeformations(time_sec);
 
-        // Color-code spice level: blue (0.0) -> orange (0.5) -> red (1.0)
+        // Update colors based on state
+        @(0.5, 0.5, 0.5) => vec3 target_color;  // Default gray
+        0.4 => float target_bloom;
+
+        // Add shine on drum hits (bloom boost)
+        0.0 => float hit_shine;
+        if(kick_impulse > 0.1 || snare_impulse > 0.1 || hat_impulse > 0.1) {
+            Math.max(kick_impulse, Math.max(snare_impulse, hat_impulse)) => hit_shine;
+        }
+
+        if(is_recording[0]) {
+            // NO RECORDING AND WHILE RECORDING: Gray
+            @(0.5, 0.5, 0.5) => target_color;
+            0.3 => target_bloom;
+        }
+        else if(variation_mode_active) {
+            // PLAYING VARIATION: Gradient based on spice
+            // Blue (low) → Yellow (mid) → Red (high)
+            if(current_spice_level < 0.5) {
+                // Blue to Yellow gradient (0.0 - 0.5)
+                current_spice_level * 2.0 => float t;
+                @(0.2 + t * 0.8, 0.4 + t * 0.6, 0.9 - t * 0.9) => target_color;
+            }
+            else {
+                // Yellow to Red gradient (0.5 - 1.0)
+                (current_spice_level - 0.5) * 2.0 => float t;
+                @(1.0, 1.0 - t * 0.1, 0.0) => target_color;
+            }
+            0.5 + current_spice_level * 0.3 => target_bloom;
+        }
+        else if(variations_ready && !variation_mode_active) {
+            // VARIATION READY (not playing yet): Blue with green tint + extra glow
+            @(0.2, 0.6, 0.7) => target_color;
+            0.6 => target_bloom;
+        }
+        else if(has_loop[0]) {
+            // PLAYING INITIAL RECORDING: Blue
+            @(0.2, 0.4, 0.9) => target_color;
+            0.4 => target_bloom;
+        }
+        else {
+            // Idle: Dim gray
+            @(0.3, 0.3, 0.3) => target_color;
+            0.2 => target_bloom;
+        }
+
+        // Add hit shine to bloom
+        target_bloom + hit_shine * 0.4 => target_bloom;
+
+        // Switch geometry based on spice level (only in variation mode)
+        0 => int target_shape;  // Default to cube
+
+        if(variation_mode_active) {
+            // Determine shape based on spice level
+            if(current_spice_level < 0.4) {
+                0 => target_shape;  // Cube (6 faces)
+            }
+            else if(current_spice_level < 0.7) {
+                1 => target_shape;  // Octahedron (8 faces)
+            }
+            else if(current_spice_level < 1.0) {
+                2 => target_shape;  // Dodecahedron (12 faces)
+            }
+            else {
+                3 => target_shape;  // Icosahedron (20 faces) - max spice!
+            }
+        }
+
+        // Switch shapes if needed
+        if(target_shape != active_shape_index) {
+            // Hide current shape
+            if(active_shape_index == 0) cube_shape.posY(-100);
+            else if(active_shape_index == 1) octahedron_shape.posY(-100);
+            else if(active_shape_index == 2) dodec_shape.posY(-100);
+            else if(active_shape_index == 3) icosahedron_shape.posY(-100);
+
+            // Show new shape
+            target_shape => active_shape_index;
+            if(active_shape_index == 0) cube_shape.posY(0);
+            else if(active_shape_index == 1) octahedron_shape.posY(0);
+            else if(active_shape_index == 2) dodec_shape.posY(0);
+            else if(active_shape_index == 3) icosahedron_shape.posY(0);
+        }
+
+        // Apply color and rotation to all shapes (only visible one matters)
+        cube_shape.color(target_color);
+        octahedron_shape.color(target_color);
+        dodec_shape.color(target_color);
+        icosahedron_shape.color(target_color);
+
+        cube_shape.rotY(time_sec * 0.2);
+        cube_shape.rotX(Math.sin(time_sec * 0.3) * 0.3);
+
+        octahedron_shape.rotY(time_sec * 0.2);
+        octahedron_shape.rotX(Math.sin(time_sec * 0.3) * 0.3);
+
+        dodec_shape.rotY(time_sec * 0.2);
+        dodec_shape.rotX(Math.sin(time_sec * 0.3) * 0.3);
+
+        icosahedron_shape.rotY(time_sec * 0.2);
+        icosahedron_shape.rotX(Math.sin(time_sec * 0.3) * 0.3);
+
+        bloom_pass.intensity(target_bloom);
+
+        // Update text
+        "SPICE: " + ((current_spice_level * 100) $ int) + "%" => spice_text.text;
+
         if(current_spice_level < 0.5) {
-            // Blue to orange
             current_spice_level * 2.0 => float t;
             spice_text.color(@(0.2 + t * 0.8, 0.5 + t * 0.5, 1.0 - t * 1.0));
         } else {
-            // Orange to red
             (current_spice_level - 0.5) * 2.0 => float t;
             spice_text.color(@(1.0, 1.0 - t * 0.5, 0.0));
         }
 
-        // Update sphere visualization for track 0
-        if(has_loop[0]) {
-            // Determine sphere color based on mode
-            if(variation_mode_active) {
-                // Blue for variation loaded
-                track_sphere[0].color(@(0.2, 0.5, 0.9));
-                track_sphere[0].sca(0.9);
+        // STATE TEXT: Show state via color
+        "STATE: " => string state_label;
+        if(is_recording[0]) {
+            state_label + "Recording" => state_text.text;
+            // BLINKING RED for recording
+            Math.sin(time_sec * 8.0) => float blink;
+            if(blink > 0) @(1.0, 0.2, 0.2) => state_text.color;
+            else @(0.5, 0.1, 0.1) => state_text.color;
+        }
+        else if(variation_mode_active) {
+            state_label + "Variation" => state_text.text;
+            @(0.8, 0.8, 0.8) => state_text.color;  // Default
+        }
+        else if(has_loop[0]) {
+            state_label + "Original" => state_text.text;
+            @(0.8, 0.8, 0.8) => state_text.color;  // Default
+        }
+        else {
+            state_label + "Idle" => state_text.text;
+            @(0.7, 0.7, 0.7) => state_text.color;  // White/gray for idle
+        }
+
+        // HOT SAUCE BOTTLE: Subtle floating animation + color changes
+        // Gentle vertical bobbing
+        Math.sin(time_sec * 1.2) * 0.05 => float bob_offset;
+        bottle.posY(bottle_base_y + bob_offset);
+
+        // Gentle rotation wobble
+        Math.sin(time_sec * 0.8) * 0.05 => float wobble;
+        bottle.rotZ(-Math.PI / 8 + wobble);
+
+        // Color changes based on variation state
+        if(!has_loop[0] || !generation_requested) {
+            // No loop OR generation not requested: hide bottle
+            bottle.posY(-100);
+        }
+        else if(variations_ready && !variation_mode_active) {
+            // Variation ready: BLINKING GREEN with high exposure
+            bottle.posY(bottle_base_y + bob_offset);
+            Math.sin(time_sec * 6.0) => float blink;
+
+            // Blink between bright green and dim green
+            if(bottle.materials.size() > 0) {
+                bottle.materials[0] $ PhongMaterial @=> PhongMaterial @ mat;
+                if(mat != null) {
+                    if(blink > 0) {
+                        // REALLY BRIGHT GREEN
+                        mat.color(@(0.5, 2.0, 0.6));
+                        mat.specular(@(0.8, 2.0, 1.0));
+                        mat.emission(@(0.8, 3.0, 1.0));  // Extremely bright green emission
+                    }
+                    else {
+                        // Dim green (was bright green)
+                        mat.color(@(0.2, 1.0, 0.3));
+                        mat.specular(@(0.4, 1.0, 0.5));
+                        mat.emission(@(0.3, 1.5, 0.4));
+                    }
+                }
             }
-            else if(variations_ready && !variation_mode_active) {
-                // Green pulse for variation ready
-                Math.sin(now / second * 3.0) * 0.2 + 0.8 => float pulse;
-                track_sphere[0].color(@(0.2, 0.9, 0.3));
-                track_sphere[0].sca(pulse);
+        }
+        else if(generation_requested && !variations_ready) {
+            // Generation requested but not ready: White with pulsing exposure
+            bottle.posY(bottle_base_y + bob_offset);
+            Math.sin(time_sec * 2.0) * 0.3 + 0.7 => float pulse;
+
+            // Keep bottle white with oscillating exposure
+            if(bottle.materials.size() > 0) {
+                bottle.materials[0] $ PhongMaterial @=> PhongMaterial @ mat;
+                if(mat != null) {
+                    mat.color(@(0.9, 0.9, 0.9));  // White base
+                    mat.specular(@(1.0, 1.0, 1.0));
+                    mat.emission(@(0.5 * pulse, 0.5 * pulse, 0.5 * pulse));  // White bloom pulse
+                }
             }
-            else {
-                // Red for original
-                track_sphere[0].color(@(0.9, 0.2, 0.2));
-                track_sphere[0].sca(0.8);
-            }
-            track_sphere[0].rotY(0.02);
-        } else {
-            // Gray when no loop
-            track_sphere[0].color(@(0.3, 0.3, 0.3));
-            track_sphere[0].sca(0.3);
-            track_sphere[0].rotY(0.005);
         }
     }
 }
@@ -1598,9 +1912,9 @@ if(min.num() == 0) {
 <<< "MIDI Controls (Single Track):" >>>;
 <<< "  C1  (36): Record track (press & hold)" >>>;
 <<< "  C#1 (37): Clear track" >>>;
-<<< "  D1  (38): Toggle variation mode ON/OFF" >>>;
-<<< "  D#1 (39): Regenerate variations" >>>;
-<<< "  CC  18:   Spice level knob (0.0-1.0)" >>>;
+<<< "  D#1 (39): Generate variation (hot sauce icon appears)" >>>;
+<<< "  D1  (38): Toggle variation ON/OFF (after generation ready)" >>>;
+<<< "  CC  18:   Spice level knob (0.0-1.0, adjust before generating)" >>>;
 <<< "" >>>;
 <<< "OSC Communication:" >>>;
 <<< "  Sending to: localhost:", OSC_SEND_PORT >>>;
@@ -1651,8 +1965,9 @@ fun void midiListener() {
                 else if(data1 == NOTE_CLEAR_TRACK) {
                     clearTrack(0);
                     sendTrackCleared();
-                    0 => variations_ready;  // Variations no longer valid
-                    0 => variation_mode_active;  // Exit variation mode
+                    0 => variations_ready;          // Variations no longer valid
+                    0 => variation_mode_active;     // Exit variation mode
+                    0 => generation_requested;      // Reset generation request
                 }
 
                 // Toggle variation mode (D1)
@@ -1662,7 +1977,10 @@ fun void midiListener() {
 
                 // Regenerate variations (D#1)
                 else if(data1 == NOTE_REGENERATE) {
+                    1 => generation_requested;     // Mark that generation was requested
+                    0 => variations_ready;          // Reset ready flag (waiting for Python)
                     sendRegenerate();
+                    <<< "Generation requested - waiting for Python to generate variation..." >>>;
                 }
             }
 
@@ -1712,9 +2030,10 @@ sendSpiceLevel(DEFAULT_SPICE_LEVEL);  // Send initial spice level as test
 <<< "" >>>;
 <<< "Quick Start:" >>>;
 <<< "  1. Press C1 to record a beatbox loop" >>>;
-<<< "  2. Wait for Python to generate variation" >>>;
-<<< "  3. Press D1 to load variation" >>>;
-<<< "  4. Adjust CC 18 knob and press D#1 to regenerate" >>>;
+<<< "  2. Press D#1 to generate variation (hot sauce icon appears)" >>>;
+<<< "  3. Wait for green blinking icon (variation ready)" >>>;
+<<< "  4. Press D1 to toggle variation ON/OFF" >>>;
+<<< "  5. Adjust CC 18 knob to change spice, press D#1 to regenerate" >>>;
 <<< "" >>>;
 <<< "Make sure drum_variation_ai.py is running in watch mode!" >>>;
 <<< "" >>>;
