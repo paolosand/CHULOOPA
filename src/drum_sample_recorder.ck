@@ -65,6 +65,63 @@ bloom_pass.threshold(0.3);
 output_pass.tonemap(4);  // 4 = ACES
 output_pass.exposure(0.5);
 
+// === DRUM GEOMETRIES (Horizontal Row Layout) ===
+0.6 => float BASE_SCALE;
+
+// Kick (Left) - Cube (6 faces)
+GMesh kick_geo(new CubeGeometry, new PhongMaterial) --> scene;
+kick_geo.posX(-2.0);
+kick_geo.posY(0.0);
+kick_geo.sca(BASE_SCALE * 0.5);  // Start at 50% scale
+kick_geo.mat() $ PhongMaterial @=> PhongMaterial @ kick_mat;
+kick_mat.color(@(0.3, 0.3, 0.4));  // Dim blue-gray
+
+// Snare (Center) - Octahedron (8 faces)
+GMesh snare_geo(new PolyhedronGeometry(PolyhedronGeometry.OCTAHEDRON), new PhongMaterial) --> scene;
+snare_geo.posX(0.0);
+snare_geo.posY(0.0);
+snare_geo.sca(BASE_SCALE * 0.5);
+snare_geo.mat() $ PhongMaterial @=> PhongMaterial @ snare_mat;
+snare_mat.color(@(0.3, 0.3, 0.4));
+
+// Hat (Right) - Dodecahedron (12 faces)
+GMesh hat_geo(new PolyhedronGeometry(PolyhedronGeometry.DODECAHEDRON), new PhongMaterial) --> scene;
+hat_geo.posX(2.0);
+hat_geo.posY(0.0);
+hat_geo.sca(BASE_SCALE * 0.5);
+hat_geo.mat() $ PhongMaterial @=> PhongMaterial @ hat_mat;
+hat_mat.color(@(0.3, 0.3, 0.4));
+
+// === LABEL TEXT (Below Geometries) ===
+GText kick_label --> scene;
+kick_label.text("KICK");
+kick_label.posX(-2.0);
+kick_label.posY(-1.2);
+kick_label.sca(0.18);
+kick_label.color(@(0.7, 0.7, 0.7));
+
+GText snare_label --> scene;
+snare_label.text("SNARE");
+snare_label.posX(0.0);
+snare_label.posY(-1.2);
+snare_label.sca(0.18);
+snare_label.color(@(0.7, 0.7, 0.7));
+
+GText hat_label --> scene;
+hat_label.text("HAT");
+hat_label.posX(2.0);
+hat_label.posY(-1.2);
+hat_label.sca(0.18);
+hat_label.color(@(0.7, 0.7, 0.7));
+
+// === INSTRUCTION TEXT (Above Geometries) ===
+GText instruction_text --> scene;
+instruction_text.text("PRESS K (KICK) | S (SNARE) | H (HAT) TO BEGIN");
+instruction_text.posX(0.0);
+instruction_text.posY(2.5);
+instruction_text.sca(0.22);
+instruction_text.color(@(1.0, 1.0, 1.0));
+
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
 1.0 => input_gain.gain;
