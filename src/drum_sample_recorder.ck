@@ -33,6 +33,38 @@ HOP_SIZE::samp => dur HOP;
 "beatbox_samples/" => string SAMPLE_DIR;
 "training_data/" => string DATA_DIR;
 
+// === CHUGL VISUALIZATION SETUP ===
+GG.scene() @=> GScene @ scene;
+
+// Camera setup (matching chuloopa_drums_v2.ck)
+GOrbitCamera camera --> scene;
+GG.scene().camera(camera);
+camera.posZ(6.0);
+
+// === LIGHTING ===
+GDirLight main_light --> scene;
+main_light.intensity(1.2);
+main_light.rotX(-30 * Math.PI / 180.0);
+
+GDirLight rim_light --> scene;
+rim_light.intensity(0.6);
+rim_light.rotY(180 * Math.PI / 180.0);
+rim_light.rotX(30 * Math.PI / 180.0);
+
+// === BLOOM EFFECT + ACES TONEMAP ===
+GG.outputPass() @=> OutputPass output_pass;
+GG.renderPass() --> BloomPass bloom_pass --> output_pass;
+bloom_pass.input(GG.renderPass().colorOutput());
+output_pass.input(bloom_pass.colorOutput());
+bloom_pass.intensity(0.4);
+bloom_pass.radius(0.8);
+bloom_pass.levels(6);
+bloom_pass.threshold(0.3);
+
+// ACES tonemap for CRT old TV effect
+output_pass.tonemap(4);  // 4 = ACES
+output_pass.exposure(0.5);
+
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
 1.0 => input_gain.gain;
