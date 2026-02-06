@@ -309,6 +309,37 @@ bottle.rotY(Math.PI / 6);   // Face forward slightly
 // Store base position for animation
 2.0 => float bottle_base_y;
 
+// === DROP ZONE STATE VARIABLES ===
+// For drag-and-drop detection
+GWindow.files() @=> string files[];
+
+// Drop zone visual elements
+GMesh drop_zones[3];
+PhongMaterial drop_zone_mats[3];
+GText zone_labels[3];
+
+// Flash effect state
+float zone_flash_intensity[3];
+time zone_flash_start[3];
+
+// Zone configuration
+float zone_x_positions[3];
+-1.5 => zone_x_positions[0];  // Kick (left)
+0.0 => zone_x_positions[1];   // Snare (center)
+1.5 => zone_x_positions[2];   // Hat (right)
+
+vec3 zone_colors[3];
+@(0.9, 0.2, 0.2) => zone_colors[0];  // Red (kick)
+@(1.0, 0.6, 0.1) => zone_colors[1];  // Orange (snare)
+@(0.2, 0.8, 0.9) => zone_colors[2];  // Cyan (hat)
+
+string zone_drum_names[3];
+"KICK" => zone_drum_names[0];
+"SNARE" => zone_drum_names[1];
+"HAT" => zone_drum_names[2];
+
+string current_sample_names[3];
+
 // === TEXT DISPLAYS ===
 GText spice_text --> scene;
 spice_text.text("SPICE: 50%");
