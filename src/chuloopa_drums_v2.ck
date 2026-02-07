@@ -340,6 +340,37 @@ string zone_drum_names[3];
 
 string current_sample_names[3];
 
+// === CREATE DROP ZONES ===
+for(0 => int i; i < 3; i++) {
+    // Create drop zone square
+    GMesh zone(new CubeGeometry, new PhongMaterial) --> scene;
+    zone @=> drop_zones[i];
+    drop_zones[i].sca(0.4);  // Small square
+    drop_zones[i].posX(zone_x_positions[i]);
+    drop_zones[i].posY(-2.0);
+    drop_zones[i].posZ(0.0);
+
+    // Get material reference
+    drop_zones[i].mat() $ PhongMaterial @=> drop_zone_mats[i];
+    drop_zone_mats[i].color(zone_colors[i] * 0.6);  // Dim initially
+    drop_zone_mats[i].specular(zone_colors[i] * 0.3);
+    drop_zone_mats[i].emission(@(0.0, 0.0, 0.0));
+
+    // Create text label
+    GText label --> scene;
+    label @=> zone_labels[i];
+    zone_labels[i].text("DROP " + zone_drum_names[i]);
+    zone_labels[i].posX(zone_x_positions[i]);
+    zone_labels[i].posY(-2.5);
+    zone_labels[i].posZ(0.0);
+    zone_labels[i].sca(0.15);
+    zone_labels[i].color(@(0.7, 0.7, 0.7));
+
+    // Initialize flash state
+    0.0 => zone_flash_intensity[i];
+    now => zone_flash_start[i];
+}
+
 // === TEXT DISPLAYS ===
 GText spice_text --> scene;
 spice_text.text("SPICE: 50%");
