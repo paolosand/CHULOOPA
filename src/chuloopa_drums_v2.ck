@@ -471,6 +471,16 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     }
 }
 
+// Set initial sample names for drop zone labels
+getFilename(KICK_SAMPLE) => current_sample_names[0];
+getFilename(SNARE_SAMPLE) => current_sample_names[1];
+getFilename(HAT_SAMPLE) => current_sample_names[2];
+
+// Update zone labels with default samples
+current_sample_names[0] => zone_labels[0].text;
+current_sample_names[1] => zone_labels[1].text;
+current_sample_names[2] => zone_labels[2].text;
+
 // === STATE VARIABLES (per track) ===
 int is_recording[NUM_TRACKS];
 int is_playing[NUM_TRACKS];
