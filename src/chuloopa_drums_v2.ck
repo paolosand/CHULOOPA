@@ -2135,6 +2135,18 @@ fun void triggerZoneFlash(int zone, int success) {
 }
 
 fun int loadDrumSample(int zone, string filepath) {
+    // Validate zone parameter
+    if(zone < 0 || zone >= 3) {
+        <<< "ERROR: Invalid zone", zone, "(must be 0-2)" >>>;
+        return 0;
+    }
+
+    // Validate filepath
+    if(filepath == "") {
+        <<< "ERROR: Empty filepath" >>>;
+        return 0;
+    }
+
     // zone: 0=kick, 1=snare, 2=hat
     <<< "" >>>;
     <<< ">>> LOADING SAMPLE:", zone_drum_names[zone], "<<<" >>>;
@@ -2148,6 +2160,7 @@ fun int loadDrumSample(int zone, string filepath) {
         <<< "ERROR: Invalid audio file or file not found" >>>;
         triggerZoneFlash(zone, 0);  // Red error flash
         "INVALID FILE" => zone_labels[zone].text;
+        "INVALID" => current_sample_names[zone];
         return 0;
     }
 
@@ -2178,7 +2191,7 @@ fun int loadDrumSample(int zone, string filepath) {
     fname => current_sample_names[zone];
     fname + " | LOADED!" => zone_labels[zone].text;
 
-    <<< "✓ Sample loaded successfully!" >>>;
+    <<< "[OK] Sample loaded successfully!" >>>;
     <<< "  Duration:", (test.length() / second) $ float, "sec" >>>;
     <<< "" >>>;
 
