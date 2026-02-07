@@ -2113,12 +2113,12 @@ fun string getFilename(string filepath) {
     // Extract just filename from full path
     -1 => int last_slash;
     for(0 => int i; i < filepath.length(); i++) {
-        if(filepath.substring(i, i+1) == "/") {
+        if(filepath.substring(i, 1) == "/") {
             i => last_slash;
         }
     }
     if(last_slash >= 0 && last_slash < filepath.length() - 1) {
-        return filepath.substring(last_slash + 1, filepath.length());
+        return filepath.substring(last_slash + 1, filepath.length() - last_slash - 1);
     }
     return filepath;
 }
