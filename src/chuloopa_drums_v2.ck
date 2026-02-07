@@ -2096,6 +2096,44 @@ fun void midiListener() {
     }
 }
 
+// === DROP ZONE HELPER FUNCTIONS ===
+
+fun int detectZoneFromMouse(vec2 mousePos) {
+    // Divide screen into thirds based on mouse X position
+    GG.windowWidth() => float windowWidth;
+    mousePos.x => float mouseX;
+    windowWidth / 3.0 => float zoneWidth;
+
+    if(mouseX < zoneWidth) return 0;        // KICK (left third)
+    else if(mouseX < zoneWidth * 2.0) return 1;  // SNARE (middle third)
+    else return 2;                          // HAT (right third)
+}
+
+fun string getFilename(string filepath) {
+    // Extract just filename from full path
+    -1 => int last_slash;
+    for(0 => int i; i < filepath.length(); i++) {
+        if(filepath.substring(i, i+1) == "/") {
+            i => last_slash;
+        }
+    }
+    if(last_slash >= 0 && last_slash < filepath.length() - 1) {
+        return filepath.substring(last_slash + 1, filepath.length());
+    }
+    return filepath;
+}
+
+fun void triggerZoneFlash(int zone, int success) {
+    // success: 1=green flash, 0=red error flash
+    now => zone_flash_start[zone];
+
+    if(success) {
+        3.0 => zone_flash_intensity[zone];  // Bright green emission
+    } else {
+        -1.0 => zone_flash_intensity[zone];  // Negative = red error flag
+    }
+}
+
 // === MAIN PROGRAM ===
 
 // Try to load and train KNN classifier from CSV
