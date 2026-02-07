@@ -2134,6 +2134,57 @@ fun void triggerZoneFlash(int zone, int success) {
     }
 }
 
+fun int loadDrumSample(int zone, string filepath) {
+    // zone: 0=kick, 1=snare, 2=hat
+    <<< "" >>>;
+    <<< ">>> LOADING SAMPLE:", zone_drum_names[zone], "<<<" >>>;
+    <<< "File:", filepath >>>;
+
+    // Test load to validate file
+    SndBuf test;
+    filepath => test.read;
+
+    if(test.samples() == 0) {
+        <<< "ERROR: Invalid audio file or file not found" >>>;
+        triggerZoneFlash(zone, 0);  // Red error flash
+        "INVALID FILE" => zone_labels[zone].text;
+        return 0;
+    }
+
+    <<< "Valid file, loading into all tracks..." >>>;
+
+    // Hot-swap: reload all track SndBufs for this drum type
+    for(0 => int i; i < NUM_TRACKS; i++) {
+        if(zone == 0) {
+            // KICK
+            filepath => kick_sample[i].read;
+            kick_sample[i].samples() => kick_sample[i].pos;  // Reset to end (silent)
+        }
+        else if(zone == 1) {
+            // SNARE
+            filepath => snare_sample[i].read;
+            snare_sample[i].samples() => snare_sample[i].pos;
+        }
+        else if(zone == 2) {
+            // HAT
+            filepath => hat_sample[i].read;
+            hat_sample[i].samples() => hat_sample[i].pos;
+        }
+    }
+
+    // Success feedback
+    triggerZoneFlash(zone, 1);  // Green success flash
+    getFilename(filepath) => string fname;
+    fname => current_sample_names[zone];
+    fname + " | LOADED!" => zone_labels[zone].text;
+
+    <<< "✓ Sample loaded successfully!" >>>;
+    <<< "  Duration:", (test.length() / second) $ float, "sec" >>>;
+    <<< "" >>>;
+
+    return 1;
+}
+
 // === MAIN PROGRAM ===
 
 // Try to load and train KNN classifier from CSV
