@@ -1983,6 +1983,29 @@ fun void visualizationLoop() {
                 }
             }
         }
+
+        // === UPDATE DROP ZONE VISUALS ===
+        for(0 => int i; i < 3; i++) {
+            // Decay flash intensity (200ms flash duration)
+            zone_flash_intensity[i] * 0.85 => zone_flash_intensity[i];
+
+            // Apply flash effect to material
+            if(zone_flash_intensity[i] > 0.1) {
+                // Success flash (green)
+                drop_zone_mats[i].color(zone_colors[i]);
+                drop_zone_mats[i].emission(@(0.5, 1.5, 0.5) * zone_flash_intensity[i]);
+            }
+            else if(zone_flash_intensity[i] < -0.1) {
+                // Error flash (red)
+                drop_zone_mats[i].color(@(1.0, 0.2, 0.2));
+                drop_zone_mats[i].emission(@(2.0, 0.3, 0.3) * Math.fabs(zone_flash_intensity[i]));
+            }
+            else {
+                // Normal state (dim, no emission)
+                drop_zone_mats[i].color(zone_colors[i] * 0.6);
+                drop_zone_mats[i].emission(@(0.0, 0.0, 0.0));
+            }
+        }
     }
 }
 
