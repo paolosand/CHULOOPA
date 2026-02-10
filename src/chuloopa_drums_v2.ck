@@ -363,7 +363,7 @@ for(0 => int i; i < 3; i++) {
     zone_labels[i].posX(zone_x_positions[i]);
     zone_labels[i].posY(-2.0);  // Moved up from -2.5
     zone_labels[i].posZ(0.0);
-    zone_labels[i].sca(0.15);
+    zone_labels[i].sca(0.10);  // Smaller text to prevent overlap
     zone_labels[i].color(@(0.7, 0.7, 0.7));
 
     // Initialize flash state
@@ -2239,7 +2239,7 @@ fun int loadDrumSample(int zone, string filepath) {
     triggerZoneFlash(zone, 1);  // Green success flash
     getFilename(filepath) => string fname;
     fname => current_sample_names[zone];
-    fname + " | LOADED!" => zone_labels[zone].text;
+    fname => zone_labels[zone].text;  // Just filename, no suffix
 
     <<< "[OK] Sample loaded successfully!" >>>;
     <<< "  Duration:", (test.length() / second) $ float, "sec" >>>;
