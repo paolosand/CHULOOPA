@@ -17,3 +17,6 @@ __pycache__/
 
 # Environment variables
 .env
+
+# Generated track data (runtime only)
+src/tracks/
