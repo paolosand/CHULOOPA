@@ -27,58 +27,24 @@ CHULOOPA_TO_MIDI = {
 }
 
 MIDI_TO_CHULOOPA = {
-    # === KICKS (0) === #
+    # === KICKS (0) - Core bass drums only === #
     35: 0,  # acoustic bass drum
     36: 0,  # bass drum 1 (primary kick)
 
-    # Toms (low pitched) -> Kick
-    41: 0,  # low floor tom
-    43: 0,  # high floor tom
-    45: 0,  # low tom
-    47: 0,  # low-mid tom
-    48: 0,  # hi-mid tom
-    50: 0,  # high tom
-
-    # === SNARES (1) === #
-    38: 1,  # acoustic snare (primary snare)
-    40: 1,  # electric snare
+    # === SNARES (1) - Core snares + clap/rimshot === #
     37: 1,  # side stick / rimshot
+    38: 1,  # acoustic snare (primary snare)
     39: 1,  # hand clap
-    31: 1,  # sticks
+    40: 1,  # electric snare
 
-    # Percussion (snare-like) -> Snare
-    54: 1,  # tambourine
-    56: 1,  # cowbell
-    60: 1,  # hi bongo
-    61: 1,  # low bongo
-    62: 1,  # mute hi conga
-    63: 1,  # open hi conga
-    64: 1,  # low conga
-    66: 1,  # high timbale
-    67: 1,  # low timbale
-
-    # === HATS/CYMBALS (2) === #
+    # === HATS/CYMBALS (2) - Hi-hats + main cymbals === #
     42: 2,  # closed hi-hat (primary hat)
     44: 2,  # pedal hi-hat
     46: 2,  # open hi-hat
-
-    # Cymbals -> Hat
     49: 2,  # crash cymbal 1
     51: 2,  # ride cymbal 1
-    52: 2,  # chinese cymbal
-    53: 2,  # ride bell
-    55: 2,  # splash cymbal
     57: 2,  # crash cymbal 2
     59: 2,  # ride cymbal 2
-
-    # Metallic percussion -> Hat
-    68: 2,  # low agogo
-    69: 2,  # high agogo
-    70: 2,  # cabasa
-    73: 2,  # short guiro
-    74: 2,  # long guiro
-    80: 2,  # mute triangle
-    81: 2,  # open triangle
 }
 
 
