@@ -586,8 +586,10 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             return groove_preserve(pattern), False
 
         # Calculate how many tokens to generate
-        # Generate ~1x pattern length for continuation (3 tokens per hit)
-        num_tokens = len(pattern.hits) * 6
+        # Model outputs [context echo] + [continuation beyond loop] + [loop wrap]
+        # We need lots of tokens to get enough hits in the loop wrap region
+        # Generate ~4x pattern length to ensure dense variations
+        num_tokens = len(pattern.hits) * 12
 
         print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
         print(f"    Context: {len(context_hits)} hits (full pattern)")
@@ -603,32 +605,64 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         )
 
         generated_tokens = generated_text.split()
+        context_tokens = context_text.split()
         print(f"    Generated: {len(generated_tokens)} tokens ({len(generated_tokens)//3} hits)")
 
-        # Convert FULL output (context + continuation) to CHULOOPA
-        # The converter will filter out invalid MIDI notes automatically
-        full_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+        # The model echoes context then generates continuation
+        # We need to strip the context echo to avoid layering original over variation
+        if len(generated_tokens) > len(context_tokens):
+            # Strip context echo - keep only NEW tokens
+            new_tokens = generated_tokens[len(context_tokens):]
+            new_text = ' '.join(new_tokens)
+            print(f"    Stripping context: {len(new_tokens)} new tokens ({len(new_tokens)//3} new hits)")
+        else:
+            # Model didn't generate enough - use full output
+            new_text = generated_text
+            print(f"    Warning: Output shorter than context, using full output")
 
-        if not full_pattern.hits:
-            print("  Warning: No valid hits after conversion, falling back")
+        # Convert NEW tokens to CHULOOPA
+        # The model generates: [continuation from context_end] + [loop wrap at 0.0]
+        new_pattern = rhythmic_creator_to_chuloopa(new_text, loop_duration=999)
+
+        if not new_pattern.hits:
+            print("  Warning: No valid hits in new pattern, falling back")
             return groove_preserve(pattern), False
 
-        # Extract hits within original loop duration
-        # The model generates continuation that may extend beyond the loop
-        # We take only hits that fall within [0.0, original_duration]
-        hits_in_range = [
-            hit for hit in full_pattern.hits
-            if 0.0 <= hit.timestamp <= pattern.loop_duration
+        # Find where the continuation starts (right after context ends)
+        # This is the musically coherent part that extends the pattern
+        context_end = max(hit.timestamp for hit in pattern.hits)
+
+        # Take hits that start AFTER the context (the continuation)
+        # The continuation follows the musical structure, unlike the loop wrap
+        continuation_hits = [
+            hit for hit in new_pattern.hits
+            if hit.timestamp > context_end
         ]
 
-        if not hits_in_range:
-            print("  Warning: No hits within loop duration, falling back")
+        if not continuation_hits:
+            print("  Warning: No continuation hits, falling back")
             return groove_preserve(pattern), False
 
-        # Create pattern from filtered hits
-        raw_pattern = DrumPattern(hits=hits_in_range, loop_duration=pattern.loop_duration)
+        # Shift continuation back to start at 0.0
+        min_time = min(hit.timestamp for hit in continuation_hits)
+        max_time = max(hit.timestamp for hit in continuation_hits)
+        duration = max_time - min_time
+
+        # Create shifted hits
+        shifted_hits = []
+        for hit in continuation_hits:
+            shifted_time = hit.timestamp - min_time
+            shifted_hits.append(DrumHit(
+                drum_class=hit.drum_class,
+                timestamp=shifted_time,
+                velocity=hit.velocity,
+                delta_time=0.0
+            ))
+
+        # Create pattern from shifted hits
+        raw_pattern = DrumPattern(hits=shifted_hits, loop_duration=duration)
         raw_pattern._recalculate_delta_times()
-        print(f"    Filtered to {len(raw_pattern.hits)} hits within loop duration")
+        print(f"    Using continuation: {len(raw_pattern.hits)} hits, duration={duration:.2f}s")
 
         if not raw_pattern.hits:
             print("  Warning: Model generated empty pattern, falling back")
