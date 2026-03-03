@@ -176,9 +176,12 @@ class DrumPattern:
             f.write(f"# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
             f.write(f"# Total loop duration: {self.loop_duration:.6f} seconds\n")
 
-            # Write hits
+            # Write hits with velocity normalization to 0.7-0.9 range
             for hit in self.hits:
-                f.write(f"{hit.drum_class},{hit.timestamp:.6f},{hit.velocity:.6f},{hit.delta_time:.6f}\n")
+                # Normalize velocity: clamp to 0-1, then map to 0.7-0.9
+                normalized_velocity = max(0.0, min(1.0, hit.velocity))
+                normalized_velocity = 0.7 + (normalized_velocity * 0.2)
+                f.write(f"{hit.drum_class},{hit.timestamp:.6f},{normalized_velocity:.6f},{hit.delta_time:.6f}\n")
 
     def _recalculate_delta_times(self):
         """Recalculate delta_times based on timestamps and loop duration."""

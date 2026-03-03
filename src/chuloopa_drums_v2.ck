@@ -1518,8 +1518,9 @@ fun void mainOnsetDetectionLoop() {
                 // Classify the onset
                 classifyOnset(active_track, flux) => int drum_class;
 
-                // Calculate velocity from flux
-                Math.min(1.0, flux / 0.1) => float velocity;
+                // Calculate velocity from flux and normalize to 0.7-0.9 range
+                Math.min(1.0, flux / 0.1) => float raw_velocity;
+                0.7 + (raw_velocity * 0.2) => float velocity;  // Maps 0-1 to 0.7-0.9
 
                 // Save to symbolic data
                 saveDrumHit(active_track, drum_class, velocity);

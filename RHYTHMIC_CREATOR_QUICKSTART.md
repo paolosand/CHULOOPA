@@ -13,6 +13,23 @@
 - ✅ Generation tested and confirmed
 - ✅ Integration into drum_variation_ai.py complete
 - ✅ Default changed from Gemini to rhythmic_creator
+- ✅ Gemini option preserved in separate script
+
+## 🎯 Which Script to Use?
+
+**Rhythmic Creator (Jake's Model)** - `drum_variation_ai.py` (DEFAULT)
+- ✓ Offline (no API calls)
+- ✓ Fast (<500ms)
+- ✓ Free
+- ✓ Reproducible
+- ✓ CalArts research collaboration
+
+**Gemini AI** - `drum_variation_gemini.py`
+- ✓ More creative/unpredictable
+- ✓ Natural language reasoning
+- ✗ Requires API key
+- ✗ Online only
+- ✗ API costs
 
 ---
 
@@ -82,9 +99,17 @@ python drum_variation_ai.py --file tracks/track_0/track_0_drums.txt \
 
 ### Terminal 1: Start Python Watch Mode
 
+**Option A: Rhythmic Creator (default, offline)**
 ```bash
 cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA/src"
 python drum_variation_ai.py --watch
+```
+
+**Option B: Gemini AI (requires API key)**
+```bash
+export GEMINI_API_KEY='your-api-key-here'
+cd "/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Code/CHULOOPA/src"
+python drum_variation_gemini.py --watch
 ```
 
 **You'll see:**
