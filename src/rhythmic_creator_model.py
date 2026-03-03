@@ -101,41 +101,48 @@ class RhythmicCreatorModel:
         print(f"✅ RhythmicCreatorModel ready!\n")
 
     def generate_variation(self,
-                          input_pattern: str,
+                          input_pattern: str = None,
                           num_tokens: int = 300,
-                          temperature: float = 1.0) -> str:
+                          temperature: float = 1.0,
+                          unconditional: bool = False) -> str:
         """
         Generate drum pattern variation with temperature control.
 
         This method:
-        1. Encodes input pattern to tokens
+        1. Encodes input pattern to tokens (or uses empty context for unconditional)
         2. Initializes LSTM hidden state
-        3. Generates continuation with temperature-controlled sampling
+        3. Generates with temperature-controlled sampling
         4. Decodes back to text format
 
         Args:
             input_pattern: Space-separated MIDI events (rhythmic_creator format)
                           Example: "36 0.0 0.12 38 0.5 0.6"
+                          If None or unconditional=True, generates from scratch
             num_tokens: Number of new tokens to generate
             temperature: Sampling temperature (0.5-2.0)
                         - Lower (0.5-0.9): Conservative, stays close to training data
                         - Normal (1.0): Standard sampling
                         - Higher (1.1-2.0): Creative, more variation
+            unconditional: If True, ignore input_pattern and generate from scratch
 
         Returns:
             Generated pattern in rhythmic_creator format (space-separated)
         """
-        # Encode input pattern to token indices
-        input_tokens = input_pattern.split()
-        if not input_tokens:
-            raise ValueError("Input pattern is empty")
+        if unconditional or not input_pattern:
+            # Unconditional generation: start with zero token (Jake's approach line 70)
+            context = torch.zeros((1, 1), dtype=torch.long, device=self.device)
+        else:
+            # Conditional generation: encode input pattern
+            input_tokens = input_pattern.split()
+            if not input_tokens:
+                raise ValueError("Input pattern is empty")
 
-        try:
-            encoded = self.processor.encode_with_mapping(input_tokens)
-        except KeyError as e:
-            raise ValueError(f"Unknown token in input pattern: {e}")
+            try:
+                encoded = self.processor.encode_with_mapping(input_tokens)
+            except KeyError as e:
+                raise ValueError(f"Unknown token in input pattern: {e}")
 
-        context = torch.tensor([encoded], dtype=torch.long, device=self.device)
+            context = torch.tensor([encoded], dtype=torch.long, device=self.device)
 
         # Initialize LSTM hidden state
         hidden = self.model.init_hidden(batch_size=1, device=self.device)
