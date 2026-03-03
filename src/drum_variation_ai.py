@@ -587,7 +587,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
         # Calculate how many tokens to generate
         # Generate ~1x pattern length for continuation (3 tokens per hit)
-        num_tokens = len(pattern.hits) * 3
+        num_tokens = len(pattern.hits) * 6
 
         print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
         print(f"    Context: {len(context_hits)} hits (full pattern)")
@@ -600,15 +600,28 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             temperature=temperature
         )
 
-        # Convert back to CHULOOPA format (with large duration for now)
-        # Note: Variation may have different hit count than original - that's intentional!
-        raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+        # Strip the echoed context - model outputs: [context] + [new pattern starting at 0.0]
+        # We only want the new pattern, which is a complete replacement in the style of the original
+        context_tokens = context_text.split()
+        generated_tokens = generated_text.split()
+
+        if len(generated_tokens) > len(context_tokens):
+            # Strip the echoed context portion
+            new_pattern_tokens = generated_tokens[len(context_tokens):]
+            new_pattern_text = ' '.join(new_pattern_tokens)
+            print(f"    Generated: {len(generated_tokens)} tokens total, {len(new_pattern_tokens)} new tokens ({len(new_pattern_tokens)//3} hits)")
+        else:
+            # Model didn't generate enough - use full output as fallback
+            new_pattern_text = generated_text
+            print(f"    Warning: Output shorter than context, using full output")
+
+        # Convert the NEW pattern to CHULOOPA format
+        # This pattern starts at time 0.0 and is a complete replacement
+        raw_pattern = rhythmic_creator_to_chuloopa(new_pattern_text, loop_duration=999)
 
         if not raw_pattern.hits:
             print("  Warning: Model generated empty pattern, falling back")
             return groove_preserve(pattern), False
-
-        print(f"    Generated: {len(raw_pattern.hits)} hits")
 
         # Time-warp to fit exact loop duration (unless --no-warp is set)
         global use_no_warp
