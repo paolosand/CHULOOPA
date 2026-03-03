@@ -597,6 +597,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         )
 
         # Convert back to CHULOOPA format (with large duration for now)
+        # Note: Variation may have different hit count than original - that's intentional!
         raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
 
         if not raw_pattern.hits:

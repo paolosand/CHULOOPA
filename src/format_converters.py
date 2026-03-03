@@ -27,12 +27,58 @@ CHULOOPA_TO_MIDI = {
 }
 
 MIDI_TO_CHULOOPA = {
-    36: 0,  # bass drum -> kick
-    38: 1,  # acoustic snare -> snare
-    40: 1,  # electric snare -> snare (alternate)
-    42: 2,  # closed hi-hat -> hat
-    44: 2,  # pedal hi-hat -> hat (alternate)
-    46: 2,  # open hi-hat -> hat (alternate)
+    # === KICKS (0) === #
+    35: 0,  # acoustic bass drum
+    36: 0,  # bass drum 1 (primary kick)
+
+    # Toms (low pitched) -> Kick
+    41: 0,  # low floor tom
+    43: 0,  # high floor tom
+    45: 0,  # low tom
+    47: 0,  # low-mid tom
+    48: 0,  # hi-mid tom
+    50: 0,  # high tom
+
+    # === SNARES (1) === #
+    38: 1,  # acoustic snare (primary snare)
+    40: 1,  # electric snare
+    37: 1,  # side stick / rimshot
+    39: 1,  # hand clap
+    31: 1,  # sticks
+
+    # Percussion (snare-like) -> Snare
+    54: 1,  # tambourine
+    56: 1,  # cowbell
+    60: 1,  # hi bongo
+    61: 1,  # low bongo
+    62: 1,  # mute hi conga
+    63: 1,  # open hi conga
+    64: 1,  # low conga
+    66: 1,  # high timbale
+    67: 1,  # low timbale
+
+    # === HATS/CYMBALS (2) === #
+    42: 2,  # closed hi-hat (primary hat)
+    44: 2,  # pedal hi-hat
+    46: 2,  # open hi-hat
+
+    # Cymbals -> Hat
+    49: 2,  # crash cymbal 1
+    51: 2,  # ride cymbal 1
+    52: 2,  # chinese cymbal
+    53: 2,  # ride bell
+    55: 2,  # splash cymbal
+    57: 2,  # crash cymbal 2
+    59: 2,  # ride cymbal 2
+
+    # Metallic percussion -> Hat
+    68: 2,  # low agogo
+    69: 2,  # high agogo
+    70: 2,  # cabasa
+    73: 2,  # short guiro
+    74: 2,  # long guiro
+    80: 2,  # mute triangle
+    81: 2,  # open triangle
 }
 
 
@@ -108,7 +154,11 @@ def rhythmic_creator_to_chuloopa(text: str, loop_duration: float):
             end_time = float(tokens[i + 2])
 
             # Map MIDI note to CHULOOPA drum class
-            drum_class = MIDI_TO_CHULOOPA.get(midi_note, 0)
+            # Skip unknown MIDI notes (melody notes, non-drum percussion)
+            if midi_note not in MIDI_TO_CHULOOPA:
+                continue
+
+            drum_class = MIDI_TO_CHULOOPA[midi_note]
 
             # Assign velocity based on position
             velocity = assign_velocity(start_time, loop_duration)
