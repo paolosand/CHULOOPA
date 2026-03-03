@@ -541,7 +541,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
     Generate variation using Jake Chen's Transformer-LSTM+FNN model.
 
     This function:
-    1. Uses first 50% of pattern as context (gives model the "vibe")
+    1. Uses full pattern as context (gives model complete groove understanding)
     2. Generates continuation with temperature control
     3. Time-warps result to match original loop duration
     4. Returns variation with same duration as original
@@ -565,9 +565,8 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             return groove_preserve(pattern), False
 
     try:
-        # Use first 50% of pattern as context (gives model the groove)
-        context_size = max(1, len(pattern.hits) // 2)
-        context_hits = pattern.hits[:context_size]
+        # Use full pattern as context (gives model complete groove understanding)
+        context_hits = pattern.hits
 
         # Create context pattern
         context_pattern = DrumPattern(
@@ -583,11 +582,11 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             return groove_preserve(pattern), False
 
         # Calculate how many tokens to generate
-        # Generate 2-3x more tokens for variety (3 tokens per hit)
-        num_tokens = len(pattern.hits) * 6
+        # Generate ~1x pattern length for continuation (3 tokens per hit)
+        num_tokens = len(pattern.hits) * 3
 
         print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
-        print(f"    Context: {len(context_hits)} hits")
+        print(f"    Context: {len(context_hits)} hits (full pattern)")
         print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
 
         # Generate continuation

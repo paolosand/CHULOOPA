@@ -91,23 +91,21 @@ def test_generation(model, context_text, target_duration, temperature=0.8):
     print("=" * 80)
     print()
 
-    # Use first 50% as context
+    # Use full pattern as context
     context_tokens = context_text.split()
-    half_way = len(context_tokens) // 2
-    context_half = ' '.join(context_tokens[:half_way])
 
     print(f"Context:")
-    print(f"  Using first {half_way} tokens (~{half_way // 3} hits)")
-    print(f"  Context: {context_half[:100]}...")
+    print(f"  Using full pattern: {len(context_tokens)} tokens (~{len(context_tokens) // 3} hits)")
+    print(f"  Context: {context_text[:100]}...")
 
     print()
     print("Generating continuation...")
 
-    num_tokens = len(context_tokens) * 2  # Generate 2x original for variety
+    num_tokens = len(context_tokens)  # Generate ~1x pattern length
 
     try:
         generated_text = model.generate_variation(
-            input_pattern=context_half,
+            input_pattern=context_text,
             num_tokens=num_tokens,
             temperature=temperature
         )
