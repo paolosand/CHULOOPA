@@ -98,6 +98,7 @@ osc_client = None
 
 # Global state
 current_spice_level = 0.5  # Default spice level
+use_no_warp = False  # Skip time-warping if True
 
 
 # =============================================================================
@@ -609,13 +610,23 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
         print(f"    Generated: {len(raw_pattern.hits)} hits")
 
-        # Time-warp to fit exact loop duration
-        print(f"    Time-warping to {pattern.loop_duration:.2f}s...")
-        variation = fit_to_loop_duration(raw_pattern, pattern.loop_duration)
+        # Time-warp to fit exact loop duration (unless --no-warp is set)
+        global use_no_warp
+        if use_no_warp:
+            # Use model's natural timing
+            max_time = max(hit.timestamp for hit in raw_pattern.hits) if raw_pattern.hits else 0
+            raw_pattern.loop_duration = max_time
+            raw_pattern._recalculate_delta_times()
+            variation = raw_pattern
+            print(f"    Using natural timing: {max_time:.2f}s (no time-warping)")
+        else:
+            # Time-warp to original duration
+            print(f"    Time-warping to {pattern.loop_duration:.2f}s...")
+            variation = fit_to_loop_duration(raw_pattern, pattern.loop_duration)
 
-        if not variation.hits:
-            print("  Warning: No hits after time-warping, falling back")
-            return groove_preserve(pattern), False
+            if not variation.hits:
+                print("  Warning: No hits after time-warping, falling back")
+                return groove_preserve(pattern), False
 
         print(f"    Final variation: {len(variation.hits)} hits")
 
@@ -966,6 +977,7 @@ def watch_directory(directory: str, variation_type: str = 'rhythmic_creator'):
 
     print(f"\nWatching for drum file changes in: {directory}")
     print(f"Variation type: {variation_type}")
+    print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
     print(f"Current spice level: {current_spice_level:.2f}")
     print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
     print("Press Ctrl+C to stop\n")
@@ -1209,7 +1221,14 @@ OSC Communication:
     parser.add_argument('--temperature', type=float, default=0.7,
                         help='Gemini sampling temperature (0.0-1.0, default 0.7)')
 
+    parser.add_argument('--no-warp', action='store_true',
+                        help='Skip time-warping (use model\'s natural timing)')
+
     args = parser.parse_args()
+
+    # Set global no_warp flag
+    global use_no_warp
+    use_no_warp = args.no_warp
 
     print("=" * 60)
     print("  CHULOOPA Drum Variation AI")
