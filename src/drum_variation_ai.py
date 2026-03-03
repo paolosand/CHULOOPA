@@ -457,6 +457,176 @@ def groove_preserve(pattern: DrumPattern,
 
 
 # =============================================================================
+# RHYTHMIC CREATOR (JAKE'S MODEL) VARIATION GENERATOR
+# =============================================================================
+
+# Try to import rhythmic creator model
+try:
+    from rhythmic_creator_model import get_model as get_rhythmic_model
+    from format_converters import chuloopa_to_rhythmic_creator, rhythmic_creator_to_chuloopa
+    HAVE_RHYTHMIC_CREATOR = True
+except ImportError as e:
+    HAVE_RHYTHMIC_CREATOR = False
+    print(f"Note: rhythmic_creator not available: {e}")
+
+# Global model instance
+rhythmic_model = None
+
+
+def init_rhythmic_creator():
+    """Initialize rhythmic creator model (call once at startup)."""
+    global rhythmic_model
+
+    if not HAVE_RHYTHMIC_CREATOR:
+        return False
+
+    try:
+        rhythmic_model = get_rhythmic_model()
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to load rhythmic_creator: {e}")
+        return False
+
+
+def fit_to_loop_duration(generated: DrumPattern, target_duration: float) -> DrumPattern:
+    """
+    Time-warp generated pattern to fit exact loop duration.
+
+    Jake's model generates continuations that may exceed the target duration.
+    This function scales all timestamps proportionally to fit.
+
+    Args:
+        generated: Generated pattern (may have any duration)
+        target_duration: Target loop duration in seconds
+
+    Returns:
+        Pattern with exactly target_duration
+    """
+    if not generated.hits:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Find actual duration of generated pattern
+    max_timestamp = max(hit.timestamp for hit in generated.hits)
+
+    if max_timestamp == 0 or max_timestamp <= 0.01:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Calculate scale factor
+    scale_factor = target_duration / max_timestamp
+
+    # Time-warp all timestamps
+    fitted_hits = []
+    for hit in generated.hits:
+        new_timestamp = hit.timestamp * scale_factor
+
+        # Keep only hits within target duration
+        if new_timestamp < target_duration:
+            fitted_hits.append(DrumHit(
+                drum_class=hit.drum_class,
+                timestamp=new_timestamp,
+                velocity=hit.velocity,
+                delta_time=0.0  # Will recalculate
+            ))
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
+    result._recalculate_delta_times()
+
+    return result
+
+
+def rhythmic_creator_variation(pattern: DrumPattern,
+                               temperature: float = 0.7) -> tuple:
+    """
+    Generate variation using Jake Chen's Transformer-LSTM+FNN model.
+
+    This function:
+    1. Uses first 50% of pattern as context (gives model the "vibe")
+    2. Generates continuation with temperature control
+    3. Time-warps result to match original loop duration
+    4. Returns variation with same duration as original
+
+    Args:
+        pattern: Input drum pattern
+        temperature: Spice level (0.5-1.5)
+                    - 0.5-0.9: Conservative (stays close to training)
+                    - 1.0: Normal sampling
+                    - 1.1-1.5: Creative (more variation)
+
+    Returns:
+        Tuple of (DrumPattern, success: bool)
+    """
+    global rhythmic_model
+
+    # Initialize model if needed
+    if rhythmic_model is None:
+        if not init_rhythmic_creator():
+            print("  Rhythmic creator not available, falling back to groove_preserve")
+            return groove_preserve(pattern), False
+
+    try:
+        # Use first 50% of pattern as context (gives model the groove)
+        context_size = max(1, len(pattern.hits) // 2)
+        context_hits = pattern.hits[:context_size]
+
+        # Create context pattern
+        context_pattern = DrumPattern(
+            hits=context_hits,
+            loop_duration=pattern.loop_duration
+        )
+
+        # Convert to rhythmic_creator format
+        context_text = chuloopa_to_rhythmic_creator(context_pattern)
+
+        if not context_text:
+            print("  Warning: Empty context, falling back")
+            return groove_preserve(pattern), False
+
+        # Calculate how many tokens to generate
+        # Generate 2-3x more tokens for variety (3 tokens per hit)
+        num_tokens = len(pattern.hits) * 6
+
+        print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
+        print(f"    Context: {len(context_hits)} hits")
+        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
+
+        # Generate continuation
+        generated_text = rhythmic_model.generate_variation(
+            input_pattern=context_text,
+            num_tokens=num_tokens,
+            temperature=temperature
+        )
+
+        # Convert back to CHULOOPA format (with large duration for now)
+        raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+
+        if not raw_pattern.hits:
+            print("  Warning: Model generated empty pattern, falling back")
+            return groove_preserve(pattern), False
+
+        print(f"    Generated: {len(raw_pattern.hits)} hits")
+
+        # Time-warp to fit exact loop duration
+        print(f"    Time-warping to {pattern.loop_duration:.2f}s...")
+        variation = fit_to_loop_duration(raw_pattern, pattern.loop_duration)
+
+        if not variation.hits:
+            print("  Warning: No hits after time-warping, falling back")
+            return groove_preserve(pattern), False
+
+        print(f"    Final variation: {len(variation.hits)} hits")
+
+        return variation, True
+
+    except Exception as e:
+        print(f"  Warning: rhythmic_creator generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("  Falling back to groove_preserve")
+        return groove_preserve(pattern), False
+
+
+# =============================================================================
 # GEMINI VARIATION GENERATOR
 # =============================================================================
 
@@ -614,7 +784,7 @@ def handle_regenerate(address):
         return
 
     try:
-        generate_variations_for_track(track_file, variation_type='gemini')
+        generate_variations_for_track(track_file, variation_type='rhythmic_creator')
     except Exception as e:
         error_msg = f"Error generating variations: {e}"
         print(error_msg)
@@ -629,7 +799,7 @@ def handle_track_cleared(address):
     # For now, just log it
 
 
-def generate_variations_for_track(track_file: Path, variation_type: str = 'gemini'):
+def generate_variations_for_track(track_file: Path, variation_type: str = 'rhythmic_creator'):
     """Generate 1 variation for a track file and send OSC notification."""
     global osc_client, current_spice_level
 
@@ -699,7 +869,7 @@ if HAVE_WATCHDOG:
     class DrumFileHandler(FileSystemEventHandler):
         """Watch for changes to drum pattern files."""
 
-        def __init__(self, variation_type: str = 'gemini',
+        def __init__(self, variation_type: str = 'rhythmic_creator',
                      auto_generate: bool = True,
                      cooldown: float = 2.0):
             """
@@ -751,7 +921,7 @@ if HAVE_WATCHDOG:
                         osc_client.send_message("/chuloopa/error", error_msg)
 
 
-def watch_directory(directory: str, variation_type: str = 'gemini'):
+def watch_directory(directory: str, variation_type: str = 'rhythmic_creator'):
     """Watch directory for drum file changes and listen for OSC messages."""
     global osc_client
 
@@ -814,14 +984,15 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
 # =============================================================================
 
 def generate_variation(pattern: DrumPattern,
-                       variation_type: str = 'gemini',
+                       variation_type: str = 'rhythmic_creator',
                        **kwargs) -> DrumPattern:
     """Generate a variation of the input pattern.
 
     Args:
         pattern: Input drum pattern
         variation_type: One of:
-            - 'gemini': (DEFAULT) Use Gemini AI for intelligent variations
+            - 'rhythmic_creator': (DEFAULT) Jake Chen's Transformer-LSTM+FNN model
+            - 'gemini': Use Gemini AI for intelligent variations
             - 'groove_preserve': Preserve structure, add subtle feel
             - 'humanize': Add subtle timing/velocity variations
             - 'mutate': Swap/add/remove hits
@@ -832,9 +1003,12 @@ def generate_variation(pattern: DrumPattern,
         **kwargs: Additional arguments for specific variation types
 
     Returns:
-        New DrumPattern with variation applied
+        Tuple of (DrumPattern, success: bool)
     """
-    if variation_type == 'gemini':
+    if variation_type == 'rhythmic_creator':
+        return rhythmic_creator_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+
+    elif variation_type == 'gemini':
         return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'groove_preserve':
@@ -900,12 +1074,12 @@ def generate_variation(pattern: DrumPattern,
         return result
 
     else:
-        print(f"Unknown variation type: {variation_type}, using gemini")
-        return gemini_variation(pattern)
+        print(f"Unknown variation type: {variation_type}, using rhythmic_creator")
+        return rhythmic_creator_variation(pattern, temperature=kwargs.get('temperature', 0.7))
 
 
 def generate_variation_for_file(filepath: str,
-                                 variation_type: str = 'gemini',
+                                 variation_type: str = 'rhythmic_creator',
                                  backup: bool = False,
                                  **kwargs) -> bool:
     """Load pattern from file, generate 1 variation, and save to variations directory.
@@ -1015,10 +1189,10 @@ OSC Communication:
     parser.add_argument('--file', '-f', type=str,
                         help='Path to drum pattern file')
 
-    parser.add_argument('--type', '-T', type=str, default='gemini',
-                        choices=['gemini', 'groove_preserve', 'humanize', 'mutate',
+    parser.add_argument('--type', '-T', type=str, default='rhythmic_creator',
+                        choices=['rhythmic_creator', 'gemini', 'groove_preserve', 'humanize', 'mutate',
                                  'densify', 'simplify', 'shift', 'random'],
-                        help='Variation type (default: gemini)')
+                        help='Variation type (default: rhythmic_creator)')
 
     parser.add_argument('--watch', '-w', action='store_true',
                         help='Watch for file changes and auto-generate')
