@@ -9,7 +9,7 @@
 
 ## Abstract
 
-Solo musicians often need drum accompaniment but lack access to drummers or the technical skills to program drum machines. Existing solutions—backing tracks, loop pedals, or traditional drum machines—are either inflexible or require significant music theory knowledge. We present CHULOOPA, a real-time beatbox-to-drum transcription system designed for live solo performance. CHULOOPA uses personalized machine learning trained on minimal user-specific data (10 samples per drum class) to transcribe vocal beatboxing into drum patterns with ~90% accuracy. The system provides immediate audio feedback during recording, enables seamless pattern looping, and generates AI-powered variations that preserve non-quantized timing and musical feel through Gemini API integration. By combining accessible input (beatboxing), personalized classification, and AI-augmented creativity, CHULOOPA lowers the barrier to drum programming for amateur beatboxers while maintaining responsiveness for live performance. We evaluate the system through technical metrics, autoethnographic study, and user testing with solo performers, demonstrating that personalization enables high accuracy with minimal training data and that AI can augment creativity without destroying natural timing.
+Solo musicians often need drum accompaniment but lack access to drummers or the technical skills to program drum machines. Existing solutions—backing tracks, loop pedals, or traditional drum machines—are either inflexible or require significant music theory knowledge. We present CHULOOPA, a real-time beatbox-to-drum transcription system designed for live solo performance. CHULOOPA uses personalized machine learning trained on minimal user-specific data (10 samples per drum class) to transcribe vocal beatboxing into drum patterns with ~90% accuracy. The system provides immediate audio feedback during recording, enables seamless pattern looping, and generates AI-powered variations that preserve non-quantized timing and musical feel through local neural network inference. By combining accessible input (beatboxing), personalized classification, and offline AI-augmented creativity, CHULOOPA lowers the barrier to drum programming for amateur beatboxers while maintaining responsiveness for live performance. We evaluate the system through technical metrics, autoethnographic study, and user testing with solo performers, demonstrating that personalization enables high accuracy with minimal training data and that AI can augment creativity without destroying natural timing.
 
 **Keywords:** beatbox recognition, personalized machine learning, AI music generation, live looping, solo performance, accessible music creation
 
@@ -38,7 +38,7 @@ Rather than training on generic beatbox datasets (which wouldn't recognize my am
 CHULOOPA provides immediate audio feedback during recording—as you beatbox, you hear drum samples play back in real-time. This creates a tight feedback loop between input and output, essential for live performance where latency destroys the creative flow. The system processes onset detection, classification, and playback with <50ms latency, maintaining the spontaneity of live music-making.
 
 **3. AI-Augmented Creativity**
-Once a drum pattern is recorded, CHULOOPA generates variations using Gemini API integration. Critically, these AI-generated variations preserve the exact loop duration and non-quantized timing of the original beatbox performance. Unlike traditional quantization-based systems that force rhythms onto a grid, CHULOOPA's AI maintains the human "feel" of timing imperfections while introducing musical variations. This represents a shift from AI as replacement to AI as creative collaborator.
+Once a drum pattern is recorded, CHULOOPA generates variations using a local transformer-LSTM neural network trained on MIDI drum sequences. Critically, these AI-generated variations preserve the exact loop duration and non-quantized timing of the original beatbox performance. Unlike traditional quantization-based systems that force rhythms onto a grid, CHULOOPA's AI maintains the human "feel" of timing imperfections while introducing musical variations. This represents a shift from AI as replacement to AI as creative collaborator. The system runs entirely offline with no external API dependencies, making it reliable for live performance contexts.
 
 ### 1.3 System Overview
 
@@ -50,7 +50,7 @@ CHULOOPA's workflow consists of four stages:
 
 3. **Loop Playback:** When the user releases the MIDI trigger, the recorded pattern begins looping seamlessly. The system uses queued actions to enable smooth pattern switching at loop boundaries without overlap or drift.
 
-4. **AI Variation Generation:** A background Python process monitors for newly recorded patterns and automatically generates multiple variations using Gemini API. These variations maintain the exact loop duration and preserve the non-quantized timing characteristics of the original performance. Users can load variations via MIDI triggers during performance.
+4. **AI Variation Generation:** A background Python process monitors for newly recorded patterns and automatically generates variations using a local transformer-LSTM model (rhythmic_creator by Jake Chen, CalArts MFA 2025). These variations maintain the exact loop duration and preserve the non-quantized timing characteristics of the original performance. Users can load variations via MIDI triggers during performance. The system runs entirely offline, ensuring reliability in live performance contexts.
 
 The system is implemented in ChucK (for real-time audio/MIDI processing) with Python integration (for KNN training and Gemini API calls), running on standard laptop hardware with a USB microphone and MIDI controller.
 
@@ -60,7 +60,7 @@ This paper makes three primary contributions:
 
 1. **Minimal personalized training for beatbox classification:** We demonstrate that user-specific training with only 10 samples per drum class achieves ~90% classification accuracy, significantly fewer samples than generic beatbox recognition systems require. We argue that personalization enables high accuracy with minimal data by constraining the recognition problem to a single user's consistent (if amateur) vocal style.
 
-2. **Timing-preserving AI variation generation:** We show that large language models (Gemini) can generate musically coherent drum pattern variations while maintaining exact loop duration and preserving non-quantized timing characteristics. This contrasts with prior AI music generation systems that quantize to grids, demonstrating that AI can augment without destroying natural human timing.
+2. **Timing-preserving AI variation generation:** We show that a transformer-LSTM model trained on MIDI sequences can generate musically coherent drum pattern variations while maintaining exact loop duration and preserving non-quantized timing characteristics through a continuation-based approach. This contrasts with prior AI music generation systems that quantize to grids, demonstrating that AI can augment without destroying natural human timing. The system operates entirely offline, eliminating external API dependencies for live performance reliability.
 
 3. **Complete performance system for solo musicians:** We present an end-to-end system designed explicitly for non-technical solo performers, integrating beatbox transcription, live looping, and AI variation in a performance-ready instrument. Through autoethnographic study and user testing, we demonstrate that the system successfully lowers barriers to drum programming for amateur beatboxers.
 
@@ -221,61 +221,68 @@ This mapping was designed for compact MIDI controllers like the QuNeo, enabling 
 
 ### 3.5 AI Variation Generation
 
-[To be written: Gemini integration, timing preservation, prompt engineering]
+CHULOOPA generates drum pattern variations using a local transformer-LSTM neural network, specifically designed to maintain exact loop duration and preserve non-quantized timing while operating entirely offline.
 
-CHULOOPA generates drum pattern variations using Google's Gemini API, specifically designed to maintain exact loop duration and preserve non-quantized timing.
-
-#### 3.5.1 Architecture
+#### 3.5.1 Architecture: Rhythmic Creator Integration
 
 A Python script (`drum_variation_ai.py`) runs in background watch mode, monitoring for newly exported drum pattern files. When ChucK exports `track_0_drums.txt`, the Python process:
 
 1. Loads the drum pattern (drum class, timestamp, velocity, delta_time)
-2. Constructs a prompt describing the pattern and constraints
-3. Calls Gemini API with custom system prompt
-4. Parses the JSON response containing variation pattern
-5. Validates loop duration preservation
-6. Saves multiple variations (`track_0_drums.txt`, potentially `track_0_var1.txt`, etc.)
+2. Converts to rhythmic_creator format (MIDI triplets: `note start_time end_time`)
+3. Generates continuation using transformer-LSTM model with temperature control
+4. Strips context echo and extracts continuation hits
+5. Shifts continuation to start at 0.0s and time-warps to match original duration
+6. Saves variation to `track_0_drums_var1.txt`
+7. Sends OSC message to ChucK indicating variation ready
 
-#### 3.5.2 Timing Preservation Constraint
+The model (rhythmic_creator by Jake Chen, CalArts MFA 2025) is a 4.49M-parameter hybrid architecture:
+- 6 Transformer blocks (192-dim embeddings, 6 attention heads)
+- 2 LSTM layers (64 hidden units each)
+- Feed-forward network for final predictions
+- Character-level tokenization of MIDI sequences
 
-The critical innovation is constraining Gemini to preserve exact loop duration. The system prompt explicitly states:
+#### 3.5.2 Continuation-Based Variation Approach
 
+Rather than generating loops from scratch, CHULOOPA uses the model's **continuation** output as variations. The model was originally trained for MIDI sequence extension, outputting both an echo of the input context plus a musical continuation. Our key insight was to:
+
+1. **Strip the context echo** - Remove tokens that duplicate the input pattern
+2. **Extract continuation hits** - Select drum hits with timestamps after the original pattern ends
+3. **Shift to loop start** - Rebase continuation hits to start at 0.0s
+4. **Time-warp to duration** - Scale timestamps proportionally to match original loop length exactly
+
+This approach produces musically coherent variations that maintain the structural groove of the original while introducing creative changes in hit placement and density.
+
+**Example transformation:**
 ```
-"CRITICAL: The sum of all delta_times must equal the loop duration exactly."
-```
-
-Gemini receives the original loop duration (e.g., 2.182676 seconds) and must generate variations that total exactly this duration. This ensures variations can seamlessly replace the original pattern in live performance without breaking synchronization.
-
-Additionally, Gemini is instructed to maintain the "groove" and timing feel of the original, avoiding quantization to a grid. In testing, we found Gemini successfully preserves subtle timing variations (swing, human imperfections) while introducing musical variations in drum placement and density.
-
-#### 3.5.3 Prompt Engineering for Musical Variations
-
-The system uses a "spice level" parameter (0.0-1.0) to control variation intensity:
-- **0.0:** Minimal variation (very close to original)
-- **0.5:** Moderate variation
-- **1.0:** Maximum variation (more creative changes)
-
-Default spice level is 0.9, encouraging creative variations while maintaining groove structure. Gemini returns variations in JSON format with reasoning:
-
-```json
-{
-  "reasoning": "Maintained the core kick pattern on beats 1 and 3, added syncopated snare hits...",
-  "pattern": "0,0.037,0.17,0.56\n1,0.605,0.25,0.41\n..."
-}
+Input pattern (2.5s):    kick 0.1s, snare 0.9s, hat 1.8s
+Model continuation:      kick 2.6s, hat 3.1s, snare 3.8s  (1.2s duration)
+Shifted:                 kick 0.0s, hat 0.5s, snare 1.2s
+Time-warped (2.5s):      kick 0.0s, hat 1.0s, snare 2.5s  ← Final variation
 ```
 
-#### 3.5.4 Fallback Algorithmic Variations
+#### 3.5.3 Temperature Control for Variation Intensity
 
-If Gemini API is unavailable (no API key, network issues, rate limits), CHULOOPA falls back to algorithmic variation methods implemented in Python:
+The system uses a "spice level" parameter (0.0-1.0) that maps directly to model temperature:
+- **0.0-0.3:** Conservative variations (low temperature, deterministic)
+- **0.4-0.6:** Balanced creativity (moderate temperature)
+- **0.7-1.0:** Experimental variations (high temperature, more randomness)
 
-- **groove_preserve:** Adds subtle timing/velocity humanization, accent patterns (default fallback)
-- **humanize:** Simple timing/velocity variations
-- **mutate:** Swaps drum classes, adds/removes hits
-- **densify:** Adds fill hits in gaps
-- **simplify:** Removes hits for sparser patterns
-- **shift:** Rotates pattern in time
+Users control spice level in real-time via MIDI CC 18, with visual feedback in the ChuGL interface (blue/orange/red text indicating current level). Regeneration with new spice levels happens on-demand via MIDI trigger.
 
-While less sophisticated than Gemini, these algorithmic variations ensure the system remains functional without external API dependencies.
+#### 3.5.4 Timing Preservation and Musical Coherence
+
+The continuation-based approach preserves non-quantized timing in two ways:
+
+1. **Model training:** rhythmic_creator was trained on MIDI sequences with natural (non-quantized) timing, learning to generate human-like rhythmic variations
+2. **Proportional time-warping:** Rather than snapping hits to a grid, the system scales the continuation proportionally to match the original loop duration exactly
+
+This ensures variations can seamlessly replace original patterns in live performance without breaking synchronization, while maintaining the "groove" and timing feel of human beatboxing.
+
+**Performance:** Model initialization takes ~2 seconds (one-time), generation takes ~3-5 seconds per variation, running entirely on CPU with no external API calls.
+
+#### 3.5.5 Alternative: Gemini API Option
+
+CHULOOPA also supports Google's Gemini API as an alternative variation engine (`drum_variation_gemini.py`), useful for studio contexts where internet connectivity is available. Gemini offers more sophisticated musical reasoning through prompt engineering but requires API keys and network access. The local rhythmic_creator model is preferred for live performance due to offline operation and faster inference.
 
 ---
 
@@ -298,7 +305,7 @@ While less sophisticated than Gemini, these algorithmic variations ensure the sy
 - Onset detection latency: <10ms (512 samples @ 44.1kHz)
 - KNN classification: <1ms per inference
 - Total input-to-output latency: <50ms (tested)
-- Gemini API variation generation: 2-5 seconds (background, non-blocking)
+- AI variation generation: rhythmic_creator ~3-5 seconds, Gemini API ~5-10 seconds (background, non-blocking)
 
 ---
 
@@ -378,7 +385,7 @@ While less sophisticated than Gemini, these algorithmic variations ensure the sy
 **Current Limitations:**
 1. **Single-track looping:** Multi-track looping prototype exists but requires further development for reliable synchronization
 2. **Classification errors:** ~10% misclassification rate (typically kick↔snare confusion)
-3. **Gemini API dependency:** Requires internet connection and API key for AI variations (fallback algorithms available)
+3. **Variable variation density:** AI-generated variations may have different hit density than originals (3-13 hits from 4-hit input) due to MIDI filtering during model conversion, though musically acceptable
 4. **Amateur beatbox only:** System is trained for individual users, not professional beatboxers or general vocal percussion
 
 ### 6.3 Design Insights
@@ -410,16 +417,17 @@ Improve ChuGL visuals to show:
 - Pattern similarity between original and variation
 - Real-time classification confidence display
 
-### 7.3 Tighter ChucK-Python Integration
+### 7.3 Enhanced Variation Generation
 
-Auto-generate variations immediately after recording without manual Python script invocation. Generate multiple variants (5+) per loop for greater creative exploration.
+Generate multiple variants (3-5) per loop with random selection for greater creative exploration. Improve variation density consistency to better match original pattern hit counts.
 
 ### 7.4 Additional Variation Algorithms
 
-Explore non-LLM variation methods:
-- GrooVAE integration (Magenta) for style transfer
-- Genetic algorithms for pattern evolution
-- User-guided variation (specify "more snare", "busier hi-hats")
+Explore complementary variation methods:
+- Fine-tune rhythmic_creator on drum-only dataset to eliminate melody MIDI filtering
+- GrooVAE integration (Magenta) for latent space interpolation and style transfer
+- Genetic algorithms for gradual pattern evolution across multiple generations
+- User-guided variation with semantic controls (specify "more snare", "busier hi-hats")
 
 ### 7.5 Long-Term Study with Solo Performers
 
@@ -431,9 +439,9 @@ Conduct longitudinal study (3-6 months) with solo musicians using CHULOOPA in ac
 
 [TODO: Recap contribution, impact statement, vision]
 
-CHULOOPA demonstrates that personalized machine learning with minimal training data can make drum programming accessible to amateur beatboxers, enabling solo performers to create responsive drum accompaniment without technical music skills. By combining real-time beatbox transcription, live looping, and AI-augmented variation generation, the system serves as both performance instrument and creative collaborator.
+CHULOOPA demonstrates that personalized machine learning with minimal training data can make drum programming accessible to amateur beatboxers, enabling solo performers to create responsive drum accompaniment without technical music skills. By combining real-time beatbox transcription, live looping, and offline AI-augmented variation generation using a local transformer-LSTM model, the system serves as both performance instrument and creative collaborator.
 
-Our key insight is that **personalization trumps dataset size** when designing for accessibility: training on 10 user-specific samples achieves higher accuracy than generic models trained on hundreds of samples from other users. Additionally, we show that AI can augment creativity without destroying the human "feel" of timing, preserving non-quantized groove characteristics through careful constraint design.
+Our key insights are that **personalization trumps dataset size** when designing for accessibility (training on 10 user-specific samples achieves higher accuracy than generic models trained on hundreds of samples from other users), and that **offline AI enables performance reliability** (local neural network inference with no API dependencies ensures consistent operation in live contexts). Additionally, we show that AI can augment creativity without destroying the human "feel" of timing, preserving non-quantized groove characteristics through a continuation-based variation approach.
 
 Looking forward, we envision CHULOOPA as a step toward more **accessible creative AI tools** that adapt to individual users rather than demanding users adapt to rigid systems. By treating amateur beatboxing—imperfect, idiosyncratic, personal—as a legitimate musical interface, we expand who can participate in electronic music creation.
 
@@ -441,7 +449,7 @@ Looking forward, we envision CHULOOPA as a step toward more **accessible creativ
 
 ## Acknowledgments
 
-[To be written: Advisors Ajay Kapur and Jake Cheng, CalArts Music Tech MFA program, user testing participants]
+We thank Jake Chen (Zhaohan Chen) for making his rhythmic_creator model from his CalArts MFA thesis "Music As Natural Language: Deep Learning Driven Rhythmic Creation" (2025) available for integration into this project. We thank advisors Ajay Kapur and Jake Cheng at the CalArts Music Tech MFA program for guidance and support. We thank user testing participants [names to be added]. This work was supported by the California Institute of the Arts Music Technology MFA program.
 
 ---
 
@@ -454,11 +462,19 @@ Looking forward, we envision CHULOOPA as a step toward more **accessible creativ
 ## TODO Before Submission
 
 - [ ] Complete Related Work section (literature review)
+  - [ ] Add Jake Chen's rhythmic_creator paper to references
+  - [ ] Survey transformer-based music generation models
 - [ ] Run technical evaluations (accuracy, latency, timing preservation)
+  - [ ] Test rhythmic_creator variation quality and coherence
+  - [ ] Measure generation speed and reliability
 - [ ] Conduct autoethnographic documentation
 - [ ] Run user testing sessions (2-3 participants)
 - [ ] Create system architecture diagram
+  - [ ] Show ChucK ↔ Python OSC communication flow
+  - [ ] Illustrate continuation-based variation pipeline
 - [ ] Create screenshots/figures
+  - [ ] ChuGL interface showing spice level control
+  - [ ] Example variation comparison (original vs. generated)
 - [ ] Fill in all [TODO] sections with actual results
 - [ ] Format according to NIME template
 - [ ] Proofread and polish

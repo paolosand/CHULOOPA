@@ -320,7 +320,7 @@ Success rate: 100%
 
 **Performance**:
 - Model initialization: ~2 seconds (one-time)
-- Generation: ~0.5-1 second per variation
+- Generation: ~3-5 seconds per variation
 - CPU only (no GPU required)
 
 ### Known Limitations
@@ -434,7 +434,7 @@ CHULOOPA also supports Google's Gemini API as an alternative:
 | Feature | rhythmic_creator | Gemini API |
 |---------|------------------|------------|
 | **Offline** | ✅ Yes | ❌ No (requires internet) |
-| **Speed** | ~0.5s | ~2-5s |
+| **Speed** | ~3-5s | ~5-10s |
 | **Consistency** | Good (deterministic at temp=0) | Variable |
 | **Musical coherence** | Good (trained on drums) | Excellent (understands music) |
 | **Variation density** | Variable (3-13 hits) | Consistent |

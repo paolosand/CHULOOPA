@@ -1,6 +1,6 @@
 # CHULOOPA
 
-**An intelligent drum looper that transforms beatbox into transcribed drum patterns with Gemini AI-powered variations.**
+**An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 ## Overview
 
@@ -13,7 +13,7 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 - **Real-time Beatbox Transcription** - Vocal input → Drum samples (instant feedback)
 - **Single-Track Looper** - Master sync system (multi-track coming in Phase 3)
 - **KNN Classifier** - User-trainable personalized drum detection
-- **AI Variation Generation** - Gemini-powered drum pattern variations with real-time spice control
+- **AI Variation Generation** - Local transformer-LSTM model for offline drum pattern variations with real-time spice control
 - **OSC Integration** - Automatic Python-ChucK communication for seamless AI workflow
 - **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
 - **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
@@ -47,9 +47,7 @@ cd src
 python drum_variation_ai.py --watch
 ```
 
-This starts the AI variation engine that auto-generates variations when you record loops.
-
-**Requirements:** Set `GEMINI_API_KEY` environment variable with your Gemini API key.
+This starts the AI variation engine that auto-generates variations when you record loops using Jake Chen's rhythmic_creator model (local inference, no API required).
 
 ### 3. Run CHULOOPA Drums V2 (Terminal 2)
 
@@ -181,7 +179,7 @@ Multi-track support coming in Phase 3:
    ↓
 7. Python Watchdog Detects File Change
    ↓
-8. AI Variation Generation (Gemini API with current spice level)
+8. AI Variation Generation (rhythmic_creator model with current spice level)
    ↓
 9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
    ↓
@@ -305,45 +303,60 @@ cd src
 python drum_variation_ai.py --watch
 ```
 
-Automatically generates variations when you record loops. Keep this running in a separate terminal.
+Automatically generates variations when you record loops using Jake Chen's rhythmic_creator model. Keep this running in a separate terminal.
 
 **Manual Mode (Optional):**
 
 ```bash
 cd src
+python drum_variation_ai.py --track 0 --type rhythmic_creator --temperature 0.8
+# Alternative: Use Gemini API (requires API key)
 python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 ```
 
-**How it works:**
+**How it works (rhythmic_creator approach):**
 
 1. **File watching:** Python watchdog monitors `src/tracks/track_0/track_0_drums.txt`
 2. **Auto-trigger:** When file changes (after recording), generation starts automatically
-3. **Gemini API call:** Sends pattern with constraints:
-   - Maintain total loop duration
-   - Keep consistent tempo
-   - Apply spice level for creativity control
-   - Preserve drum pattern structure (kick/snare/hat classes)
+3. **Model inference:** Transformer-LSTM generates continuation with temperature control:
+   - Converts pattern to MIDI triplet format (`note start_time end_time`)
+   - Generates continuation sequence (not loop wrap)
+   - Strips context echo and extracts new material
+   - Shifts continuation to start at 0.0s
+   - Time-warps to match original loop duration exactly
 4. **Save variation:** Writes to `src/tracks/track_0/variations/track_0_drums_var1.txt`
 5. **OSC notification:** Sends `/chuloopa/variations_ready` to ChucK
 6. **User loads:** Press D1 to hear the variation
 
+**Model Architecture (rhythmic_creator):**
+- **Author:** Jake Chen (Zhaohan Chen), CalArts MFA Thesis 2025
+- **Paper:** "Music As Natural Language: Deep Learning Driven Rhythmic Creation"
+- **Architecture:** Transformer-LSTM Hybrid (4.49M parameters)
+  - 6 Transformer blocks (192-dim embeddings, 6 attention heads)
+  - 2 LSTM layers (64 hidden units each)
+  - Feed-forward network for predictions
+- **Performance:** ~3-5 seconds generation time on CPU
+- **Operation:** Fully offline, no API dependencies
+
 **Spice Level Control:**
 
-The "spice" parameter (0.0-1.0) controls variation creativity:
-- **Low spice (0.0-0.3):** Subtle timing/velocity adjustments, maintains original structure
-- **Medium spice (0.4-0.6):** Balanced changes, occasional ghost notes
-- **High spice (0.7-1.0):** Bold transformations, polyrhythmic variations
+The "spice" parameter (0.0-1.0) maps to model temperature for variation creativity:
+- **Low spice (0.0-0.3):** Conservative variations, deterministic output
+- **Medium spice (0.4-0.6):** Balanced creativity, moderate randomness
+- **High spice (0.7-1.0):** Experimental variations, high randomness
 
 Adjust with CC 18 knob, then press D#1 to regenerate.
 
-**Why Gemini over Magenta:**
+**Why rhythmic_creator over Gemini/Magenta:**
 
-- Magenta required complex piano roll conversion from ChucK's format
-- Conversion process was unreliable and produced unacceptable results
-- Gemini works directly with symbolic CSV format
-- Consistently maintains loop duration and tempo constraints
-- OSC integration enables seamless live workflow
-- Simple, reliable, and convenient alternative
+- **Offline operation:** No API keys or internet required (critical for live performance)
+- **Fast inference:** ~3-5s vs 5-10s for Gemini API
+- **Reliable:** Consistent generation without rate limits or network issues
+- **Continuation-based:** Uses model's natural sequence extension as variations
+- **Preserves timing:** Proportional time-warping maintains non-quantized groove
+- **OSC integration:** Seamless live workflow with automatic generation
+
+**Alternative: Gemini API option** (`--type gemini`) available in `drum_variation_gemini.py` for studio contexts where internet is available and more sophisticated musical reasoning is desired.
 
 ---
 
@@ -373,7 +386,7 @@ CHULOOPA/
 │   ├── snare.wav
 │   └── hat.WAV
 │
-├── requirements.txt                  # Python dependencies (OSC, Gemini, etc.)
+├── requirements.txt                  # Python dependencies (OSC, PyTorch, etc.)
 ├── train_classifier.py               # KNN training script
 ├── training_samples.csv              # Training data (generated)
 ├── drum_classifier.pkl               # Trained KNN model (generated)
@@ -393,22 +406,26 @@ CHULOOPA/
 
 ## Next Steps
 
-### Phase 2: AI Variation Generation ✅ (Current - January 2026)
+### Phase 2: AI Variation Generation ✅ (Current - March 2026)
 
 **Completed:**
 
-- [x] Gemini AI integration for drum pattern variations
+- [x] Local AI integration using rhythmic_creator model (Jake Chen, CalArts MFA 2025)
+- [x] Continuation-based variation generation approach
 - [x] OSC communication (Python ↔ ChucK)
 - [x] Automatic variation generation (file watching)
 - [x] Real-time spice level control (CC 18)
 - [x] Visual feedback (ChuGL sphere states)
 - [x] Queued variation toggle at loop boundaries
 - [x] Single-track focused workflow
+- [x] Offline operation (no API dependencies)
+- [x] Alternative Gemini API option preserved for studio use
 
 **In Progress:**
 
 - [ ] Multi-variation support (generate 3-5 variants, random selection on toggle)
 - [ ] Improved ChuGL visualizations (per-drum-hit feedback)
+- [ ] Fine-tune rhythmic_creator on drum-only dataset (reduce MIDI filtering)
 
 ### Phase 3: Multi-Track Support (Planned - Q1 2026)
 
@@ -450,7 +467,7 @@ CHULOOPA/
 7. Queued action system for musical loop boundary transitions
 8. End-to-end system from training to performance to variation
 
-**Design Decision:** Initial experiments with Magenta's piano roll conversion proved unreliable. Switching to Gemini API with direct symbolic format and OSC communication produced consistently reliable variations while maintaining loop duration and tempo constraints, enabling seamless live performance workflows.
+**Design Decision:** Initial experiments with Magenta's GrooVAE and piano roll conversion proved unreliable. We then switched to Gemini API with direct symbolic format, which worked well but required internet connectivity. Finally, we integrated Jake Chen's rhythmic_creator transformer-LSTM model for fully offline operation. The continuation-based approach (using the model's sequence extension as variations, time-warped to match loop duration) produces musically coherent variations while maintaining loop constraints. This enables reliable live performance workflows without external API dependencies.
 
 ---
 
@@ -481,8 +498,10 @@ CHULOOPA/
 - Python 3.10+
 - `python-osc` - OSC communication
 - `watchdog` - File watching for auto-generation
-- `google-generativeai` - Gemini API
+- `torch` - PyTorch for rhythmic_creator model
 - `numpy` - Algorithmic variations
+- `scikit-learn` - KNN classifier training
+- `google-generativeai` - Gemini API (optional, for alternative variation engine)
 - `python-dotenv` - Environment variables
 
 Install Python dependencies:
@@ -490,7 +509,7 @@ Install Python dependencies:
 pip install -r requirements.txt
 ```
 
-**Required:** `GEMINI_API_KEY` environment variable for AI variations
+**Optional:** `GEMINI_API_KEY` environment variable for Gemini-based variations (alternative to default rhythmic_creator model)
 
 **Hardware:**
 
@@ -537,17 +556,19 @@ pip install -r requirements.txt
 
 **AI variation generation fails:**
 
-- Ensure `GEMINI_API_KEY` environment variable is set
-- Check internet connection for Gemini API access
-- System auto-falls back to `groove_preserve` algorithm if Gemini fails
+- Default rhythmic_creator model should work offline without API keys
 - Check Python terminal for error details
 - Verify `src/tracks/track_0/track_0_drums.txt` exists
+- Ensure PyTorch is installed: `pip install torch`
+- If using Gemini option (`--type gemini`): ensure `GEMINI_API_KEY` environment variable is set and internet connected
+- Check that rhythmic_creator model file exists in expected location
 
 **Variation doesn't maintain loop duration:**
 
-- This should not happen with Gemini implementation
+- This should not happen with rhythmic_creator's time-warping implementation
 - Check Python terminal for "duration mismatch" warnings
 - Verify generated file has correct total loop duration in header
+- Check that continuation hits are being extracted correctly (timestamps > original_end)
 
 **Spice knob not working:**
 
@@ -568,12 +589,20 @@ pip install -r requirements.txt
 
 **Developer:** Paolo Sandejas
 **Institution:** CalArts - Music Technology MFA
-**Advisor:** Ajay Kapur, Jake Cheng
-**Year:** 2025
+**Advisors:** Ajay Kapur, Jake Cheng
+**Year:** 2026
+
+**AI Model Integration:**
+
+- **rhythmic_creator** by Jake Chen (Zhaohan Chen), CalArts MFA 2025
+  - Paper: "Music As Natural Language: Deep Learning Driven Rhythmic Creation"
+  - Transformer-LSTM hybrid for MIDI sequence generation
+  - Adapted for continuation-based loop variation generation
 
 **Inspired by:**
 
-- Google's Gemini AI (variation generation)
+- Jake Chen's rhythmic_creator (local AI variation generation)
+- Google's Gemini AI (alternative variation engine)
 - Magenta's GrooVAE (initial exploration)
 - Living Looper (nn_tilde)
 - Intelligent Instruments Lab's Notochord
