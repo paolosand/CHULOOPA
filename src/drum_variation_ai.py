@@ -103,7 +103,7 @@ current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_
 
 # Fixed model temperature for stability (empirically determined)
 # Spice controls post-processing (timing drift, fills), NOT model temperature
-RHYTHMIC_CREATOR_TEMPERATURE = 0.7
+RHYTHMIC_CREATOR_TEMPERATURE = 0.9
 
 
 # =============================================================================
