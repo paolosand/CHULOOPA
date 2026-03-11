@@ -67,7 +67,7 @@ def test_timing_anchoring():
         # Generate 5 variations
         deviations = []
 
-        for rep in range(5):
+        for rep in range(2):  # Reduced from 5 to 2 for faster evaluation
             variation, success = rhythmic_creator_variation(test_pattern, spice_level=spice)
 
             if success:
@@ -118,7 +118,7 @@ def save_markdown_report(results, test_pattern):
         f.write("## Methodology\n\n")
         f.write(f"- Test pattern: {len(test_pattern.hits)} hits, {test_pattern.loop_duration:.2f}s duration\n")
         f.write("- Spice levels tested: 0.2, 0.5, 0.8\n")
-        f.write("- Repetitions: 5 per spice level\n")
+        f.write("- Repetitions: 2 per spice level\n")
         f.write(f"- Fixed model temperature: {RHYTHMIC_CREATOR_TEMPERATURE:.1f}\n\n")
 
         f.write("## Timing Deviation from Input Grid\n\n")
