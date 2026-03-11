@@ -101,6 +101,10 @@ current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
 current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_creator)
 
+# Fixed model temperature for stability (empirically determined)
+# Spice controls post-processing (timing drift, fills), NOT model temperature
+RHYTHMIC_CREATOR_TEMPERATURE = 0.7
+
 
 # =============================================================================
 # DATA STRUCTURES
@@ -781,22 +785,22 @@ def init_rhythmic_creator():
 
 
 def rhythmic_creator_variation(pattern: DrumPattern,
-                               temperature: float = 0.7) -> tuple:
+                               spice_level: float = 0.5) -> tuple:
     """
-    Generate variation using Jake Chen's Transformer-LSTM+FNN model.
+    Generate variation using rhythmic_creator with timing anchoring.
 
-    This function:
-    1. Uses full pattern as context (gives model complete groove understanding)
-    2. Generates continuation with temperature control
-    3. Time-warps result to match original loop duration
-    4. Returns variation with same duration as original
+    This function implements a three-layer system:
+    1. Generate continuation using rhythmic_creator at FIXED temperature
+    2. Select wrap vs continuation based on density matching
+    3. Apply timing anchoring to preserve groove
+    4. Time-warp to exact loop duration
 
     Args:
-        pattern: Input drum pattern
-        temperature: Spice level (0.5-1.5)
-                    - 0.5-0.9: Conservative (stays close to training)
-                    - 1.0: Normal sampling
-                    - 1.1-1.5: Creative (more variation)
+        pattern: Original user beatbox pattern
+        spice_level: 0.0-1.0 controlling variation amount
+            - LOW spice controls model temperature (REMOVED in this version)
+            - HIGH spice controls post-processing (timing drift, fills)
+            - Fixed model temperature (RHYTHMIC_CREATOR_TEMPERATURE) for stability
 
     Returns:
         Tuple of (DrumPattern, success: bool)
@@ -807,7 +811,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
     if rhythmic_model is None:
         if not init_rhythmic_creator():
             print("  Rhythmic creator not available, falling back to groove_preserve")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
 
     try:
         # Use full pattern as context (gives model complete groove understanding)
@@ -824,7 +828,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
         if not context_text:
             print("  Warning: Empty context, falling back")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
 
         # Calculate how many tokens to generate
         # Model outputs [context echo] + [continuation]
@@ -833,7 +837,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         # For a 4-hit input, this generates 24-32 new tokens (~8-10 hits after filtering)
         num_tokens = max(60, len(pattern.hits) * 18)
 
-        print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
+        print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(context_hits)} hits (full pattern)")
         print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
 
@@ -843,7 +847,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         generated_text = rhythmic_model.generate_variation(
             input_pattern=context_text,
             num_tokens=num_tokens,
-            temperature=temperature
+            temperature=RHYTHMIC_CREATOR_TEMPERATURE  # Fixed temp for stability
         )
 
         generated_tokens = generated_text.split()
@@ -869,7 +873,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
         if not new_pattern.hits:
             print("  Warning: No valid hits in new pattern, falling back")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
 
         # The continuation starts after the last hit in the original pattern
         # Find original end time
@@ -907,7 +911,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
         if not source_hits:
             print("  Warning: No usable hits in generation, falling back")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
 
         # Shift hits to start at 0.0
         min_time = min(hit.timestamp for hit in source_hits)
@@ -930,30 +934,27 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         source_type = "continuation" if use_continuation else "loop wrap"
         print(f"    Using {source_type} ({len(continuation_hits)} cont / {len(wrap_hits)} wrap): {len(raw_pattern.hits)} hits, duration={natural_duration:.2f}s")
 
-        if not raw_pattern.hits:
-            print("  Warning: Model generated empty pattern, falling back")
-            return groove_preserve(pattern), False
+        # NEW: Apply timing anchoring to preserve groove
+        print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
+        anchored_pattern = timing_anchor(raw_pattern, pattern, spice_level)
 
-        # Time-warp to fit exact loop duration (unless --no-warp is set)
-        global use_no_warp
+        if not anchored_pattern.hits or len(anchored_pattern.hits) < 2:
+            print("  Warning: Timing anchoring failed, falling back to algorithmic variation")
+            return generate_musical_variation(pattern, spice_level), False
+
+        # Time-warp anchored pattern to fit exact loop duration
         if use_no_warp:
-            # Use model's natural timing
-            max_time = max(hit.timestamp for hit in raw_pattern.hits) if raw_pattern.hits else 0
-            raw_pattern.loop_duration = max_time
-            raw_pattern._recalculate_delta_times()
-            variation = raw_pattern
-            print(f"    Using natural timing: {max_time:.2f}s (no time-warping)")
+            # Skip time-warping - use natural model duration
+            variation = anchored_pattern
+            print(f"    Skipping time-warp (--no-warp): keeping natural duration {variation.loop_duration:.2f}s")
         else:
-            # Time-warp to original duration
-            print(f"    Time-warping to {pattern.loop_duration:.2f}s...")
-            variation = fit_to_loop_duration(raw_pattern, pattern.loop_duration)
+            variation = fit_to_loop_duration(anchored_pattern, pattern.loop_duration)
 
             if not variation.hits:
                 print("  Warning: No hits after time-warping, falling back")
-                return groove_preserve(pattern), False
+                return generate_musical_variation(pattern, spice_level), False
 
         print(f"    Final variation: {len(variation.hits)} hits")
-
         return variation, True
 
     except Exception as e:
@@ -961,7 +962,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         import traceback
         traceback.print_exc()
         print("  Falling back to groove_preserve")
-        return groove_preserve(pattern), False
+        return generate_musical_variation(pattern, spice_level), False
 
 
 # =============================================================================
@@ -1350,7 +1351,7 @@ def generate_variation(pattern: DrumPattern,
         Tuple of (DrumPattern, success: bool)
     """
     if variation_type == 'rhythmic_creator':
-        return rhythmic_creator_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+        return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'gemini':
         return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
