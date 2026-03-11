@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from drum_variation_ai import DrumHit, DrumPattern, timing_anchor, fit_to_loop_duration
+from drum_variation_ai import (DrumHit, DrumPattern, timing_anchor,
+                               fit_to_loop_duration, generate_musical_variation)
 
 
 def test_timing_anchor_basic():
@@ -119,9 +120,58 @@ def test_fit_to_loop_duration_removes_overflow():
     assert fitted.hits[2].timestamp == 2.0
 
 
+def test_generate_musical_variation_preserves_duration():
+    """Test that musical variation preserves exact loop duration."""
+    original = DrumPattern(
+        hits=[
+            DrumHit(drum_class=0, timestamp=0.0, velocity=0.8, delta_time=0.5),
+            DrumHit(drum_class=1, timestamp=0.5, velocity=0.8, delta_time=0.5),
+            DrumHit(drum_class=2, timestamp=1.0, velocity=0.8, delta_time=0.5),
+        ],
+        loop_duration=1.5
+    )
+
+    # Generate variation
+    variation = generate_musical_variation(original, spice_level=0.5)
+
+    # Duration must match exactly
+    assert variation.loop_duration == 1.5
+
+    # Should have at least some hits
+    assert len(variation.hits) > 0
+
+    # All hits must be within loop duration
+    for hit in variation.hits:
+        assert 0.0 <= hit.timestamp < 1.5
+
+
+def test_generate_musical_variation_protects_anchors():
+    """Test that strong backbeats (anchors) are protected."""
+    original = DrumPattern(
+        hits=[
+            DrumHit(drum_class=0, timestamp=0.0, velocity=0.9, delta_time=0.5),  # Anchor (first)
+            DrumHit(drum_class=1, timestamp=0.5, velocity=0.9, delta_time=0.5),  # Anchor (strong snare)
+            DrumHit(drum_class=2, timestamp=1.0, velocity=0.5, delta_time=0.5),  # Not anchor (weak)
+        ],
+        loop_duration=1.5
+    )
+
+    # Run 10 times, check anchors are always present
+    for _ in range(10):
+        variation = generate_musical_variation(original, spice_level=0.8)
+
+        # First hit should always be present (protected)
+        assert any(h.timestamp == 0.0 and h.drum_class == 0 for h in variation.hits)
+
+        # Strong snare should be present (protected)
+        assert any(h.timestamp == 0.5 and h.drum_class == 1 for h in variation.hits)
+
+
 if __name__ == '__main__':
     test_timing_anchor_basic()
     test_timing_anchor_deduplication()
     test_fit_to_loop_duration()
     test_fit_to_loop_duration_removes_overflow()
-    print("✓ All timing tests passed")
+    test_generate_musical_variation_preserves_duration()
+    test_generate_musical_variation_protects_anchors()
+    print("✓ All tests passed")

@@ -470,6 +470,159 @@ def fit_to_loop_duration(pattern: DrumPattern, target_duration: float) -> DrumPa
     return result
 
 
+def rebuild_timestamps(varied_groove: List[dict], original_start_time: float = 0.0) -> List[dict]:
+    """
+    Rebuild absolute timestamps from delta times.
+
+    Guarantees exact loop duration match to original by reconstructing
+    timestamps from delta times (which are manipulated by mutations).
+
+    Args:
+        varied_groove: List of {'class', 'vel', 'delta'} dicts
+        original_start_time: Timestamp of first hit in original pattern
+
+    Returns:
+        List of {'class', 'timestamp', 'vel', 'delta'} dicts
+    """
+    final_output = []
+    current_time = original_start_time
+
+    for hit in varied_groove:
+        final_output.append({
+            'class': hit['class'],
+            'timestamp': current_time,
+            'vel': hit['vel'],
+            'delta': hit['delta']
+        })
+        current_time += hit['delta']
+
+    return final_output
+
+
+def generate_musical_variation(pattern: DrumPattern, spice_level: float) -> DrumPattern:
+    """
+    Generate variation using real drumming techniques.
+
+    This is the algorithmic fallback when neural models fail or aren't available.
+    Uses musically valid techniques: doubling, ghost notes, triplets, syncopation,
+    and substitution, all controlled by spice level.
+
+    Args:
+        pattern: Original drum pattern
+        spice_level: 0.0-1.0 controlling mutation probability
+            - Low (0.0-0.3): Conservative (50-80% of base probabilities)
+            - High (0.7-1.0): Creative (120-150% of base probabilities)
+
+    Returns:
+        Varied pattern maintaining exact loop duration
+
+    Algorithm:
+        1. Protect structural anchors (first hit, strong backbeats)
+        2. Apply spice-scaled mutations to other hits
+        3. Rebuild timestamps from delta times to preserve duration
+    """
+    if not pattern.hits:
+        return pattern
+
+    # Base mutation probabilities
+    base_probs = {
+        'double': 0.15,      # Double kick/snare
+        'ghost': 0.10,       # Ghost note fill
+        'triplet': 0.05,     # Hi-hat triplets
+        'shift_and': 0.10,   # Shift to "and" (syncopation)
+        'substitute': 0.10,  # Drum substitution
+    }
+
+    # Scale by spice level
+    # At low spice (0.2): reduce all mutations by 50% (multiplier = 0.7)
+    # At high spice (0.8): increase by 50% (multiplier = 1.3)
+    spice_multiplier = 0.5 + spice_level  # Range: 0.5x to 1.5x
+
+    probs = {k: v * spice_multiplier for k, v in base_probs.items()}
+
+    # Convert to dict format for easier manipulation
+    drum_data = [
+        {'class': h.drum_class, 'vel': h.velocity, 'delta': h.delta_time, 'timestamp': h.timestamp}
+        for h in pattern.hits
+    ]
+
+    varied_groove = []
+
+    for i, hit in enumerate(drum_data):
+        c = hit['class']
+        v = hit['vel']
+        d = hit['delta']
+
+        # PROTECT ANCHORS (always protected regardless of spice)
+        # Protect: first hit, strong backbeats (snares with high velocity)
+        is_anchor = (i == 0) or (c == 1 and v > 0.7)
+
+        if is_anchor:
+            # Just humanize velocity slightly
+            v = max(0.1, min(1.0, v + random.uniform(-0.03, 0.03)))
+            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+            continue
+
+        # Apply mutations with spice-scaled probabilities
+        roll = random.random()
+
+        if roll < probs['double']:
+            # Double the hit (split delta in half)
+            half_delta = d / 2.0
+            varied_groove.append({'class': c, 'vel': v * 0.9, 'delta': half_delta})
+            varied_groove.append({'class': c, 'vel': v * 0.7, 'delta': half_delta})
+
+        elif roll < probs['double'] + probs['ghost']:
+            # Add ghost note (snare)
+            half_delta = d / 2.0
+            varied_groove.append({'class': c, 'vel': v, 'delta': half_delta})
+            varied_groove.append({'class': 1, 'vel': random.uniform(0.15, 0.35), 'delta': half_delta})
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] and c == 2:
+            # Hi-hat triplets (only for hats)
+            third_delta = d / 3.0
+            varied_groove.append({'class': 2, 'vel': v, 'delta': third_delta})
+            varied_groove.append({'class': 2, 'vel': v * 0.6, 'delta': third_delta})
+            varied_groove.append({'class': 2, 'vel': v * 0.8, 'delta': third_delta})
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] and len(varied_groove) > 0:
+            # Shift to "and" (syncopation)
+            # Push this note later by extending previous note's delta
+            shift_amount = d / 2.0
+            varied_groove[-1]['delta'] += shift_amount  # Lengthen previous note
+            varied_groove.append({'class': c, 'vel': v, 'delta': d - shift_amount})  # Shorten current
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] + probs['substitute']:
+            # Drum substitution (swap weak kicks for hats, or hats for weak kicks)
+            new_class = 2 if c == 0 else 0
+            varied_groove.append({'class': new_class, 'vel': v * 0.8, 'delta': d})
+
+        else:
+            # Pass through unchanged
+            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+
+    # Rebuild timestamps from delta times to preserve exact loop duration
+    final_hits_data = rebuild_timestamps(varied_groove, original_start_time=pattern.hits[0].timestamp if pattern.hits else 0.0)
+
+    # Convert back to DrumHit objects
+    final_hits = []
+    for hit_data in final_hits_data:
+        final_hits.append(DrumHit(
+            drum_class=hit_data['class'],
+            timestamp=hit_data['timestamp'],
+            velocity=hit_data['vel'],
+            delta_time=hit_data['delta']
+        ))
+
+    # Create result pattern
+    result = DrumPattern(hits=final_hits, loop_duration=pattern.loop_duration)
+
+    # Ensure exact duration by recalculating
+    result._recalculate_delta_times()
+
+    return result
+
+
 def simplify_pattern(pattern: DrumPattern,
                      keep_probability: float = 0.6) -> DrumPattern:
     """Simplify pattern by removing some hits.
