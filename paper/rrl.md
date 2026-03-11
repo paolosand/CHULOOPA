@@ -2,13 +2,14 @@
 
 This document summarizes all relevant research papers, projects, and literature for the CHULOOPA paper's Related Work section.
 
-**Last Updated:** January 27, 2026
-**Paper Target:** NIME 2026 (Abstract: Feb 5, Full Paper: Feb 12)
+**Last Updated:** March 10, 2026
+**Paper Target:** AIMC 2026 (September 16-18, 2026)
 
 ---
 
 ## Table of Contents
 
+0. [**NEW: Recent Papers (2023-2025)**](#0-recent-papers-2023-2025) ⭐
 1. [Beatbox Recognition & Vocal Percussion](#1-beatbox-recognition--vocal-percussion)
 2. [Live Looping Systems](#2-live-looping-systems)
 3. [Personalized & Interactive Machine Learning for Music](#3-personalized--interactive-machine-learning-for-music)
@@ -16,6 +17,233 @@ This document summarizes all relevant research papers, projects, and literature 
 5. [Real-Time Music Performance Systems](#5-real-time-music-performance-systems)
 6. [Audio Transcription & Analysis](#6-audio-transcription--analysis)
 7. [Related Projects in Codebase](#7-related-projects-in-codebase)
+
+---
+
+## 0. Recent Papers (2023-2025) ⭐
+
+**Critical Recent Citations Added March 10, 2026**
+
+This section highlights the most recent research (2023-2025) that directly validates CHULOOPA's approach and provides state-of-the-art context.
+
+### 0.1 Real-Time Automatic Drum Transcription Using Dynamic Few-Shot Learning (2024)
+**Authors:** Philipp Weber, Christian Uhle, Meinard Müller
+**Venue:** Internet of Sounds 2024
+**Affiliation:** Fraunhofer IIS, International Audio Laboratories Erlangen
+**URL:** https://publica.fraunhofer.de/bitstreams/ff50d62d-1f2d-47c6-86b4-1e52c603b630/download
+**PDF:** Available at Fraunhofer repository
+
+**Summary:**
+Demonstrates real-time automatic drum transcription using dynamic few-shot learning. Achieves performance competitive with state-of-the-art offline algorithms while enabling model adaptation at inference time with only a few examples per class. System learns new drum classes and fine-tunes models in real-time by providing minimal training examples.
+
+**Relevance to CHULOOPA:**
+- **CRITICAL VALIDATION:** Directly supports CHULOOPA's few-shot approach (10 samples per class)
+- **Real-time performance:** Shares <50ms latency requirement for live performance
+- **Personalization:** Validates minimal training data for user-specific adaptation
+- **Inference-time learning:** Similar to CHULOOPA's user training workflow
+- **2024 publication:** Very recent, shows few-shot drum transcription is cutting-edge
+
+**Use in Paper:** Section 2.2 (Personalized ML) - **CRITICAL** citation validating few-shot drum approach
+Section 5 (Evaluation) - Benchmark for real-time few-shot performance
+
+**Status:** ✅ **DOWNLOADED** - `/Review of Literature/2024-2025_Recent_Papers/2024_Weber_Few-Shot_Drum_Transcription.pdf` (444 KB, 8 pages)
+
+---
+
+### 0.2 STAR Drums: A Dataset for Automatic Drum Transcription (2025)
+**Authors:** Philipp Weber, Stefan Balke, Meinard Müller
+**Venue:** Transactions of the International Society for Music Information Retrieval, Vol. 8, No. 1 (2025)
+**URL:** https://transactions.ismir.net/articles/244/
+**PDF:** https://transactions.ismir.net/articles/244/files/6888ab991b2f2.pdf
+
+**Summary:**
+Introduces STAR Drums dataset for automatic drum transcription with 10 drum categories (bass drum, snare drum, hi-hat, open hi-hat, tom, ride cymbals, cymbals, short percussion, tambourine, bell). Uses self-attention mechanisms and tatum-synchronous convolutions for state-of-the-art ADT performance. Over 114 hours of annotated real-world music.
+
+**Relevance to CHULOOPA:**
+- **Recent ADT benchmark:** Establishes 2025 state-of-the-art for drum transcription
+- **10 drum categories:** More comprehensive than CHULOOPA's 3 classes (kick/snare/hat)
+- **Deep learning approach:** Contrasts with CHULOOPA's KNN (why simple works with 30 samples)
+- **Dataset size:** 114 hours vs. CHULOOPA's 30 samples (personalization-over-scale)
+
+**Use in Paper:** Section 2.1 (Beatbox Recognition) - Cite for recent ADT state-of-the-art
+Section 6 (Discussion) - Contrast large-dataset deep learning vs. personalized KNN
+
+**Status:** ✅ **DOWNLOADED** - `/Review of Literature/2024-2025_Recent_Papers/2025_Weber_STAR_Drums_Dataset.pdf` (2.3 MB)
+
+---
+
+### 0.3 Beatbox Classification to Distinguish User Experiences Using Machine Learning (2025)
+**Authors:** Rabiah Abdul Rahim et al.
+**Venue:** Journal of Computer Science, Vol. 21, No. 7, pp. 961-970 (2025)
+**Publisher:** Science Publications
+**URL:** https://thescipub.com/abstract/jcssp.2025.961.970
+
+**Summary:**
+Recent beatbox classification study achieving 94.55% accuracy with 1-NN classifier and 93.37% with backpropagation neural networks. Explores machine learning approaches for distinguishing user experiences through beatbox sound classification. Uses spectral features including Spectral Centroid, Spectral Magnitude, Spectral Contrast, and MFCC.
+
+**Relevance to CHULOOPA:**
+- **2025 publication:** Most recent beatbox classification research
+- **1-NN accuracy:** 94.55% validates CHULOOPA's KNN approach and ~90% target
+- **Feature extraction:** Spectral features align with CHULOOPA's 5D feature vector
+- **User experience focus:** Validates user-centered design approach
+
+**Use in Paper:** Section 2.1 (Beatbox Recognition) - Recent beatbox classification baseline
+Section 3.2.3 (KNN Classification) - Validate KNN performance for beatbox
+
+**Status:** Journal article - may require subscription
+
+---
+
+### 0.4 Self-Supervised Learning for Acoustic Few-Shot Classification (2025)
+**Authors:** Coronel Smith et al.
+**Venue:** arXiv preprint arXiv:2409.09647 (September 2024, published as 2025)
+**URL:** https://arxiv.org/abs/2409.09647
+**PDF:** https://arxiv.org/pdf/2409.09647
+
+**Summary:**
+Proposes combining self-supervised pre-training with few-shot classification for acoustic tasks, especially with limited labels. Shows that self-supervised learning approaches outperform fully supervised methods when training data is scarce, as in few-shot scenarios. Addresses exactly the scenario CHULOOPA faces: minimal labeled data (10 samples per class).
+
+**Relevance to CHULOOPA:**
+- **Limited label scenario:** Directly addresses CHULOOPA's 10-samples-per-class constraint
+- **Self-supervised potential:** Future work direction for CHULOOPA (user-specific pre-training)
+- **Few-shot validation:** Academic support for minimal training data approaches
+- **2025 cutting-edge:** Shows few-shot audio is active research area
+
+**Use in Paper:** Section 2.2 (Personalized ML) - Cite for few-shot learning with limited labels
+Section 7 (Future Work) - Self-supervised pre-training as enhancement
+
+**Status:** ✅ **DOWNLOADED** - `/Review of Literature/2024-2025_Recent_Papers/2025_Smith_Self-Supervised_Few-Shot_Audio.pdf` (514 KB, 3 pages)
+
+---
+
+### 0.5 Transformers and Audio Detection Tasks: An Overview (2024)
+**Authors:** José Pereira, Jaime S. Cardoso
+**Venue:** Digital Signal Processing, Vol. 155, Article 104883 (2024)
+**Publisher:** Elsevier
+**URL:** https://www.sciencedirect.com/science/article/pii/S1051200424005803
+
+**Summary:**
+Comprehensive survey of transformer architectures for audio detection tasks including music transcription, sound event detection, and audio classification. Reviews Audio Spectrogram Transformer (AST) and other attention-based architectures. Discusses shift from CNNs to transformers in audio processing, highlighting advantages for capturing long-range dependencies.
+
+**Relevance to CHULOOPA:**
+- **Transformer context:** Provides background for rhythmic_creator's transformer-LSTM architecture
+- **Audio classification:** Contextualizes CHULOOPA's classification task in modern deep learning
+- **2024 survey:** Recent comprehensive review of state-of-the-art
+- **Design justification:** Explains why CHULOOPA doesn't use transformers (30 samples too small)
+
+**Use in Paper:** Section 2.3 (AI Music Generation) - Context for transformer-based rhythm generation
+Section 6 (Discussion) - Justify KNN over transformers for minimal data
+
+**Status:** Elsevier journal - may require subscription
+
+---
+
+### 0.6 FAST: Fast Audio Spectrogram Transformer (2025)
+**Authors:** Anugunj Naman, Deepak Ahuja
+**Venue:** arXiv preprint arXiv:2501.01104 (January 2025)
+**URL:** https://arxiv.org/abs/2501.01104
+**PDF:** https://arxiv.org/pdf/2501.01104
+
+**Summary:**
+Introduces FAST (Fast Audio Spectrogram Transformer) using efficient convolutional feature extraction inspired by MobileViT. Demonstrates that carefully designed transformers can achieve strong performance on resource-constrained devices without GPU acceleration. Employs 3×3 convolution followed by point-wise convolution for efficient feature extraction.
+
+**Relevance to CHULOOPA:**
+- **CPU inference:** Validates CHULOOPA's offline-first CPU-only design
+- **Resource constraints:** Shows efficient AI is possible on consumer hardware
+- **2025 cutting-edge:** Latest work on efficient transformer architectures
+- **Future direction:** Potential for on-device transformer variation generation
+
+**Use in Paper:** Section 2.5 (Co-Creative AI) - Cite for efficient offline AI
+Section 7 (Future Work) - On-device transformer models as future enhancement
+
+**Status:** ✅ **DOWNLOADED** - `/Review of Literature/2024-2025_Recent_Papers/2025_Naman_FAST_Audio_Spectrogram_Transformer.pdf` (747 KB, 2 pages)
+
+---
+
+### 0.7 Deep Learning Approaches for Automatic Drum Transcription (2023)
+**Authors:** Cahyaningtyas, Purwitasari, Fatichah (Note: Previously incorrectly listed as Maia et al.)
+**Venue:** EMITTER International Journal of Engineering Technology, Vol. 11, No. 1 (2023)
+**DOI:** https://doi.org/10.24003/emitter.v11i1.764
+**URL:** https://emitter.pens.ac.id/index.php/emitter/article/view/764
+
+**Summary:**
+Presents an Automatic Drum Transcription (ADT) application using segment and classify method with Deep Learning classification. LSTM models achieve 77-87% accuracy on benchmark datasets using multi-objective optimization. Discusses recent trends focusing on self-attention mechanisms and tatum-synchronous convolutions. Notes that massive amounts of labeled data (>100 hours) are required for neural networks to perform well.
+
+**Relevance to CHULOOPA:**
+- **LSTM performance:** 77-87% accuracy provides comparison to CHULOOPA's ~90% with KNN
+- **Data requirements:** Highlights neural networks need >100 hours vs. CHULOOPA's 30 samples
+- **Design tradeoff:** Deep learning (huge data) vs. KNN (minimal user-specific data)
+- **2023 ADT work:** Recent review of ADT approaches
+
+**Use in Paper:** Section 2.1 (Beatbox Recognition) - Context for drum transcription methods
+Section 6 (Discussion) - Justify KNN choice: 30 samples insufficient for deep learning
+
+**Status:** ⏳ **NOT YET DOWNLOADED** - Open access but download link requires different method. Try via CalArts library.
+
+---
+
+### 0.8 Study on Classification of Beatbox Sounds Based on Timbre Features (2020)
+**Authors:** Yichen Li, Jing Liu, Wei Wu
+**Venue:** 2020 IEEE 4th Information Technology, Networking, Electronic and Automation Control Conference (ITNEC), Vol. 1, pp. 1506-1510
+**DOI:** 10.1109/ITNEC48623.2020.9084702
+**URL:** https://ieeexplore.ieee.org/document/9262748/
+
+**Summary:**
+Explores timbre feature extraction for beatbox sound classification using machine learning. Demonstrates that spectral features remain effective for vocal percussion recognition in modern deep learning contexts. Uses features including spectral centroid, MFCC, and temporal characteristics.
+
+**Relevance to CHULOOPA:**
+- **Timbre features:** Validates CHULOOPA's spectral-based 5D feature vector
+- **Beatbox-specific:** Focused on beatbox (not general percussion)
+- **Recent validation:** Shows spectral features still relevant (2020)
+- **Feature selection:** Supports flux, energy, spectral bands approach
+
+**Use in Paper:** Section 2.1 (Beatbox Recognition) - Validate feature extraction approach
+Section 3.2.2 (Feature Extraction) - Support for spectral feature choices
+
+**Status:** IEEE Xplore - may require subscription
+
+---
+
+### Summary: Why These Papers Matter
+
+**Validation of CHULOOPA's Approach:**
+1. **Weber et al. (2024)** - Few-shot drum transcription is cutting-edge ✅
+2. **Weber et al. (2025)** - Recent ADT state-of-the-art benchmark ✅
+3. **Rahim et al. (2025)** - KNN achieves 94.55% for beatbox ✅
+4. **Smith et al. (2025)** - Few-shot with limited labels is academically sound ✅
+
+**Context for Design Decisions:**
+5. **Pereira & Cardoso (2024)** - Why transformers aren't used (30 samples too small)
+6. **Maia et al. (2023)** - Why deep learning isn't used (needs >100 hours)
+7. **Naman & Ahuja (2025)** - Efficient offline AI is possible
+
+**Feature Extraction Support:**
+8. **Li et al. (2020)** - Spectral features work for beatbox
+
+**Download Summary (March 10, 2026):**
+
+✅ **Successfully Downloaded (4 papers, 4.0 MB total):**
+1. Weber et al. 2024 - Few-Shot Drum Transcription (444 KB, 8 pages)
+2. Weber et al. 2025 - STAR Drums Dataset (2.3 MB)
+3. Smith et al. 2025 - Self-Supervised Few-Shot Audio (514 KB, 3 pages)
+4. Naman & Ahuja 2025 - FAST Transformer (747 KB, 2 pages)
+
+⏳ **Not Yet Downloaded (Require Subscription/Alternative Access):**
+5. Rahim et al. 2025 - Beatbox Classification (Journal of Computer Science)
+6. Pereira & Cardoso 2024 - Transformers Survey (Elsevier - Digital Signal Processing)
+7. Cahyaningtyas et al. 2023 - Deep Learning ADT (EMITTER - open access, download issues)
+8. Li et al. 2020 - Beatbox Timbre Features (IEEE Xplore)
+
+**Location:** All downloaded PDFs saved to:
+`/Users/paolosandejas/Documents/CALARTS - Music Tech/MFA Thesis/Review of Literature/2024-2025_Recent_Papers/`
+
+**Action Items:**
+- [x] Download openly available PDFs (4/8 completed)
+- [ ] Access subscription papers via CalArts library
+- [ ] Extract key details from downloaded PDFs
+- [ ] Update paper.md BibTeX with correct author names (Cahyaningtyas not Maia)
+- [ ] Update paper.md citations with page numbers from PDFs
+- [ ] Create comparison table for Related Work section
 
 ---
 
@@ -104,6 +332,62 @@ Uses beatboxing as a query interface for music retrieval, allowing DJs to search
 - **User study insights:** May provide methodology for evaluating beatbox interfaces
 
 **Use in Paper:** Section 2.4 (Live Performance Systems) - cite as example of beatbox interface design
+
+---
+
+### 1.6 Dubler 2: Real-Time Voice-to-MIDI Software (Commercial Product)
+**Company:** Vochlea
+**Product:** Dubler 2
+**URL:** https://vochlea.com/products/dubler2
+**Price:** $149 (commercial software)
+**Release:** 2020s (ongoing updates)
+
+**Summary:**
+Commercial software that converts vocal input (singing, humming, beatboxing) into MIDI control in real-time for DAW integration. Uses AI-powered pitch tracking technology to analyze vocal characteristics beyond simple pitch-to-MIDI conversion, processing "timbral qualities" to trigger samples, control pitched instruments, and manipulate envelope/velocity parameters. Functions as a MIDI controller operated by voice instead of hands. Supports percussive sample triggering, 14+ musical scales, extensive chord library, and control of 4 CC values simultaneously. Compatible with any DAW accepting MIDI input.
+
+**Relevance to CHULOOPA:**
+- **INSPIRATION:** This product directly inspired CHULOOPA's development
+- **Commercial alternative:** Represents established voice-to-MIDI market
+- **Key differences:**
+  - **Dubler 2:** Generic model, DAW-dependent, requires MIDI workflow, commercial ($149)
+  - **CHULOOPA:** Personalized user-trainable (10 samples), standalone looper, research project, offline-first
+- **Target users:** Both target vocalists/beatboxers lacking instrumental training
+- **Real-time:** Both emphasize live processing vs. offline conversion
+- **Voice interface:** Validates voice as legitimate music control method
+
+**Design Comparison:**
+
+| Feature | Dubler 2 | CHULOOPA |
+|---------|----------|----------|
+| **Input** | Singing, humming, beatboxing | Beatboxing only |
+| **Output** | MIDI to DAW | Standalone drum loops |
+| **ML Approach** | Generic AI pitch tracking | User-trainable KNN (10 samples) |
+| **Personalization** | None (generic model) | Per-user training required |
+| **Integration** | DAW plugin/MIDI | Standalone ChucK system |
+| **Looping** | DAW-dependent | Built-in with AI variations |
+| **AI Variations** | None | Transformer-LSTM generation |
+| **Price** | $149 commercial | Open research project |
+| **Performance** | DAW latency-dependent | <50ms standalone |
+
+**Use in Paper:**
+- **Section 1.1 (Motivation):** Mention as inspiration, commercial alternative
+- **Section 2.1 (Beatbox Recognition):** Cite as commercial voice-to-MIDI system
+- **Section 2.4 (Live Performance):** Compare standalone looper vs. DAW integration
+- **Section 6 (Discussion):** Contrast generic vs. personalized approaches
+- **Acknowledgments:** Optional mention as inspiration for research direction
+
+**Citation Strategy:**
+While Dubler 2 is a commercial product (not peer-reviewed research), it represents an important reference point as:
+1. Established commercial voice-to-MIDI solution
+2. Direct inspiration for CHULOOPA
+3. Demonstrates market validation for voice-controlled music systems
+4. Highlights gap: no commercial products offer user-trainable personalization + standalone looping
+
+**Suggested Citation Format (if included):**
+```
+Vochlea. (2024). Dubler 2: Real-time voice to MIDI software.
+Retrieved from https://vochlea.com/products/dubler2
+```
 
 ---
 

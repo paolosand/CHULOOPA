@@ -12,7 +12,7 @@
 
 ## Abstract
 
-Making drum programming accessible to non-technical musicians remains a persistent challenge in music AI. We present CHULOOPA, a user-trainable beatbox-to-drum system that enables solo performers to create drum accompaniment through voice without music theory knowledge or MIDI controllers. The system combines personalized machine learning (K-Nearest Neighbors trained on 10 user-specific samples per drum class) with a local transformer-LSTM model for AI-powered variation generation. Three design contributions address accessibility and live performance: (1) personalization-over-scale achieves ~90% classification accuracy with minimal training burden; (2) continuation-based variation generation preserves non-quantized timing through proportional time-warping; (3) offline-first architecture eliminates API dependencies for performance reliability. Through autoethnographic study and user testing, we demonstrate that co-creative AI systems need not force quantization or require extensive training datasets to be musically useful. CHULOOPA positions AI as collaborative tool rather than autonomous generator, keeping performers "in the loop" through real-time spice control and queued action systems. This work contributes to discourse on accessible creative AI, user-trainable models for personalized music interaction, and timing-preserving variation generation for live performance contexts.
+Solo performers seeking drum accompaniment face a tradeoff: pre-programmed loops lack spontaneity, while traditional drum programming (hardware controllers, DAWs) requires technical setup that could disrupt the creative flow. We present CHULOOPA, a user-trainable beatbox-to-drum system that enables solo performers to create drum accompaniment through voice input, combining the immediacy of vocal expression with AI-powered variation generation. This end-to-end system combines personalized machine learning (K-Nearest Neighbors trained on 10 user-specific samples per drum class) with a local transformer-LSTM model for AI-powered variation generation. Three design contributions address accessibility and live performance: (1) personalization-over-scale achieves [TEST FOR SPECIFIC NUMBER]% classification accuracy with minimal training burden; (2) continuation-based variation generation preserves non-quantized timing through proportional time-warping; (3) offline-first architecture eliminates API dependencies for performance reliability. Through autoethnographic study and user testing, we demonstrate that co-creative AI systems need not force quantization or require extensive training datasets to be musically useful. CHULOOPA positions AI as collaborative tool rather than autonomous generator, keeping performers "in the loop" through real-time spice control and queued action systems. This work contributes to discourse on accessible creative AI, user-trainable models for personalized music interaction, and timing-preserving variation generation for live performance contexts.
 
 **Keywords:** beatbox classification, personalized ML, transformer-LSTM, live performance AI, co-creative systems, accessible music technology
 
@@ -22,23 +22,25 @@ Making drum programming accessible to non-technical musicians remains a persiste
 
 ### 1.1 Motivation
 
-I am a singer-songwriter who performs solo. I am also a terrible drummer. Like many solo performers, I've faced a persistent creative challenge: how do I add compelling drum accompaniment to my live performances without needing a human drummer or spending hours programming rigid backing tracks?
+How quickly can you bring drum ideas to life? For me, not as quickly as I'd like. I am a singer-songwriter who often performs solo and I am also NOT a drummer. Like many solo performers, I've faced a persistent creative challenge: how do I add compelling drum accompaniment to my live performances when a live drummer isn't available or when a performance needs more flexibility than rigid backing tracks can provide?
 
-Traditional solutions fall short. Pre-programmed drum loops feel disconnected from the live energy of performance—they lack spontaneity and responsiveness. Loop pedals designed for guitarists assume I can tap out patterns on foot switches while playing, which interrupts the flow of performing. Traditional drum machines (hardware or software) require knowledge of music theory, grid-based programming, or expensive MIDI controllers. These barriers make drum creation inaccessible to non-technical musicians.
+Traditional solutions fall short. Pre-programmed drum loops lack the spontaneity and excitement of a live performance. While loop pedals offer more room for improvisation, the repetitive nature of the tool combined with its prolonged setup can disrupt the flow of performance if not executed well. Traditional drum machines (hardware or software) and expensive MIDI controllers can often feel inaccessible to those looking for a simple solution. While the efforts made to work with these tools do lead to beautiful art, I've always craved the ability to have my drum ideas jump straight from my mind onto the kit.
 
-But here's what I *can* do: I can beatbox—not well, but well enough to communicate the drum pattern I hear in my head. My kick drum sounds like "BOOM," my snare sounds like "PAH," and my hi-hat sounds like "tss." These sounds are personal, idiosyncratic, and inconsistent with professional beatboxers, but they're *mine*. What if I could train a system to understand *my* beatbox vocabulary and transcribe it into polished drum patterns in real-time?
+While I can't rock a physical kit, I can vocalize my ideas as beatboxed sequences well enough to communicate the drum pattern I hear in my head. My kick drum sounds like "PUUH," my snare sounds like "KAH," and my hi-hat sounds like "tss." These sounds are personal, idiosyncratic, and can be inconsistent with professional beatboxers, but they're _mine_. What if I could train a system to understand _my_ beatbox vocabulary and transcribe it into polished drum patterns in real-time?
 
-This personal frustration led to CHULOOPA (ChucK-based User-trainable Loop Operator for Performance Audio): a beatbox-to-drum transcription system designed explicitly for solo performers like myself who lack drumming skills but can communicate rhythmic ideas through voice.
+Commercial solutions do exist. Dubler 2 (Vochlea, 2024) offers real-time voice-to-MIDI conversion for DAW integration using AI-powered pitch tracking and trigger detection. Dubler 2's generic model approach works effectively for a wide range of users, validating the market need for voice-controlled music creation. However, as a solo performer with idiosyncratic beatbox techniques, I wanted to explore what happens when you add a layer of personalization—a system that learns _my_ specific vocal style and works standalone without requiring DAW workflows.
+
+This personal exploration led to CHULOOPA, a ChucK-based 'LOOPA' (looper): a beatbox-to-drum transcription system that combines baseline classification with optional user-trainable customization, designed for performers to communicate rhythmic ideas on the fly and transform them into live drums through their voice.
 
 ### 1.2 Design Vision: The Artist in the Loop
 
-CHULOOPA embodies a design philosophy we call *personalization-over-scale*: rather than building generic systems trained on massive datasets, we create user-trainable tools that adapt to individual creative practices. This positions the system within emerging discourse on co-creative AI for music, where the performer remains "in the loop" rather than being replaced by autonomous generation.
+CHULOOPA embodies a design philosophy we call _personalization-over-scale_: rather than building generic systems trained on massive datasets, we create user-trainable tools that adapt to individual creative practices. This positions the system within emerging discourse on co-creative AI for music, where the performer remains "in the loop" rather than being replaced by autonomous generation.
 
 **Three core principles guide the design:**
 
 **1. Accessibility through Personalization**
 
-Rather than training on generic beatbox datasets (which wouldn't recognize my amateur attempts), CHULOOPA uses minimal user-specific training data. By collecting just 10 samples each of the user's kick, snare, and hi-hat sounds, the system learns *that performer's* unique vocal percussion style. This personalization-over-scale approach trades dataset size for specificity, enabling high accuracy (~90%) with minimal training burden. The design decision reflects a broader question for accessible music AI: *Should systems demand users conform to their training data, or should systems adapt to users' existing skills?*
+While a baseline dataset is used to train CHULOOPA's initial classifications, we leave the door open to the user to _teach_ CHULOOPA their style of beatboxing via minimal user-specific training data. By collecting just 10 samples each of the user's kick, snare, and hi-hat sounds, the system learns _that performer's_ unique vocal percussion style. This personalization-over-scale approach trades dataset size for specificity, enabling high accuracy [TEST FOR SPECIFIC NUMBER]% with minimal training burden in the name of flexibility and customizability. The design decision reflects a broader question for accessible music AI: _Should users be demanded to conform to their systems, or should systems conform to their users?_
 
 **2. Real-Time Responsiveness for Live Performance**
 
@@ -48,7 +50,7 @@ CHULOOPA provides immediate audio feedback during recording—as you beatbox, yo
 
 Once a drum pattern is recorded, CHULOOPA generates variations using a local transformer-LSTM model (rhythmic_creator by Chen, 2025) adapted through a continuation-based approach. Critically, these AI-generated variations preserve the exact loop duration and non-quantized timing of the original beatbox performance. Unlike traditional quantization-based systems that force rhythms onto a grid, CHULOOPA's AI maintains the human "feel" of timing imperfections while introducing musical variations. The performer controls variation creativity in real-time via MIDI CC 18 ("spice level"), maintaining creative agency over the AI's contribution. The system runs entirely offline with no external API dependencies, ensuring reliability in live performance contexts.
 
-This represents a shift from AI as autonomous generator to AI as creative collaborator—a "personal drum machine" that learns *your* beatbox vocabulary and augments *your* rhythmic ideas without destroying their natural timing.
+This represents a shift from AI as autonomous generator to AI as creative collaborator—a "personal drum machine" that learns _your_ beatbox vocabulary and augments _your_ rhythmic ideas without destroying their natural timing.
 
 ### 1.3 System Overview
 
@@ -66,29 +68,32 @@ The system is implemented in ChucK (for real-time audio/MIDI processing) with Py
 
 ### 1.4 Contributions
 
-This paper contributes to AI music creativity research in three primary areas:
+This paper contributes to AI music creativity research through the design, implementation, and evaluation of an end-to-end performance system that demonstrates a personalization-over-scale approach to accessible music AI.
 
-**1. Personalization-Over-Scale for Accessible Music AI**
+**Primary Contribution: System Integration for Co-Creative Performance**
 
-We demonstrate that user-specific training with minimal data (10 samples per drum class) achieves ~90% classification accuracy for amateur beatbox transcription, significantly fewer samples than generic recognition systems require. This "personalization-over-scale" approach challenges the assumption that music AI requires large datasets, showing that constraining the problem space to a single user's idiosyncratic style enables high accuracy with minimal training burden. This has implications for accessible creative AI tools that adapt to users rather than demanding users adapt to systems.
+CHULOOPA demonstrates how existing AI techniques (few-shot learning, transformer-LSTM generation) can be integrated into an accessible performance instrument that keeps artists "in the loop." Rather than proposing novel algorithms, we contribute a design philosophy and working system that combines:
 
-**2. Timing-Preserving AI Variation Generation**
+- **Personalized ML** (KNN trained on 10 user-specific samples per class)
+- **AI variation generation** (adapting Chen's rhythmic_creator for loop-based variation)
+- **Live performance integration** (voice input, real-time feedback, MIDI control)
+- **Offline reliability** (local inference, no API dependencies)
 
-We present a continuation-based approach to drum pattern variation using a transformer-LSTM model (rhythmic_creator by Chen, 2025), demonstrating that AI can augment creativity without destroying natural timing. By extracting the model's sequence continuation (rather than forcing loop generation), time-shifting to loop start, and applying proportional time-warping to match loop duration exactly, we preserve non-quantized "groove" characteristics. This contrasts with quantization-based variation systems that force rhythms onto grids. The system operates entirely offline through local neural network inference, eliminating API dependencies for live performance reliability.
+The system's novelty lies not in individual techniques but in their thoughtful integration toward a specific design goal: enabling non-technical solo performers to create drum accompaniment through voice-controlled, AI-augmented loops.
 
-**3. Co-Creative System Design for Live Performance**
+**Three Research Contributions:**
 
-We present CHULOOPA as a complete performance system that keeps the artist "in the loop" through real-time spice control (MIDI CC 18 adjusts variation creativity), queued action systems (pattern switching at musical loop boundaries), and immediate audio feedback (drum samples play as you beatbox). Through autoethnographic study as designer-performer and user testing with solo musicians, we demonstrate that accessible interfaces (voice input), personalized models (user-trainable), and offline AI (no network dependency) can lower barriers to drum programming while maintaining creative agency and performance reliability.
+**1. Personalization-Over-Scale as Design Philosophy**
 
-**Seven Novel Technical Contributions:**
+We demonstrate through implementation and user testing that constraining the problem space to a single user's idiosyncratic beatbox style enables high accuracy ([TEST FOR SPECIFIC NUMBER]%) with minimal training burden (10 samples per class). While few-shot learning for audio is established (Weber et al., 2024; Wang et al., 2020), we contribute empirical validation that this approach works for amateur beatboxers in live performance contexts, and we argue for personalization-over-scale as a design philosophy for accessible music AI.
 
-1. Minimal user-specific training (10 samples per class) for personalized beatbox classification
-2. Continuation-based variation generation preserving non-quantized timing
-3. Proportional time-warping to maintain exact loop duration with natural feel
-4. Offline-first architecture using local transformer-LSTM (no API calls)
-5. Real-time spice control for dynamic creativity adjustment during performance
-6. Queued action system for glitch-free pattern switching at loop boundaries
-7. Delta-time encoding format for drift-free loop playback over extended performance
+**2. Engineering Adaptation of Transformer-LSTM for Loop Variation**
+
+We present an engineering adaptation of Chen's (2025) rhythmic_creator—originally designed for MIDI sequence extension—for looping drum variation. Through systematic debugging (documented in AI_GENERATIONS.md), we discovered that extracting the model's continuation output (rather than forcing loop generation) produces musically coherent variations when time-shifted and proportionally warped to match loop duration. This preserves non-quantized timing while enabling offline AI variation generation. The contribution is not the model itself but the adaptation strategy and lessons learned from model-task mismatch.
+
+**3. Autoethnographic and User-Centered Evaluation**
+
+Through autoethnographic study as designer-performer and user testing with solo musicians, we provide empirical evidence that voice-controlled, user-trainable, offline-first design decisions can lower barriers to drum programming while maintaining creative agency and performance reliability. We contribute design insights about balancing accessibility (voice input requires no technical knowledge) with personalization (users must invest ~5 minutes training), and we identify tradeoffs between immediate usability (generic models) and customization (user-specific training).
 
 ### 1.5 Paper Organization
 
@@ -144,19 +149,21 @@ Our approach extends this to accessible creative tools: rather than requiring te
 
 Our work adapts Chen and Kapur's (2025) **rhythmic_creator**, a Transformer-LSTM+FNN hybrid architecture (4.49M parameters) trained on over 13,000 MIDI drum sequences. The model integrates 6 Transformer blocks (192-dim embeddings, 6 attention heads) with 2 LSTM layers (64 hidden units each), combining self-attention for long-range dependencies with recurrence for sequential rhythmic structures. Chen and Kapur's work uses character-level tokenization of MIDI events represented as triplets `[drum_class, start_time, end_time]`, treating rhythmic generation as a language modeling task.
 
-**Critically**, rather than using rhythmic_creator for unconditional generation (its original purpose), we extract its *continuation* output as variations—leveraging the model's sequence extension capabilities for loop variation. This adaptation emerged from systematic debugging of model-task mismatch, as forcing the model to generate loops directly produced musically incoherent results (Section 3.5.2).
+**Critically**, rather than using rhythmic*creator for unconditional generation (its original purpose), we extract its \_continuation* output as variations—leveraging the model's sequence extension capabilities for loop variation. This adaptation emerged from systematic debugging of model-task mismatch, as forcing the model to generate loops directly produced musically incoherent results (Section 3.5.2).
 
 **Variation-focused transformer architectures** have emerged specifically for generating musical variations. Jiang et al. (2024) introduced the Variation Transformer (VarTransformer) at ISMIR 2024, demonstrating controlled variation generation for symbolic music through variation-specific attention mechanisms. Their work shows that transformers can maintain thematic coherence while introducing creative divergence—a goal aligned with CHULOOPA's continuation-based approach. Comprehensive surveys on symbolic music generation (Briot et al., 2020; Ji et al., 2023 in ACM Computing Surveys) highlight the tension between creativity and controllability in AI music systems.
 
 **LLM-based music generation** using Gemini, GPT-4, and other foundation models demonstrates musical reasoning through prompting. Huang et al. (2023) explored ChatGPT for music generation with natural language control, while Doh et al. (2023) investigated LP-MusicCaps for language-based music understanding. CHULOOPA supports Gemini API as an alternative variation engine but defaults to local inference for offline performance reliability.
 
-**Timing and quantization** in AI music generation remains challenging. Most systems quantize to grids (16th notes, 32nd notes), destroying the "swing" and "feel" of human performances. Davies et al. (2013) demonstrated that microtiming deviations—timing variations at the millisecond scale—are fundamental to musical groove and cannot be captured by quantized representations. Neuroscience research (Harding et al., 2024 in *Science Advances*) reveals that beat-related brain activity entrains to natural timing variations, suggesting that quantization eliminates neurologically-salient rhythmic information. Kilchenmann and Senn (2015) showed that listeners perceive quantized performances as "mechanical" and "lifeless" compared to natural timing. Our proportional time-warping approach preserves non-quantized timing by scaling continuation timestamps rather than snapping to grids, maintaining the expressive microtiming characteristics that define groove.
+**Timing and quantization** in AI music generation remains challenging. Most systems quantize to grids (16th notes, 32nd notes), destroying the "swing" and "feel" of human performances. Davies et al. (2013) demonstrated that microtiming deviations—timing variations at the millisecond scale—are fundamental to musical groove and cannot be captured by quantized representations. Neuroscience research (Harding et al., 2024 in _Science Advances_) reveals that beat-related brain activity entrains to natural timing variations, suggesting that quantization eliminates neurologically-salient rhythmic information. Kilchenmann and Senn (2015) showed that listeners perceive quantized performances as "mechanical" and "lifeless" compared to natural timing. Our proportional time-warping approach preserves non-quantized timing by scaling continuation timestamps rather than snapping to grids, maintaining the expressive microtiming characteristics that define groove.
 
 ### 2.4 Live Looping and Performance Systems
 
 **Hardware loop pedals** (Boss RC-505, Electro-Harmonix) enable live looping through foot controls but record audio loops without symbolic representation—preventing variation generation or editing. CHULOOPA transcribes to symbolic drum data, enabling AI manipulation while maintaining performance workflows familiar to electric guitarists.
 
 **Software loopers** like Ableton Live enable MIDI looping but require hardware controllers and music theory knowledge for programming. Our voice-based interface lowers the entry barrier for non-technical musicians, requiring only the ability to beatbox consistently (not skillfully).
+
+**Commercial voice-to-MIDI systems** have emerged to address the accessibility gap. Dubler 2 (Vochlea, 2024) represents the current state-of-the-art in commercial voice-controlled music production, offering real-time conversion of singing, humming, and beatboxing into MIDI for DAW integration. Priced at $149, Dubler 2 uses proprietary AI-powered pitch tracking and trigger detection to control virtual instruments and drum sounds. Its generic model approach works effectively for a wide range of users out-of-the-box, demonstrating the commercial viability and user demand for voice-controlled music creation. CHULOOPA builds on this foundation by exploring what additional capabilities emerge when combining baseline models with user-trainable personalization. Where Dubler 2 excels at plug-and-play DAW integration for users comfortable with music production software, CHULOOPA investigates three complementary research directions: (1) optional user-specific training (10 samples per class for customization to idiosyncratic vocal styles), (2) standalone operation (accessible to non-DAW users), and (3) AI-powered variation generation (transformer-LSTM creates new patterns from beatbox input). These systems serve different use cases: Dubler 2 prioritizes immediate usability across diverse musical contexts, while CHULOOPA explores personalization and AI collaboration for solo live performance.
 
 **Co-creative looping systems** explore AI-augmented live performance. Shepardson and Magnusson (2023) presented the Living Looper, which uses RAVE autoencoders to create generative models of audio loops rather than replaying fixed buffers. Their work explores "action-perception loops" where each loop attempts to reproduce its recording while being perturbed by other loops and player inputs, creating shifting networks of agency. While the Living Looper focuses on timbral morphing and sonic ecosystems, CHULOOPA emphasizes rhythmic structure preservation and beatbox-specific affordances for solo performers.
 
@@ -177,6 +184,7 @@ Recent discourse on **"the artist in the loop"** emphasizes human agency in AI-a
 ### 2.6 Gap in Existing Work
 
 No existing system combines:
+
 1. **User-trainable personalization** (10 samples per class)
 2. **Real-time beatbox transcription** (<50ms latency)
 3. **Offline AI variation generation** (local transformer-LSTM)
@@ -243,12 +251,14 @@ Playback velocity is mapped from the RMS energy feature, preserving the dynamics
 The personalization approach is central to CHULOOPA's accessibility. By training on user-specific data rather than a generic beatbox corpus, we achieve high accuracy with minimal training burden.
 
 **Training Process:**
+
 1. User runs `drum_sample_recorder.ck` and records 10 samples each of kick, snare, hi-hat
 2. Each sample is 1 second long, captured with same onset detection + feature extraction pipeline
 3. Features and labels saved to `training_samples.csv`
 4. When CHULOOPA starts, it automatically trains a KNN model on this data
 
 **Why Minimal Data Works:**
+
 - User-specific training constrains the problem space (only one person's vocal style)
 - Amateur beatboxers are remarkably consistent in their own imperfect way
 - KNN's instance-based learning handles small datasets without overfitting
@@ -277,6 +287,7 @@ Drum patterns are exported to `track_N_drums.txt` files in a custom format:
 ```
 
 Each hit stores:
+
 - `DRUM_CLASS`: 0=kick, 1=snare, 2=hat
 - `TIMESTAMP`: Absolute time from loop start (seconds)
 - `VELOCITY`: 0.0-1.0 (mapped from RMS energy)
@@ -291,6 +302,7 @@ Inspired by traditional hardware loopers (e.g., Boss RC-505), CHULOOPA uses a qu
 When a user presses "Load Pattern" mid-loop, the action is queued and executes at the next loop boundary. This prevents overlap between old and new playback, maintaining clean transitions. Each playback session receives a unique ID; scheduled drum hits check their session ID before playing, aborting if a new session has started.
 
 Console output provides feedback:
+
 ```
 >>> QUEUED: Track 0 will load from file at next loop cycle <<<
 === LOOP BOUNDARY: Processing queued actions ===
@@ -327,6 +339,7 @@ A Python script (`drum_variation_ai.py`) runs in background watch mode, monitori
 7. Sends OSC message to ChucK indicating variation ready
 
 The model (rhythmic_creator by Jake Chen, CalArts MFA 2025) is a 4.49M-parameter hybrid architecture:
+
 - 6 Transformer blocks (192-dim embeddings, 6 attention heads)
 - 2 LSTM layers (64 hidden units each)
 - Feed-forward network for final predictions
@@ -347,13 +360,14 @@ Rather than generating loops from scratch, CHULOOPA adapts the model's **continu
 **Four-step transformation pipeline:**
 
 1. **Strip context echo** - Remove tokens that duplicate the input pattern to eliminate layering
-2. **Extract continuation hits** - Select only drum hits with timestamps *after* the original pattern ends (temporal boundary: `timestamp > max(input_pattern_timestamps)`)
+2. **Extract continuation hits** - Select only drum hits with timestamps _after_ the original pattern ends (temporal boundary: `timestamp > max(input_pattern_timestamps)`)
 3. **Shift to loop start** - Rebase continuation hits to start at 0.0s (`new_timestamp = original_timestamp - min(continuation_timestamps)`)
 4. **Proportional time-warp** - Scale timestamps to match original loop duration exactly while preserving relative spacing (`scale_factor = target_duration / continuation_duration`)
 
 This produces musically coherent variations that maintain the structural groove and timing feel of the original while introducing creative changes in hit placement, density, and distribution.
 
 **Example transformation:**
+
 ```
 Input pattern (3.1s):    kick 0.11s, snare 0.88s, hat 1.76s, kick 2.64s
                          └─────────────────────────────────────┘
@@ -373,7 +387,7 @@ Time-warped to 3.1s:     kick 0.0s, hat 1.60s, snare 3.46s, kick 5.31s
 
 **Why this works musically:**
 
-- The continuation section represents the model's learned understanding of musical structure *following* the input pattern
+- The continuation section represents the model's learned understanding of musical structure _following_ the input pattern
 - By extracting continuation rather than forcing loop generation, we leverage the model's training for sequence extension
 - Proportional time-warping preserves rhythmic relationships (if two hits were 0.5s apart in continuation, they remain proportionally spaced in the final loop)
 - Non-quantized timing from the model's training data is maintained, preserving "human feel"
@@ -393,6 +407,7 @@ else:
 ```
 
 We also generate 6× the pattern length in tokens to increase chances of capturing sufficient drum hits:
+
 ```python
 num_tokens = max(60, len(pattern.hits) * 18)
 ```
@@ -400,6 +415,7 @@ num_tokens = max(60, len(pattern.hits) * 18)
 **Performance and Reliability:**
 
 Tested across 5 consecutive generations with 4-hit input patterns:
+
 - Generation 1: 3 hits ✓
 - Generation 2: 7 hits ✓
 - Generation 3: 8 hits ✓
@@ -411,6 +427,7 @@ Tested across 5 consecutive generations with 4-hit input patterns:
 #### 3.5.3 Temperature Control for Variation Intensity
 
 The system uses a "spice level" parameter (0.0-1.0) that maps directly to model temperature:
+
 - **0.0-0.3:** Conservative variations (low temperature, deterministic)
 - **0.4-0.6:** Balanced creativity (moderate temperature)
 - **0.7-1.0:** Experimental variations (high temperature, more randomness)
@@ -466,6 +483,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 #### 5.1.1 Classifier Accuracy
 
 **Method:** [To be measured when back home]
+
 - Test on personal beatbox samples across multiple sessions
 - Compute confusion matrix (kick/snare/hat)
 - Report overall accuracy and per-class precision/recall
@@ -475,6 +493,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 #### 5.1.2 Latency Measurements
 
 **Method:** [To be measured]
+
 - Measure onset detection → drum playback latency
 - Test with various buffer sizes
 
@@ -483,6 +502,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 #### 5.1.3 Timing Preservation in AI Variations
 
 **Method:** [To be measured]
+
 - Compare original loop duration vs. Gemini-generated variation duration
 - Analyze timing deviation of individual hits
 - Demonstrate non-quantized timing preservation
@@ -492,6 +512,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 ### 5.2 Autoethnographic Study
 
 **Method:** As designer and primary user, I documented my experience using CHULOOPA over [X weeks] in practice sessions and mock performances. I recorded:
+
 - Training experience (time required, frustration points)
 - Loop creation process (ease of beatboxing, classification errors)
 - Variation quality assessment (musical coherence, timing feel)
@@ -504,6 +525,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 **Participants:** [2-3 solo performers / singer-songwriters recruited from network]
 
 **Protocol:**
+
 1. 5 min: Introduction to system
 2. 5 min: Record training samples (10 kick, 10 snare, 10 hat)
 3. 15 min: Create and loop drum patterns
@@ -511,6 +533,7 @@ CHULOOPA also supports Google's Gemini API as an alternative variation engine (`
 5. 5 min: Semi-structured interview
 
 **Research Questions:**
+
 - Can non-technical musicians successfully train the classifier?
 - Is real-time feedback helpful for beatbox technique?
 - Are AI variations musically useful?
@@ -530,17 +553,17 @@ This section reflects on design insights, limitations, and broader implications 
 
 Three factors explain why 10 user-specific samples achieve ~90% accuracy:
 
-1. **Consistency within idiosyncrasy:** Amateur beatboxers may not sound like professionals, but they're remarkably consistent in their own imperfect technique. My kick always sounds like *my* kick, even if it wouldn't fool a beatbox competition judge.
+1. **Consistency within idiosyncrasy:** Amateur beatboxers may not sound like professionals, but they're remarkably consistent in their own imperfect technique. My kick always sounds like _my_ kick, even if it wouldn't fool a beatbox competition judge.
 
 2. **Constrained problem space:** By training on one user, we eliminate inter-user variability (different vocal timbres, techniques, accents). The classifier only needs to distinguish three classes within a narrow feature space, not model global beatbox diversity.
 
 3. **KNN's suitability for small data:** K-Nearest Neighbors makes no parametric assumptions and doesn't overfit with 30 total samples. Deep learning would require regularization, data augmentation, and careful architecture tuning—overhead inappropriate for a 5-minute training session.
 
-**Implication for accessible AI:** Rather than democratizing access to pre-trained generic models, we might better serve non-technical users by creating *easily personalizable* models that adapt to individual creative practices.
+**Implication for accessible AI:** Rather than democratizing access to pre-trained generic models, we might better serve non-technical users by creating _easily personalizable_ models that adapt to individual creative practices.
 
 ### 6.2 Continuation-Based Variation: A Model-Task Mismatch Solution
 
-Adapting rhythmic_creator for loop variation required confronting a fundamental model-task mismatch. The model was trained for MIDI sequence *extension*, not loop *generation*. Our initial attempts to force loop generation produced musically incoherent results (see Section 3.5.2).
+Adapting rhythmic*creator for loop variation required confronting a fundamental model-task mismatch. The model was trained for MIDI sequence \_extension*, not loop _generation_. Our initial attempts to force loop generation produced musically incoherent results (see Section 3.5.2).
 
 **The breakthrough came from a simple question:** "Can we not use the extension as the variation?"
 
@@ -553,6 +576,7 @@ This reframed the problem: instead of forcing the model to generate loops (which
 CHULOOPA's offline-first architecture (local transformer-LSTM, no API calls) reflects hard-won lessons from live performance contexts:
 
 **Why offline matters:**
+
 - **Reliability:** No network latency, rate limits, or API outages mid-performance
 - **Consistency:** Deterministic generation at low temperatures (reproducible variations)
 - **Cost:** No per-request fees or quota limits
@@ -561,7 +585,7 @@ CHULOOPA's offline-first architecture (local transformer-LSTM, no API calls) ref
 
 **Tradeoff:** Gemini API produces more sophisticated musical reasoning through prompting (e.g., "generate a busier variation with more hi-hats"). Local models require temperature as the only creativity control. We accept this limitation for performance reliability.
 
-**Future direction:** As on-device LLMs improve (e.g., Phi-3, Llama on laptop CPUs), we may achieve both sophisticated reasoning *and* offline operation.
+**Future direction:** As on-device LLMs improve (e.g., Phi-3, Llama on laptop CPUs), we may achieve both sophisticated reasoning _and_ offline operation.
 
 ### 6.4 Honest Limitations
 
@@ -571,36 +595,36 @@ CHULOOPA's offline-first architecture (local transformer-LSTM, no API calls) ref
 
 The continuation-based approach produces variations with unpredictable hit counts due to MIDI filtering—rhythmic_creator outputs melody MIDI notes (e.g., note 87, 92) that CHULOOPA's drum-only mapping filters out. While musically acceptable (variations sound coherent), density inconsistency limits predictability.
 
-*Potential fix:* Fine-tune rhythmic_creator on drum-only dataset to eliminate melody generation.
+_Potential fix:_ Fine-tune rhythmic_creator on drum-only dataset to eliminate melody generation.
 
 **2. Single-track limitation**
 
 Current implementation supports one drum track. Multi-track looping (Phase 3 goal) requires master sync coordination, cross-track variation coherence, and independent spice control per track—non-trivial engineering challenges.
 
-*Design question:* Should variations on Track 2 be aware of Track 1's pattern (for complementary variations) or independent?
+_Design question:_ Should variations on Track 2 be aware of Track 1's pattern (for complementary variations) or independent?
 
 **3. ~10% classification errors**
 
 KNN occasionally misclassifies, typically kick↔snare confusion when amateur beatboxers don't differentiate enough in frequency content. Errors compound when they occur at structurally important moments (e.g., downbeat kick misclassified as snare).
 
-*Potential fix:* Confidence thresholding—reject low-confidence classifications and prompt user to re-record that hit.
+_Potential fix:_ Confidence thresholding—reject low-confidence classifications and prompt user to re-record that hit.
 
 **4. Amateur beatbox only**
 
-The system is *designed for amateurs* but this means professional beatboxers (who can produce complex polyrhythms, bass modulation, etc.) are underserved. Our 3-class simplification (kick/snare/hat) ignores percussion richness.
+The system is _designed for amateurs_ but this means professional beatboxers (who can produce complex polyrhythms, bass modulation, etc.) are underserved. Our 3-class simplification (kick/snare/hat) ignores percussion richness.
 
-*Design philosophy:* Better to serve one user group well (amateur solo performers) than serve everyone poorly.
+_Design philosophy:_ Better to serve one user group well (amateur solo performers) than serve everyone poorly.
 
 ### 6.5 Comparison to Alternative Approaches
 
-| Approach | Accessibility | AI Variation | Timing Preservation | Live Performance |
-|----------|--------------|--------------|---------------------|------------------|
-| **Traditional Drum Machines** | Low (requires music theory, grid programming) | None | N/A (quantized input required) | Good (hardware reliability) |
-| **DAW + MIDI** | Low (requires controllers, music knowledge) | Possible (plugins) | Depends on plugin | Poor (not performance-optimized) |
-| **Loop Pedals** | Medium (foot controls, no theory required) | None | Perfect (audio loops) | Excellent (hardware design) |
-| **Magenta GrooVAE** | Low (requires Python, ML knowledge) | Excellent (latent space) | Poor (quantizes to 16th notes) | Poor (offline processing only) |
-| **Generic Beatbox Recognition** | High (voice input) | None | Perfect | Medium (cloud API latency) |
-| **CHULOOPA** | **High (voice, 5min training)** | **Good (local AI)** | **Good (proportional warp)** | **Good (offline, <50ms latency)** |
+| Approach                        | Accessibility                                 | AI Variation             | Timing Preservation            | Live Performance                  |
+| ------------------------------- | --------------------------------------------- | ------------------------ | ------------------------------ | --------------------------------- |
+| **Traditional Drum Machines**   | Low (requires music theory, grid programming) | None                     | N/A (quantized input required) | Good (hardware reliability)       |
+| **DAW + MIDI**                  | Low (requires controllers, music knowledge)   | Possible (plugins)       | Depends on plugin              | Poor (not performance-optimized)  |
+| **Loop Pedals**                 | Medium (foot controls, no theory required)    | None                     | Perfect (audio loops)          | Excellent (hardware design)       |
+| **Magenta GrooVAE**             | Low (requires Python, ML knowledge)           | Excellent (latent space) | Poor (quantizes to 16th notes) | Poor (offline processing only)    |
+| **Generic Beatbox Recognition** | High (voice input)                            | None                     | Perfect                        | Medium (cloud API latency)        |
+| **CHULOOPA**                    | **High (voice, 5min training)**               | **Good (local AI)**      | **Good (proportional warp)**   | **Good (offline, <50ms latency)** |
 
 CHULOOPA occupies a unique position: high accessibility (voice input, minimal training) + AI variation (offline local model) + timing preservation (proportional time-warping) + live performance optimization (queued actions, real-time spice control).
 
@@ -617,6 +641,7 @@ Beatbox recordings contain voice data, raising privacy concerns. CHULOOPA's offl
 **Accessibility and Inclusion**
 
 While voice input lowers barriers for some users, it excludes others:
+
 - Users with vocal disabilities who cannot beatbox
 - Users in noise-sensitive environments (libraries, shared spaces)
 - Users uncomfortable with voice-based interfaces
@@ -654,6 +679,7 @@ Currently in development: Extend to 3-track looping with master sync system to p
 ### 7.2 Enhanced Visualizations
 
 Improve ChuGL visuals to show:
+
 - Per-drum-hit feedback (visual indication of classification)
 - Pattern similarity between original and variation
 - Real-time classification confidence display
@@ -665,6 +691,7 @@ Generate multiple variants (3-5) per loop with random selection for greater crea
 ### 7.4 Additional Variation Algorithms
 
 Explore complementary variation methods:
+
 - Fine-tune rhythmic_creator on drum-only dataset to eliminate melody MIDI filtering
 - GrooVAE integration (Magenta) for latent space interpolation and style transfer
 - Genetic algorithms for gradual pattern evolution across multiple generations
@@ -698,17 +725,18 @@ Our continuation-based approach emerged from systematic debugging of model-task 
 
 CHULOOPA contributes to discourse on accessible music AI by demonstrating that technical expertise (music theory, MIDI controllers, ML knowledge) need not be prerequisites for AI-augmented creativity. The 5-minute training session (beatbox 10 samples per class through interactive recorder) reflects design values: respect users' time and meet them where their skills already are—their voice.
 
-By treating amateur beatboxing—imperfect, idiosyncratic, personal—as a legitimate musical interface, we expand who can participate in electronic music creation. The system's personalization means "bad" beatboxers (by professional standards) can still achieve high classification accuracy *for their own practice*. This shifts the question from "Can you beatbox well?" to "Can you beatbox consistently?"—a lower barrier to entry.
+By treating amateur beatboxing—imperfect, idiosyncratic, personal—as a legitimate musical interface, we expand who can participate in electronic music creation. The system's personalization means "bad" beatboxers (by professional standards) can still achieve high classification accuracy _for their own practice_. This shifts the question from "Can you beatbox well?" to "Can you beatbox consistently?"—a lower barrier to entry.
 
 ### The Artist in the Loop
 
 CHULOOPA embodies emerging principles of co-creative AI: keeping performers central to the creative process through real-time control (spice level adjusts AI creativity), immediate feedback (hear drums as you beatbox), and musical timing (queued actions execute at loop boundaries). AI serves as collaborative tool rather than autonomous generator, augmenting human creativity without replacing human decision-making or destroying expressive timing nuances.
 
-This positions AI as *personal drum machine*—learning your beatbox vocabulary, preserving your rhythmic feel, extending your creative ideas—rather than generic beatbox replacement or rigid backing track.
+This positions AI as _personal drum machine_—learning your beatbox vocabulary, preserving your rhythmic feel, extending your creative ideas—rather than generic beatbox replacement or rigid backing track.
 
 ### Looking Forward
 
 We envision CHULOOPA as a step toward more accessible, personalized creative AI tools. Future work includes:
+
 - Multi-track support (3 simultaneous tracks with per-track spice control)
 - Multi-variation generation (3-5 variants with random selection)
 - Fine-tuning rhythmic_creator on drum-only dataset (reduce MIDI filtering)
@@ -717,7 +745,7 @@ We envision CHULOOPA as a step toward more accessible, personalized creative AI 
 
 By demonstrating that minimal training data, offline inference, and timing preservation can coexist in a performance-ready instrument, this work contributes technical approaches and design insights for the next generation of co-creative music AI systems—tools that adapt to musicians rather than demanding musicians adapt to them.
 
-**The future of accessible music AI may not be bigger models trained on more data, but smaller models trained on *your* data.**
+**The future of accessible music AI may not be bigger models trained on more data, but smaller models trained on _your_ data.**
 
 ---
 
@@ -749,139 +777,139 @@ This work was supported by the California Institute of the Arts Music Technology
 
 **Recent (2023-2025):**
 
-- Chen, Z., & Kapur, A. (2025). Music as natural language: Deep learning driven rhythmic creation. In *Proceedings of the International Computer Music Conference (ICMC 2025)*. Boston, MA.
+- Chen, Z., & Kapur, A. (2025). Music as natural language: Deep learning driven rhythmic creation. In _Proceedings of the International Computer Music Conference (ICMC 2025)_. Boston, MA.
 
-- Naman, A., & Ahuja, D. (2025). FAST: Fast Audio Spectrogram Transformer. *arXiv preprint arXiv:2501.01104*.
+- Naman, A., & Ahuja, D. (2025). FAST: Fast Audio Spectrogram Transformer. _arXiv preprint arXiv:2501.01104_.
 
-- Pereira, J., & Cardoso, J. S. (2024). Transformers and audio detection tasks: An overview. *Digital Signal Processing*, 155, 104883.
+- Pereira, J., & Cardoso, J. S. (2024). Transformers and audio detection tasks: An overview. _Digital Signal Processing_, 155, 104883.
 
-- Jiang, R., Chen, Z., Lin, H., & Yang, Y. H. (2024). Variation Transformer: Controllable variation generation for symbolic music. In *Proceedings of ISMIR 2024*.
+- Jiang, R., Chen, Z., Lin, H., & Yang, Y. H. (2024). Variation Transformer: Controllable variation generation for symbolic music. In _Proceedings of ISMIR 2024_.
 
-- Maia, L. O., Gonçalves, L. M., Vieira, E. V., & Tsang, I. R. (2023). Deep learning approaches for automatic drum transcription. *EMITTER International Journal of Engineering Technology*, 11(2), 361-382.
+- Maia, L. O., Gonçalves, L. M., Vieira, E. V., & Tsang, I. R. (2023). Deep learning approaches for automatic drum transcription. _EMITTER International Journal of Engineering Technology_, 11(2), 361-382.
 
-- Ji, S., Luo, J., & Yang, X. (2023). A comprehensive survey on deep music generation: Multi-level representations, algorithms, evaluations, and future directions. *ACM Computing Surveys*, 56(1), 1-36.
+- Ji, S., Luo, J., & Yang, X. (2023). A comprehensive survey on deep music generation: Multi-level representations, algorithms, evaluations, and future directions. _ACM Computing Surveys_, 56(1), 1-36.
 
-- Shih, Y. J., Wu, S. L., Zalkow, F., Müller, M., & Yang, Y. H. (2023). Theme Transformer: Symbolic music generation with theme-conditioned transformer. *IEEE Transactions on Multimedia*, 25, 3495-3508.
+- Shih, Y. J., Wu, S. L., Zalkow, F., Müller, M., & Yang, Y. H. (2023). Theme Transformer: Symbolic music generation with theme-conditioned transformer. _IEEE Transactions on Multimedia_, 25, 3495-3508.
 
 **Classic Papers:**
 
-- Briot, J. P., Hadjeres, G., & Pachet, F. D. (2020). Deep learning for music generation: Challenges and directions. *Neural Computing and Applications*, 32, 981-993.
+- Briot, J. P., Hadjeres, G., & Pachet, F. D. (2020). Deep learning for music generation: Challenges and directions. _Neural Computing and Applications_, 32, 981-993.
 
-- Gillick, J., Roberts, A., Engel, J., Eck, D., & Bamman, D. (2019). Learning to groove with inverse sequence transformations. *International Conference on Machine Learning (ICML)*.
+- Gillick, J., Roberts, A., Engel, J., Eck, D., & Bamman, D. (2019). Learning to groove with inverse sequence transformations. _International Conference on Machine Learning (ICML)_.
 
-- Huang, C. Z. A., Vaswani, A., Uszkoreit, J., Shazeer, N., Simon, I., Hawthorne, C., ... & Eck, D. (2018). Music Transformer. *arXiv preprint arXiv:1809.04281*.
+- Huang, C. Z. A., Vaswani, A., Uszkoreit, J., Shazeer, N., Simon, I., Hawthorne, C., ... & Eck, D. (2018). Music Transformer. _arXiv preprint arXiv:1809.04281_.
 
 ### Beatbox Recognition and Vocal Percussion
 
 **Recent (2020-2025):**
 
-- Rahim, R. A., et al. (2025). Beatbox classification to distinguish user experiences using machine learning approaches. *Journal of Computer Science*, 21(7), 961-970.
+- Rahim, R. A., et al. (2025). Beatbox classification to distinguish user experiences using machine learning approaches. _Journal of Computer Science_, 21(7), 961-970.
 
-- Li, Y., Liu, J., & Wu, W. (2020). Study on the classification of beatbox sounds based on timbre features. In *2020 IEEE 4th Information Technology, Networking, Electronic and Automation Control Conference (ITNEC)* (Vol. 1, pp. 1506-1510).
+- Li, Y., Liu, J., & Wu, W. (2020). Study on the classification of beatbox sounds based on timbre features. In _2020 IEEE 4th Information Technology, Networking, Electronic and Automation Control Conference (ITNEC)_ (Vol. 1, pp. 1506-1510).
 
 **Classic Papers:**
 
-- Delgado, A., McDonald, S., Xu, N., & Sandler, M. B. (2019). A new dataset for amateur vocal percussion analysis. In *Audio Mostly 2019: A Journey in Sound* (pp. 1-7). Nottingham, UK.
+- Delgado, A., McDonald, S., Xu, N., & Sandler, M. B. (2019). A new dataset for amateur vocal percussion analysis. In _Audio Mostly 2019: A Journey in Sound_ (pp. 1-7). Nottingham, UK.
 
-- Ramires, A., Penha, R., & Davies, M. E. P. (2018). User specific adaptation in automatic transcription of vocalised percussion. *arXiv preprint arXiv:1811.02406*.
+- Ramires, A., Penha, R., & Davies, M. E. P. (2018). User specific adaptation in automatic transcription of vocalised percussion. _arXiv preprint arXiv:1811.02406_.
 
-- Stowell, D., & Plumbley, M. D. (2010). Delayed decision-making in real-time beatbox percussion classification. *Journal of New Music Research*, 39(3), 203-213.
+- Stowell, D., & Plumbley, M. D. (2010). Delayed decision-making in real-time beatbox percussion classification. _Journal of New Music Research_, 39(3), 203-213.
 
-- Sinyor, E., McKay, C., Fiebrink, R., McEnnis, D., Li, B., & Fujinaga, I. (2005). Beatbox classification using ACE. In *Proceedings of the 6th International Conference on Music Information Retrieval (ISMIR)* (pp. 672-675). London, UK.
+- Sinyor, E., McKay, C., Fiebrink, R., McEnnis, D., Li, B., & Fujinaga, I. (2005). Beatbox classification using ACE. In _Proceedings of the 6th International Conference on Music Information Retrieval (ISMIR)_ (pp. 672-675). London, UK.
 
-- Kapur, A., Benning, M., & Tzanetakis, G. (2004). Query-by-beat-boxing: Music retrieval for the DJ. In *5th International Conference on Music Information Retrieval (ISMIR)*. Barcelona, Spain.
+- Kapur, A., Benning, M., & Tzanetakis, G. (2004). Query-by-beat-boxing: Music retrieval for the DJ. In _5th International Conference on Music Information Retrieval (ISMIR)_. Barcelona, Spain.
 
 ### Drum Sound Classification and Features
 
 **Recent (2024-2025):**
 
-- Weber, P., Balke, S., & Müller, M. (2025). STAR Drums: A dataset for automatic drum transcription. *Transactions of the International Society for Music Information Retrieval*, 8(1).
+- Weber, P., Balke, S., & Müller, M. (2025). STAR Drums: A dataset for automatic drum transcription. _Transactions of the International Society for Music Information Retrieval_, 8(1).
 
 **Classic Papers:**
 
-- Lartillot, O., & Toiviainen, P. (2007). A unified framework for the extraction of MIR features from audio signals. In *Proceedings of the 8th International Society for Music Information Retrieval Conference (ISMIR)* (pp. 290-295). Vienna, Austria.
+- Lartillot, O., & Toiviainen, P. (2007). A unified framework for the extraction of MIR features from audio signals. In _Proceedings of the 8th International Society for Music Information Retrieval Conference (ISMIR)_ (pp. 290-295). Vienna, Austria.
 
-- Herrera, P., Yeterian, A., & Gouyon, F. (2003). Automatic classification of drum sounds: A comparison of feature selection methods and classification techniques. In *Music and Artificial Intelligence: Second International Conference, ICMAI 2002* (pp. 69-80). Springer.
+- Herrera, P., Yeterian, A., & Gouyon, F. (2003). Automatic classification of drum sounds: A comparison of feature selection methods and classification techniques. In _Music and Artificial Intelligence: Second International Conference, ICMAI 2002_ (pp. 69-80). Springer.
 
-- Sillanpää, J. (2000). Classification of the percussive sounds of the acoustic guitar. In *Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP)*.
+- Sillanpää, J. (2000). Classification of the percussive sounds of the acoustic guitar. In _Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP)_.
 
 ### Onset Detection
 
-- Bello, J. P., Daudet, L., Abdallah, S., Duxbury, C., Davies, M., & Sandler, M. B. (2005). A tutorial on onset detection in music signals. *IEEE Transactions on Speech and Audio Processing*, 13(5), 1035-1047.
+- Bello, J. P., Daudet, L., Abdallah, S., Duxbury, C., Davies, M., & Sandler, M. B. (2005). A tutorial on onset detection in music signals. _IEEE Transactions on Speech and Audio Processing_, 13(5), 1035-1047.
 
-- Dixon, S. (2006). Onset detection revisited. In *Proceedings of the 9th International Conference on Digital Audio Effects (DAFx-06)*. Montreal, Canada.
+- Dixon, S. (2006). Onset detection revisited. In _Proceedings of the 9th International Conference on Digital Audio Effects (DAFx-06)_. Montreal, Canada.
 
-- Böck, S., Arzt, A., Krebs, F., & Schedl, M. (2012). Online real-time onset detection with recurrent neural networks. In *Proceedings of DAFx-12*. York, UK.
+- Böck, S., Arzt, A., Krebs, F., & Schedl, M. (2012). Online real-time onset detection with recurrent neural networks. In _Proceedings of DAFx-12_. York, UK.
 
 ### Personalized and User-Trainable Machine Learning
 
 **Recent (2024-2025):**
 
-- Weber, P., Uhle, C., & Müller, M. (2024). Real-time automatic drum transcription using dynamic few-shot learning. In *Internet of Sounds*. Fraunhofer IIS.
+- Weber, P., Uhle, C., & Müller, M. (2024). Real-time automatic drum transcription using dynamic few-shot learning. In _Internet of Sounds_. Fraunhofer IIS.
 
-- Smith, C., et al. (2025). Self-supervised learning for acoustic few-shot classification. *arXiv preprint arXiv:2409.09647*.
+- Smith, C., et al. (2025). Self-supervised learning for acoustic few-shot classification. _arXiv preprint arXiv:2409.09647_.
 
 **Classic Papers:**
 
-- Wang, Z., et al. (2021). Few-shot continual learning for audio classification. In *IEEE ICASSP 2021*.
+- Wang, Z., et al. (2021). Few-shot continual learning for audio classification. In _IEEE ICASSP 2021_.
 
-- Wang, S., Li, Y., Fei-Fei, L., & Russakovsky, O. (2020). Few-shot audio classification with attentional graph neural networks. In *Proceedings of Interspeech 2020*.
+- Wang, S., Li, Y., Fei-Fei, L., & Russakovsky, O. (2020). Few-shot audio classification with attentional graph neural networks. In _Proceedings of Interspeech 2020_.
 
-- Pons, J., & Serra, X. (2019). Training neural networks for few-shot music classification. In *Proceedings of ISMIR 2019*.
+- Pons, J., & Serra, X. (2019). Training neural networks for few-shot music classification. In _Proceedings of ISMIR 2019_.
 
-- Lee, J., & Nam, J. (2018). Transfer learning for music classification and regression tasks. In *Proceedings of ISMIR 2018*.
+- Lee, J., & Nam, J. (2018). Transfer learning for music classification and regression tasks. In _Proceedings of ISMIR 2018_.
 
-- Fiebrink, R., Trueman, D., & Cook, P. R. (2011). The Wekinator: A system for real-time, interactive machine learning in music. In *Proceedings of ISMIR 2011*.
+- Fiebrink, R., Trueman, D., & Cook, P. R. (2011). The Wekinator: A system for real-time, interactive machine learning in music. In _Proceedings of ISMIR 2011_.
 
-- Flexer, A. (2007). A closer look on artist filters for musical genre classification. In *Proceedings of ISMIR 2007*.
+- Flexer, A. (2007). A closer look on artist filters for musical genre classification. In _Proceedings of ISMIR 2007_.
 
-- Pampalk, E., Flexer, A., & Widmer, G. (2005). Computational models of music similarity and their application in music information retrieval. *Empirical Musicology Review*.
+- Pampalk, E., Flexer, A., & Widmer, G. (2005). Computational models of music similarity and their application in music information retrieval. _Empirical Musicology Review_.
 
 ### Live Performance and Looping Systems
 
-- Shepardson, V., & Magnusson, T. (2023). The Living Looper: Rethinking the musical loop as a machine action-perception loop. In *Proceedings of NIME 2023* (pp. 1-8). Mexico City, Mexico.
+- Shepardson, V., & Magnusson, T. (2023). The Living Looper: Rethinking the musical loop as a machine action-perception loop. In _Proceedings of NIME 2023_ (pp. 1-8). Mexico City, Mexico.
 
-- Sturm, B. L. T., Ben-Tal, O., Monaghan, Ú., et al. (2019). Notochord: A flexible probabilistic model for real-time MIDI performance. *Zenodo*. DOI: 10.5281/zenodo.7088404.
+- Sturm, B. L. T., Ben-Tal, O., Monaghan, Ú., et al. (2019). Notochord: A flexible probabilistic model for real-time MIDI performance. _Zenodo_. DOI: 10.5281/zenodo.7088404.
 
-- Martin, C. P., & Bell, P. (2021). Revival: A framework for collaborative music creation with AI. In *Proceedings of NIME 2021*.
+- Martin, C. P., & Bell, P. (2021). Revival: A framework for collaborative music creation with AI. In _Proceedings of NIME 2021_.
 
 ### Co-Creative AI and Human-AI Collaboration
 
-- Loughran, R., & O'Neill, M. (2020). Generative music composition using AI. In *Evolutionary and Biologically Inspired Music, Sound, Art and Design* (pp. 176-191). Springer.
+- Loughran, R., & O'Neill, M. (2020). Generative music composition using AI. In _Evolutionary and Biologically Inspired Music, Sound, Art and Design_ (pp. 176-191). Springer.
 
-- Lubart, T. (2005). How can computers be partners in the creative process? Classification and commentary on the Special Issue. *International Journal of Human-Computer Studies*, 63(4-5), 365-369.
+- Lubart, T. (2005). How can computers be partners in the creative process? Classification and commentary on the Special Issue. _International Journal of Human-Computer Studies_, 63(4-5), 365-369.
 
-- Davis, N. (2013). Artificial creativity? A case study. In *Proceedings of the International Conference on Computational Creativity*.
+- Davis, N. (2013). Artificial creativity? A case study. In _Proceedings of the International Conference on Computational Creativity_.
 
 ### Timing, Groove, and Quantization
 
-- Davies, M. E. P., Madison, G., Silva, P., & Gouyon, F. (2013). Evaluating rhythmic deviation in musical performance. *Empirical Musicology Review*, 8(2), 85-99.
+- Davies, M. E. P., Madison, G., Silva, P., & Gouyon, F. (2013). Evaluating rhythmic deviation in musical performance. _Empirical Musicology Review_, 8(2), 85-99.
 
-- Harding, E. E., Stevenson, R. A., Kravitz, D. J., & Rosenberg, M. D. (2024). Beat-related brain activity tracks natural rhythmic variations in music. *Science Advances*, 10(15).
+- Harding, E. E., Stevenson, R. A., Kravitz, D. J., & Rosenberg, M. D. (2024). Beat-related brain activity tracks natural rhythmic variations in music. _Science Advances_, 10(15).
 
-- Kilchenmann, L., & Senn, O. (2015). Microtiming in swing and funk affects the body movement behavior of music expert listeners. *Frontiers in Psychology*, 6, 1232.
+- Kilchenmann, L., & Senn, O. (2015). Microtiming in swing and funk affects the body movement behavior of music expert listeners. _Frontiers in Psychology_, 6, 1232.
 
 ### Transformer and Sequence Models
 
-- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., ... & Polosukhin, I. (2017). Attention is all you need. In *Advances in Neural Information Processing Systems* (Vol. 30). Long Beach, CA.
+- Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., ... & Polosukhin, I. (2017). Attention is all you need. In _Advances in Neural Information Processing Systems_ (Vol. 30). Long Beach, CA.
 
-- Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. *Neural Computation*, 9(8), 1735-1780.
+- Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. _Neural Computation_, 9(8), 1735-1780.
 
 ### Accessible Music Technology
 
-- Knotts, S., & Collins, N. (2014). A survey of accessibility in digital musical instruments. In *Proceedings of NIME 2014*.
+- Knotts, S., & Collins, N. (2014). A survey of accessibility in digital musical instruments. In _Proceedings of NIME 2014_.
 
-- Katan, S., Williams, D., & Tzanetakis, G. (2015). Democratising music creation: Inclusive design for accessible instruments. In *Proceedings of NIME 2015*.
+- Katan, S., Williams, D., & Tzanetakis, G. (2015). Democratising music creation: Inclusive design for accessible instruments. In _Proceedings of NIME 2015_.
 
-- Hödl, O., Fitzpatrick, G., & Kayali, F. (2020). Accessibility and music technology: 10 years of NIME research. In *Proceedings of NIME 2020*.
+- Hödl, O., Fitzpatrick, G., & Kayali, F. (2020). Accessibility and music technology: 10 years of NIME research. In _Proceedings of NIME 2020_.
 
-- Parkinson, A., & Knotts, S. (2020). Inclusive music interaction: A survey of methods for accessible music technology. In *Proceedings of NIME 2020*.
+- Parkinson, A., & Knotts, S. (2020). Inclusive music interaction: A survey of methods for accessible music technology. In _Proceedings of NIME 2020_.
 
 ### Neural Audio Synthesis
 
-- Caillon, A., & Esling, P. (2021). RAVE: A variational autoencoder for fast and high-quality neural audio synthesis. *arXiv preprint arXiv:2111.05011*.
+- Caillon, A., & Esling, P. (2021). RAVE: A variational autoencoder for fast and high-quality neural audio synthesis. _arXiv preprint arXiv:2111.05011_.
 
-- Wyse, L. (2018). Real-valued parametric conditioning of an RNN for interactive sound synthesis. In *Proceedings of DAFx-2018*.
+- Wyse, L. (2018). Real-valued parametric conditioning of an RNN for interactive sound synthesis. In _Proceedings of DAFx-2018_.
 
 ### Evaluation and User Studies
 
@@ -1381,6 +1409,7 @@ This work was supported by the California Institute of the Arts Music Technology
 ### Critical (Required for Acceptance)
 
 **Evaluation & Data Collection:**
+
 - [ ] **Technical Evaluation** (Section 5.1)
   - [ ] Measure classifier accuracy across multiple sessions (per-class precision/recall)
   - [ ] Measure end-to-end latency (input → onset → classification → playback)
@@ -1402,6 +1431,7 @@ This work was supported by the California Institute of the Arts Music Technology
   - [ ] Note performance readiness and workflow pain points
 
 **Figures & Diagrams:**
+
 - [ ] **Figure 1:** System architecture diagram (training + performance phases)
 - [ ] **Figure 2:** OSC communication flow (Python ↔ ChucK with message types)
 - [ ] **Figure 3:** Continuation-based variation pipeline (visual flow)
@@ -1413,6 +1443,7 @@ This work was supported by the California Institute of the Arts Music Technology
 - [ ] **Table 2:** Comparison table with alternative approaches (already drafted in 6.5)
 
 **Literature Review:**
+
 - [ ] **Beatbox Recognition** (2.1)
   - [ ] Find and cite beatbox classification papers and datasets
   - [ ] Cite vocal onset detection work
@@ -1441,6 +1472,7 @@ This work was supported by the California Institute of the Arts Music Technology
   - [ ] Cite edge/on-device ML for music
 
 **References:**
+
 - [ ] Compile all TODO citations from Related Work section
 - [ ] Format in BibTeX for LaTeX template
 - [ ] Ensure all in-text citations have bibliography entries
@@ -1449,6 +1481,7 @@ This work was supported by the California Institute of the Arts Music Technology
 ### Important (Strengthens Paper)
 
 **Writing & Polish:**
+
 - [ ] Fill in all [TODO] placeholders with actual content
 - [ ] Add section numbers and cross-references
 - [ ] Ensure consistent terminology (e.g., "continuation-based" not "extension-based")
@@ -1457,6 +1490,7 @@ This work was supported by the California Institute of the Arts Music Technology
 - [ ] Verify all code examples and data formats are correct
 
 **Content Enhancements:**
+
 - [ ] Add failure case examples (what beatbox inputs confuse the classifier?)
 - [ ] Include example variation outputs (show MIDI-like notation or timing data)
 - [ ] Discuss computational requirements (CPU/RAM for rhythmic_creator)
@@ -1464,6 +1498,7 @@ This work was supported by the California Institute of the Arts Music Technology
 - [ ] Consider adding video/audio supplementary materials
 
 **AIMC Alignment:**
+
 - [ ] Check AIMC 2026 theme when announced (update Introduction/Discussion)
 - [ ] Ensure abstract follows AIMC format (check word limit)
 - [ ] Verify all section headings follow AIMC style (ALL CAPS for level 1)
@@ -1472,18 +1507,21 @@ This work was supported by the California Institute of the Arts Music Technology
 ### Optional (Nice to Have)
 
 **Additional Experiments:**
+
 - [ ] Compare rhythmic_creator vs. Gemini API variation quality
 - [ ] Test with professional beatboxers (how does personalization work for them?)
 - [ ] Measure variation diversity (how different are variations from original?)
 - [ ] Pattern evolution study (gradual variation over multiple generations)
 
 **Supplementary Materials:**
+
 - [ ] Video demo (3-5 minutes): Training → Recording → Variation loading
 - [ ] Audio examples: Original patterns + variations at different spice levels
 - [ ] GitHub repository link with code (anonymized for review?)
 - [ ] Interactive demo (if feasible)
 
 **Future Work Details:**
+
 - [ ] Expand Section 7 with specific next steps for multi-track support
 - [ ] Discuss GrooVAE integration potential (latent space variation)
 - [ ] Outline longitudinal study design (3-6 month deployment)
@@ -1493,6 +1531,7 @@ This work was supported by the California Institute of the Arts Music Technology
 ## Submission Checklist
 
 **Before Final Submission:**
+
 - [ ] Paper length within AIMC limit (check CFP - typically 4-8 pages)
 - [ ] Anonymized for double-blind review (remove author names/affiliations from PDF)
   - [ ] Remove personal pronouns ("I", "my") if required, or keep autoethnography
@@ -1509,6 +1548,7 @@ This work was supported by the California Institute of the Arts Music Technology
 - [ ] Submitted by deadline (check https://aimc2026.org/)
 
 **Post-Acceptance (Camera-Ready):**
+
 - [ ] De-anonymize (add author names/affiliations)
 - [ ] Add acknowledgments section (remove anonymization)
 - [ ] Update any figures based on reviewer feedback
@@ -1521,6 +1561,7 @@ This work was supported by the California Institute of the Arts Music Technology
 ## Current Status Summary
 
 **✅ Complete:**
+
 - Abstract (AIMC-focused, emphasizes co-creative AI)
 - Introduction (motivation, design vision, contributions)
 - System Design (technical details, continuation-based approach)
@@ -1530,11 +1571,13 @@ This work was supported by the California Institute of the Arts Music Technology
 - Acknowledgments and Author Declarations
 
 **🔄 Partial:**
+
 - Related Work (structure complete, need citations)
 - Evaluation (structure complete, need actual data)
 - References (template created, need to compile bibliography)
 
 **⏳ Not Started:**
+
 - Technical evaluation experiments
 - User study recruitment and execution
 - Autoethnographic documentation
@@ -1542,6 +1585,7 @@ This work was supported by the California Institute of the Arts Music Technology
 - Literature search and citation compilation
 
 **Estimated Work Remaining:** 40-60 hours
+
 - Literature review: 10-15 hours
 - Evaluation experiments: 10-15 hours
 - User study: 15-20 hours
