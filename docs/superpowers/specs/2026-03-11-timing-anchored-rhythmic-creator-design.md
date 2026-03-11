@@ -131,6 +131,8 @@ fill_probability = spice_level * 0.8      # 0% at low, 80% at high
 | 0.4-0.6 (Med) | 60-100ms | 32-48% | Moderate drift, some fills |
 | 0.7-1.0 (High) | 110-150ms | 56-80% | Loose anchoring, many fills |
 
+**Note:** Spice behavior is **continuous**, not discrete. The table above shows representative ranges for illustration. A user at spice=0.35 will get behavior between "Low" and "Med" (max_drift=66ms, fill_probability=28%). The linear formulas above calculate exact values for any spice level 0.0-1.0.
+
 **Step 3: Handling Density Mismatch**
 
 **More hits than grid positions:**
@@ -190,6 +192,72 @@ anchored_hit = DrumHit(
 - **Rhythm/groove** comes from user (via timing anchoring)
 - **Orchestration** (which drums play) comes from model's training
 - Creates musically valid variations that are rhythmically consistent with input
+
+### Time-Warping to Match Loop Duration
+
+After timing anchoring, the variation may not exactly match the original loop duration due to:
+- Fills added between grid positions
+- Rounding in timestamp calculations
+- Model-generated timing variations
+
+**Solution:** Uniformly scale all timestamps to fit the target duration.
+
+```python
+def fit_to_loop_duration(pattern: DrumPattern, target_duration: float) -> DrumPattern:
+    """
+    Time-warp pattern to fit exact loop duration.
+
+    This function uniformly scales all timestamps proportionally,
+    preserving relative spacing between hits while ensuring the
+    pattern loops perfectly.
+
+    Args:
+        pattern: Anchored pattern (may have any duration)
+        target_duration: Target loop duration in seconds
+
+    Returns:
+        Pattern with exactly target_duration
+    """
+    if not pattern.hits:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Find actual duration of pattern
+    max_timestamp = max(hit.timestamp for hit in pattern.hits)
+
+    if max_timestamp == 0 or max_timestamp <= 0.01:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Calculate uniform scale factor
+    scale_factor = target_duration / max_timestamp
+
+    # Scale all timestamps proportionally
+    fitted_hits = []
+    for hit in pattern.hits:
+        new_timestamp = hit.timestamp * scale_factor
+
+        # Keep only hits within target duration
+        if new_timestamp < target_duration:
+            fitted_hits.append(DrumHit(
+                drum_class=hit.drum_class,
+                timestamp=new_timestamp,
+                velocity=hit.velocity,
+                delta_time=0.0  # Will recalculate
+            ))
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
+    result._recalculate_delta_times()
+
+    return result
+```
+
+**Key Properties:**
+- Preserves relative spacing (if hits were evenly spaced, they remain evenly spaced)
+- Maintains anchored timing relationships (hits stay near their grid positions)
+- Guarantees exact loop duration for seamless looping in ChucK
+- Does not distort the carefully anchored timing structure
+
+**Note:** This time-warping is usually minimal (<5% scale factor) because timing anchoring already produces patterns close to the target duration.
 
 ## Layer 3: Algorithmic Fallback (New)
 
@@ -262,14 +330,51 @@ def generate_musical_variation(drum_data, spice_level):
             varied_groove.append({'class': 2, 'vel': v * 0.6, 'delta': third_delta})
             varied_groove.append({'class': 2, 'vel': v * 0.8, 'delta': third_delta})
 
-        # ... other mutations (shift_and, substitute)
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] and len(varied_groove) > 0:
+            # Shift to "and" (syncopation)
+            # Push this note later by extending previous note's delta
+            shift_amount = d / 2.0
+            varied_groove[-1]['delta'] += shift_amount  # Lengthen previous note
+            varied_groove.append({'class': c, 'vel': v, 'delta': d - shift_amount})  # Shorten current
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] + probs['substitute']:
+            # Drum substitution (swap weak kicks for hats, or hats for weak kicks)
+            new_class = 2 if c == 0 else 0
+            varied_groove.append({'class': new_class, 'vel': v * 0.8, 'delta': d})
 
         else:
             # Pass through unchanged
             varied_groove.append({'class': c, 'vel': v, 'delta': d})
 
     # Recalculate timestamps to preserve exact loop duration
-    return rebuild_timestamps(varied_groove)
+    return rebuild_timestamps(varied_groove, original_start_time=drum_data[0].get('timestamp', 0.0))
+
+
+def rebuild_timestamps(varied_groove, original_start_time=0.0):
+    """
+    Rebuild absolute timestamps from delta times.
+    Guarantees exact loop duration match to original.
+
+    Args:
+        varied_groove: List of {'class', 'vel', 'delta'} dicts
+        original_start_time: Timestamp of first hit in original pattern
+
+    Returns:
+        List of {'class', 'timestamp', 'vel', 'delta'} dicts
+    """
+    final_output = []
+    current_time = original_start_time
+
+    for hit in varied_groove:
+        final_output.append({
+            'class': hit['class'],
+            'timestamp': current_time,
+            'vel': hit['vel'],
+            'delta': hit['delta']
+        })
+        current_time += hit['delta']
+
+    return final_output
 ```
 
 **Key Features:**
@@ -410,7 +515,9 @@ def timing_anchor(model_pattern: DrumPattern,
     max_drift = 0.02 + (spice_level * 0.13)  # 20ms-150ms
     fill_probability = spice_level * 0.8     # 0%-80%
 
-    anchored_hits = []
+    # Use dictionary to deduplicate - keep best hit per grid slot
+    grid_slots = {}  # grid_position -> best_hit
+    fill_hits = []    # Off-grid fills
 
     for model_hit in model_pattern.hits:
         # Find nearest grid position
@@ -419,15 +526,20 @@ def timing_anchor(model_pattern: DrumPattern,
 
         if distance < max_drift:
             # Anchor to grid position
-            anchored_hits.append(DrumHit(
-                drum_class=model_hit.drum_class,  # Trust model's choice
-                timestamp=nearest_pos,
-                velocity=model_hit.velocity,
-                delta_time=0.0  # Will recalculate
-            ))
+            # If multiple hits map to same slot, keep hit with highest velocity
+            if nearest_pos not in grid_slots or model_hit.velocity > grid_slots[nearest_pos].velocity:
+                grid_slots[nearest_pos] = DrumHit(
+                    drum_class=model_hit.drum_class,  # Trust model's choice
+                    timestamp=nearest_pos,
+                    velocity=model_hit.velocity,
+                    delta_time=0.0  # Will recalculate
+                )
         elif random.random() < fill_probability:
             # Keep as fill (off-grid)
-            anchored_hits.append(model_hit)
+            fill_hits.append(model_hit)
+
+    # Combine grid-anchored hits and fills
+    anchored_hits = list(grid_slots.values()) + fill_hits
 
     # Create pattern and recalculate delta_times
     result = DrumPattern(hits=anchored_hits, loop_duration=original_pattern.loop_duration)
@@ -439,29 +551,42 @@ def timing_anchor(model_pattern: DrumPattern,
 ### Integration Point in rhythmic_creator_variation()
 
 ```python
-def rhythmic_creator_variation(pattern: DrumPattern, temperature: float = 0.7) -> tuple:
-    """[Existing function, modified]"""
+def rhythmic_creator_variation(pattern: DrumPattern, spice_level: float = 0.5) -> tuple:
+    """
+    Generate variation using rhythmic_creator with timing anchoring.
 
-    # ... existing code for model generation ...
+    Args:
+        pattern: Original user beatbox pattern
+        spice_level: 0.0-1.0 controlling variation amount (NOT model temperature)
+
+    Returns:
+        Tuple of (DrumPattern, success: bool)
+    """
+
+    # ... existing code for model generation with FIXED temperature ...
+    # model_output = rhythmic_model.generate(
+    #     input_pattern=context,
+    #     temperature=RHYTHMIC_CREATOR_TEMPERATURE  # Fixed at 0.7, NOT spice
+    # )
     # ... existing code for density matching (wrap vs continuation) ...
 
     # Create raw pattern with natural duration
     raw_pattern = DrumPattern(hits=shifted_hits, loop_duration=natural_duration)
 
     # NEW: Apply timing anchoring BEFORE time-warping
-    print(f"    Applying timing anchoring (spice: {temperature:.2f})...")
-    anchored_pattern = timing_anchor(raw_pattern, pattern, temperature)
+    print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
+    anchored_pattern = timing_anchor(raw_pattern, pattern, spice_level)
 
     if not anchored_pattern.hits or len(anchored_pattern.hits) < 2:
         print("  Warning: Timing anchoring failed, falling back to algorithmic variation")
-        return generate_musical_variation(pattern, temperature), False
+        return generate_musical_variation(pattern, spice_level), False
 
     # Time-warp to fit exact loop duration
     variation = fit_to_loop_duration(anchored_pattern, pattern.loop_duration)
 
     if not variation.hits:
         print("  Warning: No hits after time-warping, falling back")
-        return generate_musical_variation(pattern, temperature), False
+        return generate_musical_variation(pattern, spice_level), False
 
     print(f"    Final variation: {len(variation.hits)} hits")
     return variation, True
@@ -514,10 +639,13 @@ def measure_timing_deviation(original_pattern, variation_pattern):
         nearest_distance = min(abs(var_hit.timestamp - t) for t in original_grid)
         deviations.append(nearest_distance * 1000)  # Convert to ms
 
+    avg_deviation = sum(deviations) / len(deviations) if deviations else 0.0
+    max_deviation = max(deviations) if deviations else 0.0
+
     return {
         'avg_ms': avg_deviation,
         'max_ms': max_deviation,
-        'within_50ms': sum(1 for d in deviations if d < 50) / len(deviations)
+        'within_50ms': sum(1 for d in deviations if d < 50) / len(deviations) if deviations else 0.0
     }
 ```
 
@@ -574,20 +702,38 @@ python test_timing_anchoring.py --spice 0.8 --count 5
 
 ### Test 5: Subjective Listening Test (Most Important!)
 
-Record a beatbox loop and generate variations at different spice levels.
+**Protocol:**
 
-**Questions:**
-- Does switching between original and variation feel natural?
-- At low spice, is it "your groove but improved"?
-- At high spice, is it creative but still recognizable?
-- Can you perform live with these variations?
+**Participants:**
+- 5 musicians (3 drummers, 2 beatboxers)
+- Required: Understanding of rhythm and groove
+
+**Test Setup:**
+- 3 diverse beatbox patterns recorded by user (sparse, dense, syncopated)
+- 5 variations generated per pattern at spice levels: 0.2, 0.5, 0.8
+- Total: 15 variation pairs (original + variation)
+
+**Evaluation Questions** (1-5 Likert scale):
+1. "Switching between original and variation feels natural" (1=jarring, 5=seamless)
+2. "At low spice, the variation is recognizably the same groove" (1=different, 5=same)
+3. "At high spice, the variation is creative but still related" (1=unrelated, 5=clearly related)
+4. "The timing feels locked to the original groove" (1=disconnected, 5=locked)
+5. "I could perform with this variation in a live setting" (1=no, 5=yes)
+
+**Presentation:**
+- Blind test: Original vs variation randomly ordered
+- Participants hear pair 3 times before rating
+- Can toggle between original/variation at will
 
 **Success Criteria:**
-- ✅ 80%+ of variations feel musically related to input
-- ✅ Timing feels locked to your groove
-- ✅ Spice control is intuitive (low = safe, high = creative)
-- ✅ Better than current rhythmic_creator output
-- ✅ Fast enough for live performance (<15 seconds)
+- ✅ Mean rating ≥ 4.0 on all 5 questions
+- ✅ At least 80% of individual ratings ≥ 3 (acceptable or better)
+- ✅ Standard deviation ≤ 1.0 (inter-rater agreement)
+- ✅ Qualitative feedback confirms groove preservation
+
+**Comparison Baseline:**
+- Also test current rhythmic_creator output (no timing anchoring)
+- Expected: Significant improvement in Q1, Q2, Q4 scores
 
 ## Evaluation & Documentation for ACM C&C 2026
 
