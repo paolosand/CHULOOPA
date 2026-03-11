@@ -1676,12 +1676,19 @@ fun void startRecording(int track) {
     <<< "" >>>;
     <<< ">>> TRACK", track, "RECORDING STARTED <<<" >>>;
 
-    // If this track was loaded from file, stop its playback first
-    if(track_loaded_from_file[track]) {
+    // Stop any existing playback (whether from file OR previous recording)
+    if(has_loop[track] || drum_playback_active[track]) {
+        <<< "  Stopping existing playback before new recording" >>>;
         0 => drum_playback_active[track];
+        0 => has_loop[track];
         0 => track_loaded_from_file[track];
         100::ms => now;  // Brief pause to stop playback
     }
+
+    // CRITICAL: Increment playback ID to invalidate any old scheduled hits
+    // This ensures clean separation between recordings
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    <<< "  Playback ID incremented to", drum_playback_id[track], "(clean recording session)" >>>;
 
     // Clear previous drum data
     clearSymbolicData(track);
@@ -1797,6 +1804,10 @@ fun void clearTrack(int track) {
 
     // Stop drum playback
     0 => drum_playback_active[track];
+
+    // CRITICAL: Increment playback ID to invalidate ALL scheduled drum hits
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    <<< "  Playback ID incremented to", drum_playback_id[track], "(invalidates old hits)" >>>;
 
     clearSymbolicData(track);
 
