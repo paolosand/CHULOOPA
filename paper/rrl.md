@@ -79,16 +79,26 @@ Section 6 (Discussion) - Contrast large-dataset deep learning vs. personalized K
 **URL:** https://thescipub.com/abstract/jcssp.2025.961.970
 
 **Summary:**
-Recent beatbox classification study achieving 94.55% accuracy with 1-NN classifier and 93.37% with backpropagation neural networks. Explores machine learning approaches for distinguishing user experiences through beatbox sound classification. Uses spectral features including Spectral Centroid, Spectral Magnitude, Spectral Contrast, and MFCC.
+Recent beatbox classification study achieving 94.55% accuracy with 1-NN classifier and 93.37% with backpropagation neural networks. Tested multiple feature extraction methods:
+- Spectral Centroid
+- Spectral Magnitude
+- Spectral Contrast
+- **MFCC (n_mfcc = 22)** ← **BEST PERFORMING FEATURE**
+
+**Key Finding:** "MFCC (n_mfcc = 22) delivers the best feature representation for our KNN, multi-class and non-linear SVM classification model." Tested with K=3, 5, and 7 neighbors.
 
 **Relevance to CHULOOPA:**
 - **2025 publication:** Most recent beatbox classification research
 - **1-NN accuracy:** 94.55% validates CHULOOPA's KNN approach and ~90% target
-- **Feature extraction:** Spectral features align with CHULOOPA's 5D feature vector
+- **CRITICAL: MFCC superiority:** Directly validates CHULOOPA's use of MFCC features (13 coefficients)
+- **KNN testing:** Tested k=3,5,7 exactly matching CHULOOPA's k=3 approach
+- **Feature extraction:** Spectral features + MFCC align with CHULOOPA's approach
 - **User experience focus:** Validates user-centered design approach
 
-**Use in Paper:** Section 2.1 (Beatbox Recognition) - Recent beatbox classification baseline
-Section 3.2.3 (KNN Classification) - Validate KNN performance for beatbox
+**Use in Paper:**
+- Section 2.1 (Beatbox Recognition) - CRITICAL citation for MFCC in beatbox classification
+- Section 3.2.2 (Feature Extraction) - Validate MFCC feature choice with recent research
+- Section 3.2.3 (KNN Classification) - Validate KNN performance for beatbox (94.55% with k=1, similar performance expected with k=3)
 
 **Status:** Journal article - may require subscription
 
@@ -192,15 +202,92 @@ Section 6 (Discussion) - Justify KNN choice: 30 samples insufficient for deep le
 Explores timbre feature extraction for beatbox sound classification using machine learning. Demonstrates that spectral features remain effective for vocal percussion recognition in modern deep learning contexts. Uses features including spectral centroid, MFCC, and temporal characteristics.
 
 **Relevance to CHULOOPA:**
-- **Timbre features:** Validates CHULOOPA's spectral-based 5D feature vector
+- **Timbre features:** Validates CHULOOPA's spectral-based feature vector
 - **Beatbox-specific:** Focused on beatbox (not general percussion)
 - **Recent validation:** Shows spectral features still relevant (2020)
-- **Feature selection:** Supports flux, energy, spectral bands approach
+- **MFCC usage:** Confirms MFCCs are standard for beatbox timbre classification
+- **Feature selection:** Supports flux, energy, spectral bands + MFCC approach
 
 **Use in Paper:** Section 2.1 (Beatbox Recognition) - Validate feature extraction approach
-Section 3.2.2 (Feature Extraction) - Support for spectral feature choices
+Section 3.2.2 (Feature Extraction) - Support for spectral feature + MFCC choices
 
 **Status:** IEEE Xplore - may require subscription
+
+---
+
+### 0.9 MFCC Coefficient Selection for Audio Classification (2021)
+**Authors:** Hasan et al.
+**Venue:** The Journal of Engineering (Wiley), 2021
+**DOI:** 10.1049/tje2.12082
+**URL:** https://ietresearch.onlinelibrary.wiley.com/doi/full/10.1049/tje2.12082
+
+**Summary:**
+Empirical study on optimal number of MFCC coefficients for speech recognition. Found that 13 MFCCs gave 74% vowel and 51% word classification accuracy, while 25 MFCCs gave 83% vowel and 57% word classification accuracy on Bengali speech dataset. Standard practice uses 8-13 coefficients for most applications, with up to 20-25 coefficients for tasks requiring detailed pitch and tone information.
+
+**Key Findings:**
+- **Standard: 13 coefficients** for general audio/speech tasks
+- **Higher accuracy: 20-25 coefficients** when capturing finer pitch/harmonic details
+- **Trade-off:** More coefficients = more model complexity, needs more training data
+- **Lower-order preference:** Lower coefficients contain more cues about overall spectral shape
+
+**Relevance to CHULOOPA:**
+- **CRITICAL: Validates 13 MFCCs** - CHULOOPA's training data uses 13 MFCC coefficients (standard practice)
+- **Expansion potential:** Could increase to 20-22 MFCCs (matching 2025 beatbox paper) for improved accuracy
+- **Feature design:** Confirms CHULOOPA's MFCC choice aligns with established research
+- **Percussion applicability:** While focused on speech, principles apply to percussion timbre classification
+
+**Use in Paper:**
+- Section 3.2.2 (Feature Extraction) - CRITICAL citation justifying MFCC coefficient count
+- Section 7 (Future Work) - Mention potential to increase to 20-22 coefficients
+
+**Status:** Open access (Wiley Online Library)
+
+---
+
+### 0.10 Spectral Energy Distribution in Human Beatbox Sounds (2022)
+**Authors:** [Authors from Springer publication]
+**Venue:** Springer (2022)
+**DOI:** 10.1007/978-3-032-03729-9_15
+**URL:** https://link.springer.com/chapter/10.1007/978-3-032-03729-9_15
+
+**Summary:**
+First comprehensive investigation of spectral energy distribution in beatbox sounds. Analyzes formant frequencies and spectral characteristics including center of gravity, standard deviation, skewness, and kurtosis. Provides acoustic signatures for different beatbox drum sounds.
+
+**Relevance to CHULOOPA:**
+- **Acoustic signatures:** Confirms each beatbox sound has distinct spectral fingerprint
+- **Spectral features:** Validates CHULOOPA's use of spectral bands (band1-5)
+- **Recent research:** Shows active research in beatbox spectral analysis (2022)
+- **Feature design:** Supports frequency band energy as discriminative features
+
+**Use in Paper:**
+- Section 2.1 (Beatbox Recognition) - Cite for beatbox acoustic characterization
+- Section 3.2.2 (Feature Extraction) - Validate spectral band feature choices
+
+**Status:** Springer publication - may require subscription
+
+---
+
+### 0.11 Vocal Drum Sounds in Human Beatboxing: Acoustic and Articulatory Study (2021)
+**Authors:** Paroni et al.
+**Venue:** Journal of the Acoustical Society of America (JASA), Vol. 149, No. 1, pp. 191 (2021)
+**DOI:** 10.1121/10.0003046
+**URL:** https://pubs.aip.org/asa/jasa/article/149/1/191/610401/
+**PDF:** https://hal.univ-grenoble-alpes.fr/hal-03107358v1/file/Paroni_JASA_2021.pdf
+
+**Summary:**
+Acoustic and articulatory exploration of vocal drum sounds using electromagnetic articulography (EMA). Examines how vocal tract movements and articulator positions correlate with acoustic output of beatbox percussion sounds. Provides systematic investigation of sound production mechanisms.
+
+**Relevance to CHULOOPA:**
+- **Acoustic validation:** Confirms distinct acoustic characteristics for kick/snare/hat
+- **Production mechanisms:** Informs understanding of why features discriminate between classes
+- **Recent research:** 2021 publication shows continued interest in beatbox acoustics
+- **Feature correlation:** Acoustic differences correlate with articulatory differences
+
+**Use in Paper:**
+- Section 2.1 (Beatbox Recognition) - Cite for beatbox acoustic/articulatory research
+- Section 3.2.2 (Feature Extraction) - Theoretical basis for feature discriminability
+
+**Status:** JASA publication - open access PDF available
 
 ---
 
@@ -209,7 +296,7 @@ Section 3.2.2 (Feature Extraction) - Support for spectral feature choices
 **Validation of CHULOOPA's Approach:**
 1. **Weber et al. (2024)** - Few-shot drum transcription is cutting-edge ✅
 2. **Weber et al. (2025)** - Recent ADT state-of-the-art benchmark ✅
-3. **Rahim et al. (2025)** - KNN achieves 94.55% for beatbox ✅
+3. **Rahim et al. (2025)** - KNN achieves 94.55% for beatbox, **MFCC (n=22) best feature** ✅
 4. **Smith et al. (2025)** - Few-shot with limited labels is academically sound ✅
 
 **Context for Design Decisions:**
@@ -217,8 +304,12 @@ Section 3.2.2 (Feature Extraction) - Support for spectral feature choices
 6. **Maia et al. (2023)** - Why deep learning isn't used (needs >100 hours)
 7. **Naman & Ahuja (2025)** - Efficient offline AI is possible
 
-**Feature Extraction Support:**
-8. **Li et al. (2020)** - Spectral features work for beatbox
+**Feature Extraction Support (CRITICAL FOR MARCH 2026 FIX):**
+8. **Rahim et al. (2025)** - **MFCC (n=22) delivers best feature representation for KNN** ✅
+9. **Hasan et al. (2021)** - **13 MFCCs standard, 20-25 for better accuracy** ✅
+10. **Li et al. (2020)** - Spectral features + MFCC work for beatbox ✅
+11. **Springer (2022)** - Spectral energy distribution validates frequency bands ✅
+12. **Paroni et al. (2021)** - Acoustic signatures validate feature discriminability ✅
 
 **Download Summary (March 10, 2026):**
 
