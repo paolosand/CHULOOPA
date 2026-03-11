@@ -835,7 +835,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         # Some continuation hits may use invalid MIDI (melody notes) that get filtered
         # Generate 6-8x pattern length to ensure enough valid drum hits in continuation
         # For a 4-hit input, this generates 24-32 new tokens (~8-10 hits after filtering)
-        num_tokens = max(60, len(pattern.hits) * 18)
+        num_tokens = max(60, len(pattern.hits) * 6)
 
         print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(context_hits)} hits (full pattern)")

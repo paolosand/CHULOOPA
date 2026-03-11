@@ -44,9 +44,16 @@ class RhythmicCreatorModel:
         Args:
             model_path: Path to trained .pt weights file
             vocab_path: Path to vocabulary file (training_1.txt)
-            device: 'cuda' or 'cpu' (auto-detect if None)
+            device: 'cuda', 'mps', or 'cpu' (auto-detect if None)
         """
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        if device:
+            self.device = device
+        elif torch.cuda.is_available():
+            self.device = 'cuda'
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = 'mps'
+        else:
+            self.device = 'cpu'
         print(f"🎯 Initializing RhythmicCreatorModel on {self.device}...")
 
         # Initialize preprocessing (builds vocabulary from training data)
