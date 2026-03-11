@@ -99,6 +99,7 @@ osc_client = None
 # Global state
 current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
+current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_creator)
 
 
 # =============================================================================
@@ -332,6 +333,88 @@ def densify_pattern(pattern: DrumPattern,
                 new_hits.append(fill_hit)
 
     result.hits = new_hits
+    return result
+
+
+def timing_anchor(model_pattern: DrumPattern,
+                  original_pattern: DrumPattern,
+                  spice_level: float) -> DrumPattern:
+    """
+    Anchor model hits to original pattern's timing grid.
+
+    This function extracts a "timing grid" from the original beatbox pattern
+    and anchors the model's generated hits to those positions. Spice controls
+    how tightly hits are anchored and whether off-grid "fill" hits are kept.
+
+    Args:
+        model_pattern: Raw output from rhythmic_creator
+        original_pattern: User's beatbox input
+        spice_level: 0.0-1.0 (controls drift and fills)
+            - 0.0-0.3: Tight anchoring (20-50ms drift), rare fills
+            - 0.4-0.6: Moderate drift (60-100ms), some fills
+            - 0.7-1.0: Loose anchoring (110-150ms), many fills
+
+    Returns:
+        Anchored pattern with timing locked to original groove
+
+    Algorithm:
+        1. Extract timing grid from original hit timestamps
+        2. For each model hit:
+           - Find nearest grid position
+           - If within max_drift: anchor to grid (deduplicate if needed)
+           - Otherwise: keep as fill with probability based on spice
+        3. Recalculate delta_times
+    """
+    if not original_pattern.hits or not model_pattern.hits:
+        return model_pattern
+
+    # Extract timing grid from original
+    timing_grid = [hit.timestamp for hit in original_pattern.hits]
+
+    # Calculate spice-based parameters
+    # max_drift: 20ms at spice=0.0, 150ms at spice=1.0
+    max_drift = 0.02 + (spice_level * 0.13)
+
+    # fill_probability: 0% at spice=0.0, 80% at spice=1.0
+    fill_probability = spice_level * 0.8
+
+    # Use dictionary to deduplicate - keep best hit per grid slot
+    # grid_position -> best_hit
+    grid_slots = {}
+
+    # Off-grid fills
+    fill_hits = []
+
+    for model_hit in model_pattern.hits:
+        # Find nearest grid position
+        nearest_pos = min(timing_grid, key=lambda t: abs(t - model_hit.timestamp))
+        distance = abs(model_hit.timestamp - nearest_pos)
+
+        if distance < max_drift:
+            # Anchor to grid position
+            # If multiple hits map to same slot, keep hit with highest velocity
+            if nearest_pos not in grid_slots or model_hit.velocity > grid_slots[nearest_pos].velocity:
+                grid_slots[nearest_pos] = DrumHit(
+                    drum_class=model_hit.drum_class,  # Trust model's choice
+                    timestamp=nearest_pos,
+                    velocity=model_hit.velocity,
+                    delta_time=0.0  # Will recalculate
+                )
+        elif random.random() < fill_probability:
+            # Keep as fill (off-grid)
+            fill_hits.append(model_hit)
+
+    # Combine grid-anchored hits and fills
+    anchored_hits = list(grid_slots.values()) + fill_hits
+
+    if not anchored_hits:
+        # Fallback: return model output unchanged
+        return model_pattern
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=anchored_hits, loop_duration=original_pattern.loop_duration)
+    result._recalculate_delta_times()
+
     return result
 
 
@@ -646,12 +729,23 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             if hit.timestamp <= original_end
         ]
 
-        # Prefer continuation if it has enough hits, otherwise use wrap
-        # Continuation is better musically, but sometimes has too much invalid MIDI
-        min_hits_threshold = max(3, len(pattern.hits) // 2)
-        use_continuation = len(continuation_hits) >= min_hits_threshold
+        # GROOVE PRESERVATION STRATEGY:
+        # Prefer whichever set has density closer to original pattern
+        # This preserves the sparse/dense feel of the input
+        original_density = len(pattern.hits)
+        cont_density = len(continuation_hits)
+        wrap_density = len(wrap_hits)
+
+        # Calculate how far each is from original density
+        cont_diff = abs(cont_density - original_density)
+        wrap_diff = abs(wrap_density - original_density)
+
+        # Use whichever is closer to original density (prefer wrap on tie)
+        use_continuation = cont_diff < wrap_diff and cont_density >= 3
 
         source_hits = continuation_hits if use_continuation else wrap_hits
+
+        print(f"    DENSITY MATCHING: orig={original_density}, cont={cont_density} (diff={cont_diff}), wrap={wrap_density} (diff={wrap_diff})")
 
         if not source_hits:
             print("  Warning: No usable hits in generation, falling back")
@@ -856,6 +950,8 @@ def handle_spice_change(address, spice_level):
 
 def handle_regenerate(address):
     """Handle regenerate request from ChucK."""
+    global current_variation_type
+
     print(f"\n{'='*60}")
     print("GENERATE requested from ChucK (D#1 / Note 39)")
     print(f"{'='*60}")
@@ -870,7 +966,7 @@ def handle_regenerate(address):
         return
 
     try:
-        generate_variations_for_track(track_file, variation_type='rhythmic_creator')
+        generate_variations_for_track(track_file, variation_type=current_variation_type)
     except Exception as e:
         error_msg = f"Error generating variations: {e}"
         print(error_msg)
@@ -1007,9 +1103,12 @@ if HAVE_WATCHDOG:
                         osc_client.send_message("/chuloopa/error", error_msg)
 
 
-def watch_directory(directory: str, variation_type: str = 'rhythmic_creator'):
+def watch_directory(directory: str, variation_type: str = 'gemini'):
     """Watch directory for drum file changes and listen for OSC messages."""
-    global osc_client
+    global osc_client, current_variation_type
+
+    # Set the global variation type so OSC handlers can use it
+    current_variation_type = variation_type
 
     if not HAVE_WATCHDOG:
         print("Error: watchdog not installed. Install with: pip install watchdog")
