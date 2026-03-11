@@ -20,3 +20,6 @@ __pycache__/
 
 # Generated track data (runtime only)
 src/tracks/
+
+# Git worktrees
+.worktrees/
