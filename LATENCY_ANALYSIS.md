@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-11
 **System:** CHULOOPA Drums V2 (Mode 1: 5-feature classification)
-**Status:** Documented for ACM C&C 2026 paper
+**Status:** Documented for AIMC submission
 
 ## Executive Summary
 
@@ -181,10 +181,11 @@ chuck --bufsize128 chuloopa_drums_v2.ck  # 2.9 ms latency
    - Smaller buffers risk glitches during concurrent AI generation
    - "It ain't broke, don't fix it"
 
-4. **Research focus is on personalization, not latency**
-   - Novel contribution: User-trainable classifier (10 samples)
-   - Novel contribution: Real-time AI variation generation
-   - Latency optimization is engineering, not research
+4. **Research focus is on ML personalization, not latency**
+   - Novel contribution: Few-shot learning for personalized classification (10 samples/class)
+   - Novel contribution: Feature selection for low-data regimes (5D vs. 25D)
+   - Novel contribution: Real-time AI variation generation with LLM integration
+   - Latency optimization is engineering, not ML research
 
 ### Potential Optimizations (Not Implemented)
 
@@ -218,13 +219,13 @@ chuck --bufsize256 chuloopa_drums_v2.ck
 
 ### Technical Limitations Section
 
-**For ACM C&C 2026 Paper:**
+**For AIMC Paper:**
 
 > **System Latency:** The current implementation exhibits approximately 25ms latency from microphone input to drum sample playback during recording. This latency is primarily attributable to the FFT window size (512 samples, 11.6ms) required for adequate frequency resolution to discriminate kick, snare, and hi-hat sounds. While perceivable, this latency falls within the acceptable range for live musical performance (10-30ms) and does not significantly impact the user experience for typical beatbox patterns with 100-300ms inter-onset intervals. The latency represents a conscious design trade-off: smaller FFT windows would reduce latency to 5-10ms but would sacrifice classification accuracy by reducing frequency resolution from 86 Hz to 172 Hz bins, making low-frequency kick discrimination less reliable.
 
 ### Future Work Section
 
-**For ACM C&C 2026 Paper:**
+**For AIMC Paper:**
 
 > **Latency Optimization:** Future work could explore latency reduction through: (1) adaptive window sizing that uses smaller FFT windows for high-frequency sounds (hi-hats) while maintaining larger windows for low-frequency discrimination (kicks), (2) hardware acceleration of feature extraction using dedicated DSP or GPU computation, or (3) predictive onset detection that anticipates transients based on spectral pre-cursors. However, such optimizations must be balanced against the system's core design principle of personalized, user-trainable classification with minimal training data.
 
