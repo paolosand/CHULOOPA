@@ -934,6 +934,21 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         source_type = "continuation" if use_continuation else "loop wrap"
         print(f"    Using {source_type} ({len(continuation_hits)} cont / {len(wrap_hits)} wrap): {len(raw_pattern.hits)} hits, duration={natural_duration:.2f}s")
 
+        # Save intermediate files for debugging (if source file is known)
+        if pattern.source_file:
+            variations_dir = Path(pattern.source_file).parent / "variations"
+            variations_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save raw model output (before density matching)
+            raw_model_file = variations_dir / "track_0_drums_var1_raw_model.txt"
+            new_pattern.to_file(str(raw_model_file))
+            print(f"    Saved raw model output: {raw_model_file.name} ({len(new_pattern.hits)} hits)")
+
+            # Save density-matched pattern (before timing anchoring)
+            density_matched_file = variations_dir / "track_0_drums_var1_density_matched.txt"
+            raw_pattern.to_file(str(density_matched_file))
+            print(f"    Saved density matched: {density_matched_file.name} ({len(raw_pattern.hits)} hits)")
+
         # NEW: Apply timing anchoring to preserve groove
         print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
         anchored_pattern = timing_anchor(raw_pattern, pattern, spice_level)
@@ -1463,7 +1478,10 @@ def generate_variation_for_file(filepath: str,
 
         # Generate 1 variation
         print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
-        varied = generate_variation(pattern, variation_type, temperature=current_spice_level, **kwargs)
+        varied, success = generate_variation(pattern, variation_type, **kwargs)
+
+        if not success:
+            print("Warning: Variation generation returned failure flag")
 
         output_file = variations_dir / f"{filepath_obj.stem}_var1.txt"
         varied.to_file(str(output_file))
