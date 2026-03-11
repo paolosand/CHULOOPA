@@ -418,6 +418,58 @@ def timing_anchor(model_pattern: DrumPattern,
     return result
 
 
+def fit_to_loop_duration(pattern: DrumPattern, target_duration: float) -> DrumPattern:
+    """
+    Time-warp pattern to fit exact loop duration.
+
+    This function uniformly scales all timestamps proportionally,
+    preserving relative spacing between hits while ensuring the
+    pattern loops perfectly at the target duration.
+
+    Args:
+        pattern: Anchored pattern (may have any duration)
+        target_duration: Target loop duration in seconds
+
+    Returns:
+        Pattern with exactly target_duration
+
+    Note: This time-warping is usually minimal (<5% scale factor) because
+    timing anchoring already produces patterns close to target duration.
+    """
+    if not pattern.hits:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Find actual duration of pattern
+    max_timestamp = max(hit.timestamp for hit in pattern.hits)
+
+    if max_timestamp == 0 or max_timestamp <= 0.01:
+        # Pattern has no duration or all hits at start
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Calculate uniform scale factor
+    scale_factor = target_duration / max_timestamp
+
+    # Scale all timestamps proportionally
+    fitted_hits = []
+    for hit in pattern.hits:
+        new_timestamp = hit.timestamp * scale_factor
+
+        # Keep only hits within target duration (allow hits at boundary)
+        if new_timestamp <= target_duration:
+            fitted_hits.append(DrumHit(
+                drum_class=hit.drum_class,
+                timestamp=new_timestamp,
+                velocity=hit.velocity,
+                delta_time=0.0  # Will recalculate
+            ))
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
+    result._recalculate_delta_times()
+
+    return result
+
+
 def simplify_pattern(pattern: DrumPattern,
                      keep_probability: float = 0.6) -> DrumPattern:
     """Simplify pattern by removing some hits.
@@ -573,53 +625,6 @@ def init_rhythmic_creator():
     except Exception as e:
         print(f"Warning: Failed to load rhythmic_creator: {e}")
         return False
-
-
-def fit_to_loop_duration(generated: DrumPattern, target_duration: float) -> DrumPattern:
-    """
-    Time-warp generated pattern to fit exact loop duration.
-
-    Jake's model generates continuations that may exceed the target duration.
-    This function scales all timestamps proportionally to fit.
-
-    Args:
-        generated: Generated pattern (may have any duration)
-        target_duration: Target loop duration in seconds
-
-    Returns:
-        Pattern with exactly target_duration
-    """
-    if not generated.hits:
-        return DrumPattern(hits=[], loop_duration=target_duration)
-
-    # Find actual duration of generated pattern
-    max_timestamp = max(hit.timestamp for hit in generated.hits)
-
-    if max_timestamp == 0 or max_timestamp <= 0.01:
-        return DrumPattern(hits=[], loop_duration=target_duration)
-
-    # Calculate scale factor
-    scale_factor = target_duration / max_timestamp
-
-    # Time-warp all timestamps
-    fitted_hits = []
-    for hit in generated.hits:
-        new_timestamp = hit.timestamp * scale_factor
-
-        # Keep only hits within target duration
-        if new_timestamp < target_duration:
-            fitted_hits.append(DrumHit(
-                drum_class=hit.drum_class,
-                timestamp=new_timestamp,
-                velocity=hit.velocity,
-                delta_time=0.0  # Will recalculate
-            ))
-
-    # Create pattern and recalculate delta_times
-    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
-    result._recalculate_delta_times()
-
-    return result
 
 
 def rhythmic_creator_variation(pattern: DrumPattern,

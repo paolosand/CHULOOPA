@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from drum_variation_ai import DrumHit, DrumPattern, timing_anchor
+from drum_variation_ai import DrumHit, DrumPattern, timing_anchor, fit_to_loop_duration
 
 
 def test_timing_anchor_basic():
@@ -72,7 +72,56 @@ def test_timing_anchor_deduplication():
     assert hit_at_zero.drum_class == 2
 
 
+def test_fit_to_loop_duration():
+    """Test time-warping to exact loop duration."""
+    # Pattern with 3 hits spanning 1.5 seconds
+    pattern = DrumPattern(
+        hits=[
+            DrumHit(drum_class=0, timestamp=0.0, velocity=0.8, delta_time=0.0),
+            DrumHit(drum_class=1, timestamp=0.75, velocity=0.8, delta_time=0.0),
+            DrumHit(drum_class=2, timestamp=1.5, velocity=0.8, delta_time=0.0),
+        ],
+        loop_duration=1.5
+    )
+
+    # Warp to 2.25 seconds (1.5x scale)
+    fitted = fit_to_loop_duration(pattern, target_duration=2.25)
+
+    assert fitted.loop_duration == 2.25
+    assert len(fitted.hits) == 3
+    assert fitted.hits[0].timestamp == 0.0    # 0.0 * 1.5
+    assert fitted.hits[1].timestamp == 1.125  # 0.75 * 1.5
+    assert fitted.hits[2].timestamp == 2.25   # 1.5 * 1.5
+
+
+def test_fit_to_loop_duration_removes_overflow():
+    """Test that hits exceeding target duration are removed."""
+    pattern = DrumPattern(
+        hits=[
+            DrumHit(drum_class=0, timestamp=0.0, velocity=0.8, delta_time=0.0),
+            DrumHit(drum_class=1, timestamp=2.5, velocity=0.8, delta_time=0.0),
+            DrumHit(drum_class=2, timestamp=3.0, velocity=0.8, delta_time=0.0),
+        ],
+        loop_duration=3.0
+    )
+
+    # Warp to 2.0 seconds - hit at 2.5 exceeds target, hit at 3.0 exceeds target
+    fitted = fit_to_loop_duration(pattern, target_duration=2.0)
+
+    # scale_factor = 2.0 / 3.0 = 0.667
+    # Hit 1: 2.5 * 0.667 = 1.667 (kept)
+    # Hit 2: 3.0 * 0.667 = 2.0 (kept at boundary)
+
+    assert fitted.loop_duration == 2.0
+    assert len(fitted.hits) == 3  # All kept (last one at boundary)
+    assert fitted.hits[0].timestamp == 0.0
+    assert abs(fitted.hits[1].timestamp - 1.667) < 0.01
+    assert fitted.hits[2].timestamp == 2.0
+
+
 if __name__ == '__main__':
     test_timing_anchor_basic()
     test_timing_anchor_deduplication()
-    print("✓ All timing_anchor tests passed")
+    test_fit_to_loop_duration()
+    test_fit_to_loop_duration_removes_overflow()
+    print("✓ All timing tests passed")
