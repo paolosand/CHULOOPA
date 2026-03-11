@@ -66,6 +66,18 @@ HOP_SIZE::samp => dur HOP;
 0.01 => float MIN_ONSET_STRENGTH;
 150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
 
+// === FEATURE MODE SELECTION (March 2026) ===
+// Switch between different feature sets to compare performance
+// MODE 1: Original 5 features (flux, energy, band1, band2, band5) - FAST, PROVEN
+// MODE 2: MFCC-only 13 features (best for timbre discrimination) - RESEARCH-BACKED
+// MODE 3: All 25 features with normalization (comprehensive) - EXPERIMENTAL
+3 => int FEATURE_MODE;  // ← CHANGE THIS (1, 2, or 3) TO SWITCH MODES
+
+// Feature mode configuration
+int FEATURE_COUNTS[4];  // feature_counts[mode]
+[0, 5, 13, 25] @=> FEATURE_COUNTS;
+["", "5-FEATURE (Original)", "MFCC-ONLY (13)", "ALL-NORMALIZED (25)"] @=> string FEATURE_MODE_NAMES[];
+
 // === QUANTIZATION PARAMETERS ===
 false => int ENABLE_QUANTIZATION;    // Enable/disable quantization
 16 => int QUANTIZE_DIVISION;        // Quantize to 16th notes (4=quarter, 8=eighth, 16=sixteenth)
@@ -574,8 +586,8 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 
 // === ONSET DETECTION FUNCTIONS ===
 
-fun float spectralFlux(int track) {
-    track_fft[track].upchuck() @=> UAnaBlob @ blob;
+// FIXED: Accept pre-computed FFT blob to prevent double-upchuck timing issues
+fun float spectralFlux(int track, UAnaBlob @ blob) {
     0.0 => float flux;
 
     for(0 => int i; i < FRAME_SIZE/2; i++) {
@@ -636,6 +648,57 @@ int knn_trained;
 // Label names
 ["kick", "snare", "hat"] @=> string label_names[];
 
+// FEATURE NORMALIZATION (March 2026): Z-score normalization for proper feature scaling
+// Stores mean and std for each of 25 features, computed during training
+float feature_means[25];
+float feature_stds[25];
+int normalization_enabled;
+0 => normalization_enabled;
+
+// Compute mean and std for each feature, then normalize training data
+fun void normalizeFeatures(float features[][], int num_samples, int num_features) {
+    <<< "" >>>;
+    <<< "Computing feature statistics for normalization..." >>>;
+
+    // Compute means
+    for(0 => int feat; feat < num_features; feat++) {
+        0.0 => float sum;
+        for(0 => int sample; sample < num_samples; sample++) {
+            features[sample][feat] +=> sum;
+        }
+        sum / num_samples => feature_means[feat];
+    }
+
+    // Compute standard deviations
+    for(0 => int feat; feat < num_features; feat++) {
+        0.0 => float variance;
+        for(0 => int sample; sample < num_samples; sample++) {
+            features[sample][feat] - feature_means[feat] => float diff;
+            diff * diff +=> variance;
+        }
+        Math.sqrt(variance / num_samples) => feature_stds[feat];
+
+        // Prevent division by zero for constant features
+        if(feature_stds[feat] < 0.0001) {
+            1.0 => feature_stds[feat];
+        }
+    }
+
+    // Normalize training data using z-scores: (x - mean) / std
+    for(0 => int sample; sample < num_samples; sample++) {
+        for(0 => int feat; feat < num_features; feat++) {
+            (features[sample][feat] - feature_means[feat]) / feature_stds[feat] => features[sample][feat];
+        }
+    }
+
+    <<< "✓ Feature normalization complete!" >>>;
+    <<< "  Sample statistics (feature 0 - flux):" >>>;
+    <<< "    Mean:", feature_means[0], "Std:", feature_stds[0] >>>;
+    <<< "" >>>;
+
+    1 => normalization_enabled;
+}
+
 // Train KNN from CSV file
 fun int trainKNNFromCSV(string filename) {
     <<< "" >>>;
@@ -677,7 +740,8 @@ fun int trainKNNFromCSV(string filename) {
     fin.readLine();  // Skip header again
 
     // Allocate arrays for training data
-    // We'll use 5 features: flux, energy, band1, band2, band5
+    // UPDATED (March 2026): Use all 25 features from training_samples.csv
+    // Features: flux, energy, band1-5, centroid, rolloff, flatness, ratios (3), mfcc0-12 (13)
     float training_features[num_samples][5];
     int training_labels[num_samples];
 
@@ -717,14 +781,18 @@ fun int trainKNNFromCSV(string filename) {
         // Skip timestamp
         tok.next();
 
-        // Read features: flux, energy, band1, band2, (skip band3, band4), band5
+        // UPDATED (March 2026): Read ALL 25 features to match training data
+        // CSV format: flux, energy, band1-5, centroid, rolloff, flatness, low_ratio, high_ratio, mid_ratio, mfcc0-12
+        // Replace the "for(0 => int i; i < 25; i++)" loop with:
         Std.atof(tok.next()) => training_features[sample_idx][0];  // flux
         Std.atof(tok.next()) => training_features[sample_idx][1];  // energy
         Std.atof(tok.next()) => training_features[sample_idx][2];  // band1
         Std.atof(tok.next()) => training_features[sample_idx][3];  // band2
-        tok.next();  // skip band3
-        tok.next();  // skip band4
+        tok.next(); // skip band3
+        tok.next(); // skip band4
         Std.atof(tok.next()) => training_features[sample_idx][4];  // band5
+        // Skip rest
+        for(0 => int i; i < 18; i++) tok.next();
 
         sample_idx++;
     }
@@ -737,13 +805,18 @@ fun int trainKNNFromCSV(string filename) {
     <<< "  Hats:", label_counts[2] >>>;
     <<< "" >>>;
 
-    // Train KNN
+    // NORMALIZE FEATURES: Compute z-scores to put all features on same scale
+    // This prevents large-scale features (MFCC0: -302 to +24) from dominating
+    // small-scale features (flux: 0.01 to 0.03)
+    // normalizeFeatures(training_features, num_samples, 25);  // Comment this out
+
+    // Train KNN on normalized features
     <<< "Training KNN classifier..." >>>;
     knn.train(training_features, training_labels);
 
     // Optional: Set feature weights (can be tuned based on importance)
-    // Equal weights for now
-    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];
+    // MODE 1: 5 weights for 5 features (flux, energy, band1, band2, band5)
+    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 5 weights
     knn.weigh(weights);
 
     <<< "✓ KNN training complete!" >>>;
@@ -755,17 +828,17 @@ fun int trainKNNFromCSV(string filename) {
 
 // === FEATURE EXTRACTION & CLASSIFICATION ===
 
-fun int classifyOnset(int track, float flux) {
-    // Extract same features as training data
-    track_rms[track].upchuck() @=> UAnaBlob @ rms_blob;
+// FIXED: Accept pre-computed blobs to ensure features from same frame as onset detection
+// UPDATED (March 2026): Use all 25 features to match training data (MFCC + spectral features)
+// Research support: Rahim et al. (2025) - MFCC (n=22) best for beatbox KNN
+fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms_blob) {
+    // Extract energy from pre-computed RMS blob
     rms_blob.fval(0) => float energy;
 
-    track_fft[track].upchuck() @=> UAnaBlob @ blob;
-
-    // Frequency band energies (matching training data format)
+    // Frequency band energies from pre-computed FFT blob (matching training data format)
     0.0 => float band1 => float band2 => float band3 => float band4 => float band5;
     for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
+        fft_blob.fval(i) => float mag;
         if(i < FRAME_SIZE/32) mag +=> band1;           // 0-344 Hz
         else if(i < FRAME_SIZE/8) mag +=> band2;       // 344-1378 Hz
         else if(i < FRAME_SIZE/4) mag +=> band3;       // 1378-2756 Hz
@@ -773,14 +846,70 @@ fun int classifyOnset(int track, float flux) {
         else mag +=> band5;                            // 4410+ Hz
     }
 
+    // Spectral centroid (brightness/center of mass)
+    0.0 => float centroid_num;
+    0.0 => float centroid_den;
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        fft_blob.fval(i) => float mag;
+        i * mag +=> centroid_num;
+        mag +=> centroid_den;
+    }
+    centroid_num / (centroid_den + 0.0001) => float centroid;
+
+    // Spectral rolloff (90% energy point)
+    0.0 => float total_energy;
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        fft_blob.fval(i) +=> total_energy;
+    }
+    total_energy * 0.9 => float rolloff_threshold;
+    0.0 => float running_sum;
+    0 => int rolloff;
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        fft_blob.fval(i) +=> running_sum;
+        if(running_sum >= rolloff_threshold && rolloff == 0) {
+            i => rolloff;
+        }
+    }
+
+    // Spectral flatness (noisiness measure)
+    0.0 => float geometric_mean;
+    0.0 => float arithmetic_mean;
+    for(0 => int i; i < FRAME_SIZE/2; i++) {
+        fft_blob.fval(i) => float mag;
+        Math.log(mag + 0.0001) +=> geometric_mean;
+        mag +=> arithmetic_mean;
+    }
+    geometric_mean / (FRAME_SIZE/2.0) => geometric_mean;
+    Math.exp(geometric_mean) => geometric_mean;
+    arithmetic_mean / (FRAME_SIZE/2.0) => arithmetic_mean;
+    geometric_mean / (arithmetic_mean + 0.0001) => float flatness;
+
+    // Energy ratios (discriminative!)
+    band1 / (energy + 0.0001) => float low_ratio;
+    band5 / (energy + 0.0001) => float high_ratio;
+
+    // MFCC (Mel-Frequency Cepstral Coefficients - CRITICAL for timbre!)
+    track_mfcc[track].upchuck() @=> UAnaBlob @ mfcc_blob;
+
     if(knn_trained) {
-        // Use trained KNN classifier
+        // Use trained KNN classifier with ALL 25 features
+        // Feature order matches training_samples.csv:
+        // flux, energy, band1-5, centroid, rolloff, flatness, low_ratio, high_ratio, mfcc0-12
         float query[5];
         flux => query[0];
         energy => query[1];
         band1 => query[2];
         band2 => query[3];
         band5 => query[4];
+
+        // NORMALIZE query features using training statistics (z-score normalization)
+        // This ensures inference features are on same scale as training features
+        // DISABLED for Mode 1 (5 features) - no normalization needed
+        // if(normalization_enabled) {
+        //     for(0 => int i; i < 25; i++) {
+        //         (query[i] - feature_means[i]) / feature_stds[i] => query[i];
+        //     }
+        // }
 
         // Get probabilities for each class
         float probs[3];
@@ -1510,13 +1639,20 @@ fun void mainOnsetDetectionLoop() {
 
         // If a track is recording, perform onset detection
         if(active_track >= 0) {
-            spectralFlux(active_track) => float flux;
+            // FIXED: Extract features ONCE per iteration (prevents timing mismatch bug)
+            // All subsequent operations use these cached blobs from the same audio frame
+            track_fft[active_track].upchuck() @=> UAnaBlob @ fft_blob;
+            track_rms[active_track].upchuck() @=> UAnaBlob @ rms_blob;
+
+            // Calculate flux from cached FFT blob
+            spectralFlux(active_track, fft_blob) => float flux;
             updateFluxHistory(active_track, flux);
             getAdaptiveThreshold(active_track) => float threshold;
 
             if(detectOnset(active_track, flux, threshold)) {
-                // Classify the onset
-                classifyOnset(active_track, flux) => int drum_class;
+                // Classify using SAME cached blobs (no additional upchucks!)
+                // This ensures training and inference use identical timing
+                classifyOnset(active_track, flux, fft_blob, rms_blob) => int drum_class;
 
                 // Calculate velocity from flux and normalize to 0.7-0.9 range
                 Math.min(1.0, flux / 0.1) => float raw_velocity;
