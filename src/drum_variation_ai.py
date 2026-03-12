@@ -60,7 +60,7 @@ except ImportError:
 
 # Gemini configuration
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
-GEMINI_MODEL = 'gemini-3-flash-preview'
+GEMINI_MODEL = 'models/gemini-2.5-flash'
 
 # Optional file watching
 try:
@@ -102,7 +102,7 @@ use_no_warp = False  # Skip time-warping if True
 use_no_anchor = False  # Skip timing anchoring if True
 use_no_ai = False  # Force heuristic generation (skip AI) if True
 context_loops = 1  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 1
-current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_creator)
+current_variation_type = 'rhythmic_creator'  # Default variation type (set by CLI --type arg)
 
 # Fixed model temperature for stability (empirically determined)
 # Spice controls post-processing (timing drift, fills), NOT model temperature
