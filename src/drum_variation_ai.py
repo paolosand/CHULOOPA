@@ -101,7 +101,7 @@ current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
 use_no_anchor = False  # Skip timing anchoring if True
 use_no_ai = False  # Force heuristic generation (skip AI) if True
-context_loops = 2  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 2
+context_loops = 1  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 1
 current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_creator)
 
 # Fixed model temperature for stability (empirically determined)
@@ -825,7 +825,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         print(f"  ⏱️  Model init: {t_init:.2f}s")  # DIAGNOSTIC
 
     try:
-        # Convert to rhythmic_creator format (single loop - no repetition)
+        # Convert to rhythmic_creator format (single loop)
         t0 = time.time()  # DIAGNOSTIC
         context_text = chuloopa_to_rhythmic_creator(pattern)
 
@@ -839,7 +839,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
         # Generate similar number of tokens as input (model will echo + continue)
-        num_tokens = len(context_tokens)
+        num_tokens = len(context_tokens) + (len(context_tokens) // 3)  # Generate 1/3 more tokens than the input
 
         print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(pattern.hits)} hits")
