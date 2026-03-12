@@ -1,0 +1,112 @@
+# AI Variation Generation Performance Analysis
+
+## Case 1: Dense Pattern
+
+### Input Characteristics
+- Duration: 5.056145 seconds
+- Total hits: 12
+- Drum distribution: 9 kicks (75%), 3 snares (25%), 0 hats (0%)
+- Velocity range: 0.720-0.780 (mean: ~0.754)
+- Rhythmic density: 2.37 hits/second
+- Inter-onset intervals: Mix of short (0.316s) and long (0.650s)
+
+### Output Characteristics
+- Duration: 5.056145 seconds ✓ (preserved)
+- Total hits: 23 (192% of input!)
+- Drum distribution: 12 kicks (52%), 8 snares (35%), 1 hat (4%)
+- Velocity range: 0.850-0.896 (mean: ~0.873, +15.8% higher)
+- Rhythmic density: 4.55 hits/second (192% increase)
+- Inter-onset intervals: Includes VERY tight clustering (0.011925s = 11.9ms!)
+
+### Issues Identified
+1. **Density explosion**: Almost doubled the number of hits
+2. **Unplayable flams**: Multiple hits spaced <50ms apart (0.011925s, 0.035775s)
+   - t=4.114080 to t=4.137930 has 3 hits in 23.8ms
+3. **Velocity inflation**: All velocities boosted by ~16%, narrower range
+4. **Rhythmic character changed**: Lost sparse/dense contrast of original
+
+---
+
+## Case 2: Sparse Pattern
+
+### Input Characteristics
+- Duration: 4.678821 seconds
+- Total hits: 8
+- Drum distribution: 3 kicks (37.5%), 3 snares (37.5%), 2 hats (25%)
+- Velocity range: 0.720-0.799 (mean: ~0.761)
+- Rhythmic density: 1.71 hits/second
+- Inter-onset intervals: Varied (0.444s to 0.661s)
+- Balanced drum mix with hi-hats
+
+### Output Characteristics
+- Duration: 4.678821 seconds ✓ (preserved)
+- Total hits: 9 (112% of input)
+- Drum distribution: 8 kicks (89%), 1 snare (11%), 0 hats (0%)
+- Velocity range: 0.859-0.895 (mean: ~0.877, +15.2% higher)
+- Rhythmic density: 1.92 hits/second (only 12% increase)
+- Inter-onset intervals: **Only 3 unique values** (0.329163, 0.564280, 0.869932)
+
+### Issues Identified
+1. **Drum class collapse**: Lost all hats, lost most snares, 89% kicks!
+2. **Mechanical repetition**: Only 3 IOI values repeated in sequence
+3. **Lost musical balance**: Input had nice kick/snare/hat mix → output is kick-dominated
+4. **Rhythmic monotony**: Pattern feels programmed, not human-like
+5. **Velocity inflation**: Same ~15% boost as Case 1
+
+---
+
+## Summary of AI Performance Issues
+
+### Critical Problems
+1. **No respect for drum class distribution**: AI heavily favors kicks
+   - Case 1: 75% → 52% kicks (but doubled total hits)
+   - Case 2: 37.5% → 89% kicks (eliminated hats entirely)
+
+2. **Density unpredictability**:
+   - Case 1: +92% hit count (severe over-generation)
+   - Case 2: +12% hit count (minor over-generation)
+   - No consistent relationship to input density
+
+3. **Unplayable timing artifacts**:
+   - Case 1 has flams <12ms apart (physically impossible for human to play)
+   - Suggests AI doesn't understand minimum IOI constraints
+
+4. **Velocity bias**: Both cases show ~15% velocity inflation and reduced dynamic range
+
+5. **Loss of rhythmic character**:
+   - Case 1: Lost sparse/dense contrast
+   - Case 2: Reduced to mechanical 3-value repetition
+
+### What the AI IS doing correctly
+- ✓ Preserving total loop duration
+- ✓ Maintaining valid timestamp ordering
+- ✓ Producing syntactically valid output format
+
+### What the AI is NOT doing
+- ✗ Preserving rhythmic density
+- ✗ Respecting drum class distribution
+- ✗ Maintaining human-playable timing constraints
+- ✗ Creating true "variations" vs. completely different patterns
+- ✗ Preserving musical characteristics (groove, balance, dynamics)
+
+### Recommendations
+1. Add explicit constraints to prompt:
+   - "Maintain similar hit density (±20%)"
+   - "Preserve drum class proportions (±30%)"
+   - "Minimum inter-onset interval: 50ms"
+   - "Preserve velocity range and dynamics"
+
+2. Post-processing filters:
+   - Remove flams <50ms
+   - Enforce density limits
+   - Rebalance drum classes if deviation >50%
+
+3. Consider different AI approach:
+   - Current method appears to be generating from scratch
+   - Need variation-by-modification instead of generation-from-scratch
+   - Perhaps use original as template, apply small perturbations
+
+4. Spice level mapping:
+   - Low spice (0.0-0.3): Modify only timing/velocity, keep hits
+   - Medium spice (0.4-0.6): Add/remove max 20% of hits
+   - High spice (0.7-1.0): Allow current behavior but with constraints

@@ -99,6 +99,9 @@ osc_client = None
 # Global state
 current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
+use_no_anchor = False  # Skip timing anchoring if True
+use_no_ai = False  # Force heuristic generation (skip AI) if True
+context_loops = 2  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 2
 current_variation_type = 'gemini'  # Default variation type (gemini or rhythmic_creator)
 
 # Fixed model temperature for stability (empirically determined)
@@ -767,17 +770,19 @@ except ImportError as e:
 
 # Global model instance
 rhythmic_model = None
+force_cpu = False  # Global flag to force CPU inference
 
 
 def init_rhythmic_creator():
     """Initialize rhythmic creator model (call once at startup)."""
-    global rhythmic_model
+    global rhythmic_model, force_cpu
 
     if not HAVE_RHYTHMIC_CREATOR:
         return False
 
     try:
-        rhythmic_model = get_rhythmic_model()
+        device = 'cpu' if force_cpu else None  # Auto-detect if not forced
+        rhythmic_model = get_rhythmic_model(device=device)
         return True
     except Exception as e:
         print(f"Warning: Failed to load rhythmic_creator: {e}")
@@ -787,190 +792,128 @@ def init_rhythmic_creator():
 def rhythmic_creator_variation(pattern: DrumPattern,
                                spice_level: float = 0.5) -> tuple:
     """
-    Generate variation using rhythmic_creator with timing anchoring.
+    Generate variation using rhythmic_creator (SIMPLIFIED - NO WARP VERSION).
 
-    This function implements a three-layer system:
-    1. Generate continuation using rhythmic_creator at FIXED temperature
-    2. Select wrap vs continuation based on density matching
-    3. Apply timing anchoring to preserve groove
-    4. Time-warp to exact loop duration
+    This function implements a clean pipeline based on test_rhythmic_creator_nowarp.py:
+    1. Generate variation using rhythmic_creator at FIXED temperature
+    2. Use FULL model output (no context stripping)
+    3. Use natural model duration (no time-warping)
+    4. Optional timing anchoring to preserve groove
 
     Args:
         pattern: Original user beatbox pattern
         spice_level: 0.0-1.0 controlling variation amount
-            - LOW spice controls model temperature (REMOVED in this version)
-            - HIGH spice controls post-processing (timing drift, fills)
-            - Fixed model temperature (RHYTHMIC_CREATOR_TEMPERATURE) for stability
+            - Controls timing anchoring (drift, fills) if enabled
+            - Model temperature is FIXED at RHYTHMIC_CREATOR_TEMPERATURE
 
     Returns:
         Tuple of (DrumPattern, success: bool)
     """
     global rhythmic_model
+    import time  # DIAGNOSTIC
+
+    t_start = time.time()  # DIAGNOSTIC
 
     # Initialize model if needed
+    t0 = time.time()  # DIAGNOSTIC
     if rhythmic_model is None:
         if not init_rhythmic_creator():
             print("  Rhythmic creator not available, falling back to groove_preserve")
             return generate_musical_variation(pattern, spice_level), False
+    t_init = time.time() - t0  # DIAGNOSTIC
+    if t_init > 0.1:  # DIAGNOSTIC
+        print(f"  ⏱️  Model init: {t_init:.2f}s")  # DIAGNOSTIC
 
     try:
-        # Use full pattern as context (gives model complete groove understanding)
-        context_hits = pattern.hits
-
-        # Create context pattern
-        context_pattern = DrumPattern(
-            hits=context_hits,
-            loop_duration=pattern.loop_duration
-        )
-
-        # Convert to rhythmic_creator format
-        context_text = chuloopa_to_rhythmic_creator(context_pattern)
+        # Convert to rhythmic_creator format (single loop - no repetition)
+        t0 = time.time()  # DIAGNOSTIC
+        context_text = chuloopa_to_rhythmic_creator(pattern)
 
         if not context_text:
             print("  Warning: Empty context, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        # Calculate how many tokens to generate
-        # Model outputs [context echo] + [continuation]
-        # Some continuation hits may use invalid MIDI (melody notes) that get filtered
-        # Generate 6-8x pattern length to ensure enough valid drum hits in continuation
-        # For a 4-hit input, this generates 24-32 new tokens (~8-10 hits after filtering)
-        num_tokens = max(60, len(pattern.hits) * 6)
+        context_tokens = context_text.split()
+        t_prep = time.time() - t0  # DIAGNOSTIC
+        if t_prep > 0.05:  # DIAGNOSTIC
+            print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
+
+        # Generate similar number of tokens as input (model will echo + continue)
+        num_tokens = len(context_tokens)
 
         print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
-        print(f"    Context: {len(context_hits)} hits (full pattern)")
+        print(f"    Context: {len(pattern.hits)} hits")
         print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
 
-        # Generate continuation
-        # Note: Model outputs [context echo] + [continuation from context end]
-        # Jake's model does conditional generation = extends the pattern, not replaces it
+        # Generate variation
+        # Model outputs [context echo] + [variation/continuation]
+        t0 = time.time()  # DIAGNOSTIC
         generated_text = rhythmic_model.generate_variation(
             input_pattern=context_text,
             num_tokens=num_tokens,
-            temperature=RHYTHMIC_CREATOR_TEMPERATURE  # Fixed temp for stability
+            temperature=RHYTHMIC_CREATOR_TEMPERATURE
         )
+        t_generate = time.time() - t0  # DIAGNOSTIC
+        print(f"    ⏱️  MODEL GENERATION: {t_generate:.2f}s")  # DIAGNOSTIC
 
         generated_tokens = generated_text.split()
-        context_tokens = context_text.split()
         print(f"    Generated: {len(generated_tokens)} tokens ({len(generated_tokens)//3} hits)")
 
-        # The model echoes context then generates continuation
-        # We need to strip the context echo to avoid layering original over variation
-        if len(generated_tokens) > len(context_tokens):
-            # Strip context echo - keep only NEW tokens
-            new_tokens = generated_tokens[len(context_tokens):]
-            new_text = ' '.join(new_tokens)
-            print(f"    Stripping context: {len(new_tokens)} new tokens ({len(new_tokens)//3} new hits)")
-        else:
-            # Model didn't generate enough - use full output
-            new_text = generated_text
-            print(f"    Warning: Output shorter than context, using full output")
+        # Convert FULL output to CHULOOPA format (DON'T strip context echo)
+        # The full output represents a complete drum pattern
+        t0 = time.time()  # DIAGNOSTIC
+        raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+        t_convert = time.time() - t0  # DIAGNOSTIC
+        if t_convert > 0.1:  # DIAGNOSTIC
+            print(f"    ⏱️  Format conversion: {t_convert:.3f}s")  # DIAGNOSTIC
 
-        # Convert NEW tokens to CHULOOPA
-        # The model generates continuation starting from where context ended
-        # This continuation is the variation we want!
-        new_pattern = rhythmic_creator_to_chuloopa(new_text, loop_duration=999)
-
-        if not new_pattern.hits:
-            print("  Warning: No valid hits in new pattern, falling back")
+        if not raw_pattern.hits:
+            print("  Warning: No valid hits in generated pattern, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        # The continuation starts after the last hit in the original pattern
-        # Find original end time
-        original_end = max(hit.timestamp for hit in pattern.hits)
+        # Find natural duration from model output
+        max_time = max(hit.timestamp for hit in raw_pattern.hits)
+        print(f"    Model's natural duration: {max_time:.2f}s (original: {pattern.loop_duration:.2f}s)")
 
-        # Take continuation hits (those that come after original pattern)
-        continuation_hits = [
-            hit for hit in new_pattern.hits
-            if hit.timestamp > original_end
-        ]
+        # Use natural duration (no time-warping)
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=max_time)
+        variation._recalculate_delta_times()
 
-        # Also take any hits near the start (loop wrap) as fallback
-        wrap_hits = [
-            hit for hit in new_pattern.hits
-            if hit.timestamp <= original_end
-        ]
-
-        # GROOVE PRESERVATION STRATEGY:
-        # Prefer whichever set has density closer to original pattern
-        # This preserves the sparse/dense feel of the input
-        original_density = len(pattern.hits)
-        cont_density = len(continuation_hits)
-        wrap_density = len(wrap_hits)
-
-        # Calculate how far each is from original density
-        cont_diff = abs(cont_density - original_density)
-        wrap_diff = abs(wrap_density - original_density)
-
-        # Use whichever is closer to original density (prefer wrap on tie)
-        use_continuation = cont_diff < wrap_diff and cont_density >= 3
-
-        source_hits = continuation_hits if use_continuation else wrap_hits
-
-        print(f"    DENSITY MATCHING: orig={original_density}, cont={cont_density} (diff={cont_diff}), wrap={wrap_density} (diff={wrap_diff})")
-
-        if not source_hits:
-            print("  Warning: No usable hits in generation, falling back")
-            return generate_musical_variation(pattern, spice_level), False
-
-        # Shift hits to start at 0.0
-        min_time = min(hit.timestamp for hit in source_hits)
-        max_time = max(hit.timestamp for hit in source_hits)
-        natural_duration = max_time - min_time
-
-        shifted_hits = []
-        for hit in source_hits:
-            shifted_hits.append(DrumHit(
-                drum_class=hit.drum_class,
-                timestamp=hit.timestamp - min_time,
-                velocity=hit.velocity,
-                delta_time=0.0
-            ))
-
-        # Create raw pattern with natural duration
-        raw_pattern = DrumPattern(hits=shifted_hits, loop_duration=natural_duration)
-        raw_pattern._recalculate_delta_times()
-
-        source_type = "continuation" if use_continuation else "loop wrap"
-        print(f"    Using {source_type} ({len(continuation_hits)} cont / {len(wrap_hits)} wrap): {len(raw_pattern.hits)} hits, duration={natural_duration:.2f}s")
+        print(f"    Using natural model duration: {len(variation.hits)} hits, {max_time:.2f}s")
 
         # Save intermediate files for debugging (if source file is known)
         if pattern.source_file:
             variations_dir = Path(pattern.source_file).parent / "variations"
             variations_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save raw model output (before density matching)
+            # Save raw model output (natural duration, no processing)
             raw_model_file = variations_dir / "track_0_drums_var1_raw_model.txt"
-            new_pattern.to_file(str(raw_model_file))
-            print(f"    Saved raw model output: {raw_model_file.name} ({len(new_pattern.hits)} hits)")
+            variation.to_file(str(raw_model_file))
+            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s natural duration)")
 
-            # Save density-matched pattern (before timing anchoring)
-            density_matched_file = variations_dir / "track_0_drums_var1_density_matched.txt"
-            raw_pattern.to_file(str(density_matched_file))
-            print(f"    Saved density matched: {density_matched_file.name} ({len(raw_pattern.hits)} hits)")
-
-        # NEW: Apply timing anchoring to preserve groove
-        print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
-        anchored_pattern = timing_anchor(raw_pattern, pattern, spice_level)
-
-        if not anchored_pattern.hits or len(anchored_pattern.hits) < 2:
-            print("  Warning: Timing anchoring failed, falling back to algorithmic variation")
-            return generate_musical_variation(pattern, spice_level), False
-
-        # Time-warp anchored pattern to fit exact loop duration
-        if use_no_warp:
-            # Skip time-warping - use natural model duration
-            variation = anchored_pattern
-            print(f"    Skipping time-warp (--no-warp): keeping natural duration {variation.loop_duration:.2f}s")
+        # Optional timing anchoring (if --no-anchor flag not set)
+        if use_no_anchor:
+            print(f"    Skipping timing anchoring (--no-anchor)")
+            final_variation = variation
         else:
-            variation = fit_to_loop_duration(anchored_pattern, pattern.loop_duration)
+            print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
+            t0 = time.time()  # DIAGNOSTIC
+            anchored = timing_anchor(variation, pattern, spice_level)
+            t_anchor = time.time() - t0  # DIAGNOSTIC
+            print(f"    ⏱️  Timing anchor: {t_anchor:.3f}s")  # DIAGNOSTIC
 
-            if not variation.hits:
-                print("  Warning: No hits after time-warping, falling back")
-                return generate_musical_variation(pattern, spice_level), False
+            if not anchored.hits or len(anchored.hits) < 2:
+                print("  Warning: Timing anchoring removed too many hits, using raw model output")
+                final_variation = variation
+            else:
+                final_variation = anchored
+                print(f"    Anchored variation: {len(final_variation.hits)} hits")
 
-        print(f"    Final variation: {len(variation.hits)} hits")
-        return variation, True
+        t_total = time.time() - t_start  # DIAGNOSTIC
+        print(f"  🏁 TOTAL TIME: {t_total:.2f}s")  # DIAGNOSTIC
+
+        print(f"    Final variation: {len(final_variation.hits)} hits, {final_variation.loop_duration:.2f}s")
+        return final_variation, True
 
     except Exception as e:
         print(f"  Warning: rhythmic_creator generation failed: {e}")
@@ -1321,7 +1264,11 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     observer.start()
 
     print(f"\nWatching for drum file changes in: {directory}")
-    print(f"Variation type: {variation_type}")
+    print(f"Variation type: {variation_type}{' (HEURISTIC MODE - AI disabled)' if use_no_ai else ''}")
+    print(f"Device: {'CPU (forced)' if force_cpu else 'Auto-detect (MPS/CUDA/CPU)'}")
+    if not use_no_ai and variation_type == 'rhythmic_creator':
+        print(f"Context loops: {context_loops}x (pattern repeated {context_loops} times)")
+    print(f"Timing anchor: {'DISABLED (preserves AI timing)' if use_no_anchor else 'enabled'}")
     print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
     print(f"Current spice level: {current_spice_level:.2f}")
     print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
@@ -1365,6 +1312,12 @@ def generate_variation(pattern: DrumPattern,
     Returns:
         Tuple of (DrumPattern, success: bool)
     """
+    # Check if AI is disabled (--no-ai flag)
+    if use_no_ai and variation_type in ['rhythmic_creator', 'gemini']:
+        print(f"  Skipping {variation_type} (--no-ai): using heuristic generation")
+        spice = kwargs.get('temperature', 0.5)
+        return generate_musical_variation(pattern, spice), True  # True = intentional heuristic mode, not a failure
+
     if variation_type == 'rhythmic_creator':
         return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
@@ -1533,6 +1486,41 @@ Variation Types:
     shift            Rotates pattern in time
     random           Combines multiple variation types
 
+Performance Options:
+    --cpu               Force CPU inference instead of GPU
+                        • More consistent performance (no thermal throttling)
+                        • Slower (~15-25s per generation)
+                        • Recommended for M1/M2 MacBook Air (fanless)
+
+    Default (MPS/GPU):  Auto-detect GPU acceleration
+                        • Faster when cool (~8-15s per generation)
+                        • May throttle when hot (20-60s)
+                        • Recommended for M1/M2 Pro/Max with fans
+
+Variation Control:
+    --no-ai             Skip AI entirely, use fast heuristic algorithm
+                        • Instant generation (<0.1s)
+                        • Uses drumming techniques: doubling, ghost notes, triplets
+                        • Preserves exact loop duration
+                        • Controlled by spice level
+                        • Good for testing or low-latency workflows
+
+    --context-loops N   Repeat loop N times in context (1 or 2)
+                        • Default: 2 (doubled pattern reinforces looping)
+                        • 1 = single loop (minimal context, less loop-aware)
+                        • 2 = doubled (RECOMMENDED, best results)
+                        • Higher values (4+) exceed model's vocabulary range
+                        • Only affects rhythmic_creator, not Gemini
+
+    --no-anchor         Skip timing anchoring (preserves AI-generated timing)
+                        • More creative variations with new rhythms
+                        • Model's timing is preserved (not forced to original grid)
+                        • Recommended for more adventurous variations
+
+    Default (anchored): Snap AI hits to original pattern's timing grid
+                        • Safer, stays closer to original groove
+                        • May remove many AI-generated hits
+
 OSC Communication:
     Receives on port 5000:
       /chuloopa/spice <float>        - Spice level (0.0-1.0)
@@ -1572,15 +1560,35 @@ OSC Communication:
     parser.add_argument('--no-warp', action='store_true',
                         help='Skip time-warping (use model\'s natural timing)')
 
+    parser.add_argument('--cpu', action='store_true',
+                        help='Force CPU inference (more consistent, avoids thermal throttling on MPS/GPU)')
+
+    parser.add_argument('--no-anchor', action='store_true',
+                        help='Skip timing anchoring (preserves AI-generated timing, more creative variations)')
+
+    parser.add_argument('--no-ai', action='store_true',
+                        help='Skip AI generation, use fast heuristic algorithm instead (instant generation)')
+
+    parser.add_argument('--context-loops', type=int, default=2, choices=[1, 2],
+                        help='How many times to repeat loop in context (1 or 2, default: 2)')
+
     args = parser.parse_args()
 
-    # Set global no_warp flag
-    global use_no_warp
+    # Set global flags
+    global use_no_warp, force_cpu, use_no_anchor, use_no_ai, context_loops
     use_no_warp = args.no_warp
+    force_cpu = args.cpu
+    use_no_anchor = args.no_anchor
+    use_no_ai = args.no_ai
+    context_loops = args.context_loops
 
     print("=" * 60)
     print("  CHULOOPA Drum Variation AI")
     print("=" * 60)
+    if use_no_ai:
+        print("  Mode: HEURISTIC (AI disabled - instant generation)")
+    elif force_cpu:
+        print("  Device: CPU (forced - consistent performance)")
     print()
 
     # Watch mode

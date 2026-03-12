@@ -185,7 +185,14 @@ class RhythmicCreatorModel:
         Returns:
             Generated token indices [batch_size, seq_len + max_new_tokens]
         """
-        for _ in range(max_new_tokens):
+        import time  # DIAGNOSTIC
+
+        # Track time per token for first 10 tokens  # DIAGNOSTIC
+        token_times = []  # DIAGNOSTIC
+
+        for i in range(max_new_tokens):
+            t0 = time.time()  # DIAGNOSTIC
+
             # Crop to block_size if needed
             idx_crop = idx[:, -self.block_size:]
 
@@ -210,6 +217,15 @@ class RhythmicCreatorModel:
             # Update hidden state for next iteration
             hidden = h
 
+            # DIAGNOSTIC: Track timing for first 10 tokens
+            if i < 10:  # DIAGNOSTIC
+                token_times.append(time.time() - t0)  # DIAGNOSTIC
+
+        # DIAGNOSTIC: Report average time per token
+        if token_times:  # DIAGNOSTIC
+            avg_time = sum(token_times) / len(token_times)  # DIAGNOSTIC
+            print(f"      [Model] Avg time/token (first 10): {avg_time*1000:.1f}ms, total tokens: {max_new_tokens}")  # DIAGNOSTIC
+
         return idx
 
     def info(self) -> dict:
@@ -231,7 +247,7 @@ class RhythmicCreatorModel:
 _model_instance = None
 
 
-def get_model(model_path: str = None, vocab_path: str = None) -> RhythmicCreatorModel:
+def get_model(model_path: str = None, vocab_path: str = None, device: str = None) -> RhythmicCreatorModel:
     """
     Get or create the global model instance.
 
@@ -240,6 +256,7 @@ def get_model(model_path: str = None, vocab_path: str = None) -> RhythmicCreator
     Args:
         model_path: Path to model weights (default: src/models/transformer_LSTM_FNN_hybrid.pt)
         vocab_path: Path to vocabulary (default: src/models/training_1.txt)
+        device: 'cuda', 'mps', or 'cpu' (auto-detect if None)
 
     Returns:
         RhythmicCreatorModel instance
@@ -255,7 +272,8 @@ def get_model(model_path: str = None, vocab_path: str = None) -> RhythmicCreator
 
         _model_instance = RhythmicCreatorModel(
             model_path=str(model_path),
-            vocab_path=str(vocab_path)
+            vocab_path=str(vocab_path),
+            device=device
         )
 
     return _model_instance

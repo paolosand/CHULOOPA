@@ -1,0 +1,124 @@
+# CRITICAL BUG FOUND: Context Echo Stripping
+
+## The Problem
+
+Your current `drum_variation_ai.py` (lines 899-907) is **stripping the context echo** from the model output:
+
+```python
+# Current implementation (BROKEN)
+if len(generated_tokens) > len(context_tokens):
+    # Strip context echo - keep only NEW tokens
+    new_tokens = generated_tokens[len(context_tokens):]
+    new_text = ' '.join(new_tokens)
+    print(f"    Stripping context: {len(new_tokens)} new tokens ({len(new_tokens)//3} new hits)")
+```
+
+But your working test script (`test_rhythmic_creator.py` lines 104-154) does NOT strip the context:
+
+```python
+# Working test script (CORRECT)
+generated_text = model.generate_variation(
+    input_pattern=context_text,
+    num_tokens=num_tokens,
+    temperature=temperature
+)
+
+# Convert FULL output (no stripping)
+raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+
+# Time-warp to fit
+scale_factor = target_duration / max_time
+```
+
+## Why This Breaks Variation Generation
+
+The model works like this:
+
+1. **Input:** "36 0.0 0.1 38 0.5 0.6" (2 hits)
+2. **Model generates:** "36 0.0 0.1 38 0.5 0.6 [CONTEXT ECHO] + 36 0.0 0.15 42 0.7 0.8 36 1.2 0.9 [NEW VARIATION]"
+3. **Current implementation strips context:** Only keeps "36 0.0 0.15 42 0.7 0.8 36 1.2 0.9"
+4. **Problem:** These are CONTINUATION tokens that start AFTER the original pattern ends
+   - The timestamps are relative to the END of the context, not the start
+   - You then try to extract "continuation hits" vs "wrap hits" which creates confusion
+   - The density matching logic (lines 924-950) tries to salvage this but fails
+
+## What the Test Script Does (CORRECT)
+
+```python
+# 1. Generate with full echo
+generated_text = model.generate_variation(...)
+
+# 2. Convert ALL tokens (including echo)
+raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+
+# 3. Time-warp the ENTIRE pattern to fit target duration
+fitted_hits = []
+for hit in raw_pattern.hits:
+    new_time = hit.timestamp * scale_factor
+    if new_time < target_duration:
+        fitted_hits.append(...)
+```
+
+The key insight: The model's full output (including context echo) represents a COMPLETE drum pattern that can be directly time-warped to fit your loop duration. You don't need to strip anything or do density matching - just time-warp the full output.
+
+## Why Test Script Makes Better Variations
+
+1. **No token loss:** Uses full model output, not just "new" tokens
+2. **Simpler pipeline:** Generate → Convert → Time-warp (3 steps)
+3. **Model-aware:** Respects that model echoes context as part of its groove understanding
+4. **Preserves structure:** Time-warping uniformly scales timing, preserving rhythmic relationships
+
+## Why Current Implementation Fails
+
+1. **Token confusion:** Stripped tokens are continuation, not standalone pattern
+2. **Complex pipeline:** Generate → Strip → Density match → Extract → Time-warp → Anchor (6 steps)
+3. **Fighting the model:** Assumes model generates "new pattern" when it generates "continuation from context end"
+4. **Loss of hits:** Density matching discards many AI-generated hits
+
+## The Fix
+
+Replace lines 899-983 in `drum_variation_ai.py` with the test script's approach:
+
+```python
+# Convert FULL model output (don't strip context)
+raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+
+if not raw_pattern.hits:
+    print("  Warning: No valid hits, falling back")
+    return generate_musical_variation(pattern, spice_level), False
+
+# Find actual duration
+max_time = max(hit.timestamp for hit in raw_pattern.hits)
+
+# Time-warp to fit target duration
+scale_factor = target_duration / max_time if max_time > 0 else 1.0
+
+fitted_hits = []
+for hit in raw_pattern.hits:
+    new_timestamp = hit.timestamp * scale_factor
+    if new_timestamp < target_duration:
+        fitted_hits.append(DrumHit(
+            drum_class=hit.drum_class,
+            timestamp=new_timestamp,
+            velocity=hit.velocity,
+            delta_time=0.0
+        ))
+
+variation = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
+variation._recalculate_delta_times()
+```
+
+## Expected Results After Fix
+
+- Variations will respect drum class distribution (no more 89% kicks)
+- Hit density will be similar to input (no more 192% explosions)
+- No more unplayable <50ms flams
+- Rhythmic character preserved (model understands groove from full context)
+- Generation is faster (no complex density matching logic)
+
+## Additional Observations
+
+1. **Repeated context (2x-8x loops):** This might still be useful for reinforcing loop structure, but test it against 1x
+2. **Timing anchoring:** May not be needed if model output is already good - test with `--no-anchor` first
+3. **Temperature:** Test script uses 0.8, your code uses 0.9 - try both
+4. **Token count:** Test script generates 1x pattern length, you generate 6-8x - try reducing to 1-2x
