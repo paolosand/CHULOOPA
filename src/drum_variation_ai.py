@@ -60,7 +60,7 @@ except ImportError:
 
 # Gemini configuration
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
-GEMINI_MODEL = 'gemini-3-flash-preview'
+GEMINI_MODEL = 'models/gemini-2.5-flash'
 
 # Optional file watching
 try:
@@ -99,6 +99,14 @@ osc_client = None
 # Global state
 current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
+use_no_anchor = False  # Skip timing anchoring if True
+use_no_ai = False  # Force heuristic generation (skip AI) if True
+context_loops = 1  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 1
+current_variation_type = 'rhythmic_creator'  # Default variation type (set by CLI --type arg)
+
+# Fixed model temperature for stability (empirically determined)
+# Spice controls post-processing (timing drift, fills), NOT model temperature
+RHYTHMIC_CREATOR_TEMPERATURE = 0.9
 
 
 # =============================================================================
@@ -335,6 +343,293 @@ def densify_pattern(pattern: DrumPattern,
     return result
 
 
+def timing_anchor(model_pattern: DrumPattern,
+                  original_pattern: DrumPattern,
+                  spice_level: float) -> DrumPattern:
+    """
+    Anchor model hits to original pattern's timing grid.
+
+    This function extracts a "timing grid" from the original beatbox pattern
+    and anchors the model's generated hits to those positions. Spice controls
+    how tightly hits are anchored and whether off-grid "fill" hits are kept.
+
+    Args:
+        model_pattern: Raw output from rhythmic_creator
+        original_pattern: User's beatbox input
+        spice_level: 0.0-1.0 (controls drift and fills)
+            - 0.0-0.3: Tight anchoring (20-50ms drift), rare fills
+            - 0.4-0.6: Moderate drift (60-100ms), some fills
+            - 0.7-1.0: Loose anchoring (110-150ms), many fills
+
+    Returns:
+        Anchored pattern with timing locked to original groove
+
+    Algorithm:
+        1. Extract timing grid from original hit timestamps
+        2. For each model hit:
+           - Find nearest grid position
+           - If within max_drift: anchor to grid (deduplicate if needed)
+           - Otherwise: keep as fill with probability based on spice
+        3. Recalculate delta_times
+    """
+    if not original_pattern.hits or not model_pattern.hits:
+        return model_pattern
+
+    # Extract timing grid from original
+    timing_grid = [hit.timestamp for hit in original_pattern.hits]
+
+    # Calculate spice-based parameters
+    # max_drift: 20ms at spice=0.0, 150ms at spice=1.0
+    max_drift = 0.02 + (spice_level * 0.13)
+
+    # fill_probability: 0% at spice=0.0, 80% at spice=1.0
+    fill_probability = spice_level * 0.8
+
+    # Use dictionary to deduplicate - keep best hit per grid slot
+    # grid_position -> best_hit
+    grid_slots = {}
+
+    # Off-grid fills
+    fill_hits = []
+
+    for model_hit in model_pattern.hits:
+        # Find nearest grid position
+        nearest_pos = min(timing_grid, key=lambda t: abs(t - model_hit.timestamp))
+        distance = abs(model_hit.timestamp - nearest_pos)
+
+        if distance < max_drift:
+            # Anchor to grid position
+            # If multiple hits map to same slot, keep hit with highest velocity
+            if nearest_pos not in grid_slots or model_hit.velocity > grid_slots[nearest_pos].velocity:
+                grid_slots[nearest_pos] = DrumHit(
+                    drum_class=model_hit.drum_class,  # Trust model's choice
+                    timestamp=nearest_pos,
+                    velocity=model_hit.velocity,
+                    delta_time=0.0  # Will recalculate
+                )
+        elif random.random() < fill_probability:
+            # Keep as fill (off-grid)
+            fill_hits.append(model_hit)
+
+    # Combine grid-anchored hits and fills
+    anchored_hits = list(grid_slots.values()) + fill_hits
+
+    if not anchored_hits:
+        # Fallback: return model output unchanged
+        return model_pattern
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=anchored_hits, loop_duration=original_pattern.loop_duration)
+    result._recalculate_delta_times()
+
+    return result
+
+
+def fit_to_loop_duration(pattern: DrumPattern, target_duration: float) -> DrumPattern:
+    """
+    Time-warp pattern to fit exact loop duration.
+
+    This function uniformly scales all timestamps proportionally,
+    preserving relative spacing between hits while ensuring the
+    pattern loops perfectly at the target duration.
+
+    Args:
+        pattern: Anchored pattern (may have any duration)
+        target_duration: Target loop duration in seconds
+
+    Returns:
+        Pattern with exactly target_duration
+
+    Note: This time-warping is usually minimal (<5% scale factor) because
+    timing anchoring already produces patterns close to target duration.
+    """
+    if not pattern.hits:
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Find actual duration of pattern
+    max_timestamp = max(hit.timestamp for hit in pattern.hits)
+
+    if max_timestamp == 0 or max_timestamp <= 0.01:
+        # Pattern has no duration or all hits at start
+        return DrumPattern(hits=[], loop_duration=target_duration)
+
+    # Calculate uniform scale factor
+    scale_factor = target_duration / max_timestamp
+
+    # Scale all timestamps proportionally
+    fitted_hits = []
+    for hit in pattern.hits:
+        new_timestamp = hit.timestamp * scale_factor
+
+        # Keep only hits within target duration (allow hits at boundary)
+        if new_timestamp <= target_duration:
+            fitted_hits.append(DrumHit(
+                drum_class=hit.drum_class,
+                timestamp=new_timestamp,
+                velocity=hit.velocity,
+                delta_time=0.0  # Will recalculate
+            ))
+
+    # Create pattern and recalculate delta_times
+    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
+    result._recalculate_delta_times()
+
+    return result
+
+
+def rebuild_timestamps(varied_groove: List[dict], original_start_time: float = 0.0) -> List[dict]:
+    """
+    Rebuild absolute timestamps from delta times.
+
+    Guarantees exact loop duration match to original by reconstructing
+    timestamps from delta times (which are manipulated by mutations).
+
+    Args:
+        varied_groove: List of {'class', 'vel', 'delta'} dicts
+        original_start_time: Timestamp of first hit in original pattern
+
+    Returns:
+        List of {'class', 'timestamp', 'vel', 'delta'} dicts
+    """
+    final_output = []
+    current_time = original_start_time
+
+    for hit in varied_groove:
+        final_output.append({
+            'class': hit['class'],
+            'timestamp': current_time,
+            'vel': hit['vel'],
+            'delta': hit['delta']
+        })
+        current_time += hit['delta']
+
+    return final_output
+
+
+def generate_musical_variation(pattern: DrumPattern, spice_level: float) -> DrumPattern:
+    """
+    Generate variation using real drumming techniques.
+
+    This is the algorithmic fallback when neural models fail or aren't available.
+    Uses musically valid techniques: doubling, ghost notes, triplets, syncopation,
+    and substitution, all controlled by spice level.
+
+    Args:
+        pattern: Original drum pattern
+        spice_level: 0.0-1.0 controlling mutation probability
+            - Low (0.0-0.3): Conservative (50-80% of base probabilities)
+            - High (0.7-1.0): Creative (120-150% of base probabilities)
+
+    Returns:
+        Varied pattern maintaining exact loop duration
+
+    Algorithm:
+        1. Protect structural anchors (first hit, strong backbeats)
+        2. Apply spice-scaled mutations to other hits
+        3. Rebuild timestamps from delta times to preserve duration
+    """
+    if not pattern.hits:
+        return pattern
+
+    # Base mutation probabilities
+    base_probs = {
+        'double': 0.15,      # Double kick/snare
+        'ghost': 0.10,       # Ghost note fill
+        'triplet': 0.05,     # Hi-hat triplets
+        'shift_and': 0.10,   # Shift to "and" (syncopation)
+        'substitute': 0.10,  # Drum substitution
+    }
+
+    # Scale by spice level
+    # At low spice (0.2): reduce all mutations by 50% (multiplier = 0.7)
+    # At high spice (0.8): increase by 50% (multiplier = 1.3)
+    spice_multiplier = 0.5 + spice_level  # Range: 0.5x to 1.5x
+
+    probs = {k: v * spice_multiplier for k, v in base_probs.items()}
+
+    # Convert to dict format for easier manipulation
+    drum_data = [
+        {'class': h.drum_class, 'vel': h.velocity, 'delta': h.delta_time, 'timestamp': h.timestamp}
+        for h in pattern.hits
+    ]
+
+    varied_groove = []
+
+    for i, hit in enumerate(drum_data):
+        c = hit['class']
+        v = hit['vel']
+        d = hit['delta']
+
+        # PROTECT ANCHORS (always protected regardless of spice)
+        # Protect: first hit, strong backbeats (snares with high velocity)
+        is_anchor = (i == 0) or (c == 1 and v > 0.7)
+
+        if is_anchor:
+            # Just humanize velocity slightly
+            v = max(0.1, min(1.0, v + random.uniform(-0.03, 0.03)))
+            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+            continue
+
+        # Apply mutations with spice-scaled probabilities
+        roll = random.random()
+
+        if roll < probs['double']:
+            # Double the hit (split delta in half)
+            half_delta = d / 2.0
+            varied_groove.append({'class': c, 'vel': v * 0.9, 'delta': half_delta})
+            varied_groove.append({'class': c, 'vel': v * 0.7, 'delta': half_delta})
+
+        elif roll < probs['double'] + probs['ghost']:
+            # Add ghost note (snare)
+            half_delta = d / 2.0
+            varied_groove.append({'class': c, 'vel': v, 'delta': half_delta})
+            varied_groove.append({'class': 1, 'vel': random.uniform(0.15, 0.35), 'delta': half_delta})
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] and c == 2:
+            # Hi-hat triplets (only for hats)
+            third_delta = d / 3.0
+            varied_groove.append({'class': 2, 'vel': v, 'delta': third_delta})
+            varied_groove.append({'class': 2, 'vel': v * 0.6, 'delta': third_delta})
+            varied_groove.append({'class': 2, 'vel': v * 0.8, 'delta': third_delta})
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] and len(varied_groove) > 0:
+            # Shift to "and" (syncopation)
+            # Push this note later by extending previous note's delta
+            shift_amount = d / 2.0
+            varied_groove[-1]['delta'] += shift_amount  # Lengthen previous note
+            varied_groove.append({'class': c, 'vel': v, 'delta': d - shift_amount})  # Shorten current
+
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] + probs['substitute']:
+            # Drum substitution (swap weak kicks for hats, or hats for weak kicks)
+            new_class = 2 if c == 0 else 0
+            varied_groove.append({'class': new_class, 'vel': v * 0.8, 'delta': d})
+
+        else:
+            # Pass through unchanged
+            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+
+    # Rebuild timestamps from delta times to preserve exact loop duration
+    final_hits_data = rebuild_timestamps(varied_groove, original_start_time=pattern.hits[0].timestamp if pattern.hits else 0.0)
+
+    # Convert back to DrumHit objects
+    final_hits = []
+    for hit_data in final_hits_data:
+        final_hits.append(DrumHit(
+            drum_class=hit_data['class'],
+            timestamp=hit_data['timestamp'],
+            velocity=hit_data['vel'],
+            delta_time=hit_data['delta']
+        ))
+
+    # Create result pattern
+    result = DrumPattern(hits=final_hits, loop_duration=pattern.loop_duration)
+
+    # Ensure exact duration by recalculating
+    result._recalculate_delta_times()
+
+    return result
+
+
 def simplify_pattern(pattern: DrumPattern,
                      keep_probability: float = 0.6) -> DrumPattern:
     """Simplify pattern by removing some hits.
@@ -475,241 +770,157 @@ except ImportError as e:
 
 # Global model instance
 rhythmic_model = None
+force_cpu = False  # Global flag to force CPU inference
 
 
 def init_rhythmic_creator():
     """Initialize rhythmic creator model (call once at startup)."""
-    global rhythmic_model
+    global rhythmic_model, force_cpu
 
     if not HAVE_RHYTHMIC_CREATOR:
         return False
 
     try:
-        rhythmic_model = get_rhythmic_model()
+        device = 'cpu' if force_cpu else None  # Auto-detect if not forced
+        rhythmic_model = get_rhythmic_model(device=device)
         return True
     except Exception as e:
         print(f"Warning: Failed to load rhythmic_creator: {e}")
         return False
 
 
-def fit_to_loop_duration(generated: DrumPattern, target_duration: float) -> DrumPattern:
-    """
-    Time-warp generated pattern to fit exact loop duration.
-
-    Jake's model generates continuations that may exceed the target duration.
-    This function scales all timestamps proportionally to fit.
-
-    Args:
-        generated: Generated pattern (may have any duration)
-        target_duration: Target loop duration in seconds
-
-    Returns:
-        Pattern with exactly target_duration
-    """
-    if not generated.hits:
-        return DrumPattern(hits=[], loop_duration=target_duration)
-
-    # Find actual duration of generated pattern
-    max_timestamp = max(hit.timestamp for hit in generated.hits)
-
-    if max_timestamp == 0 or max_timestamp <= 0.01:
-        return DrumPattern(hits=[], loop_duration=target_duration)
-
-    # Calculate scale factor
-    scale_factor = target_duration / max_timestamp
-
-    # Time-warp all timestamps
-    fitted_hits = []
-    for hit in generated.hits:
-        new_timestamp = hit.timestamp * scale_factor
-
-        # Keep only hits within target duration
-        if new_timestamp < target_duration:
-            fitted_hits.append(DrumHit(
-                drum_class=hit.drum_class,
-                timestamp=new_timestamp,
-                velocity=hit.velocity,
-                delta_time=0.0  # Will recalculate
-            ))
-
-    # Create pattern and recalculate delta_times
-    result = DrumPattern(hits=fitted_hits, loop_duration=target_duration)
-    result._recalculate_delta_times()
-
-    return result
-
-
 def rhythmic_creator_variation(pattern: DrumPattern,
-                               temperature: float = 0.7) -> tuple:
+                               spice_level: float = 0.5) -> tuple:
     """
-    Generate variation using Jake Chen's Transformer-LSTM+FNN model.
+    Generate variation using rhythmic_creator (SIMPLIFIED - NO WARP VERSION).
 
-    This function:
-    1. Uses full pattern as context (gives model complete groove understanding)
-    2. Generates continuation with temperature control
-    3. Time-warps result to match original loop duration
-    4. Returns variation with same duration as original
+    This function implements a clean pipeline based on test_rhythmic_creator_nowarp.py:
+    1. Generate variation using rhythmic_creator at FIXED temperature
+    2. Use FULL model output (no context stripping)
+    3. Use natural model duration (no time-warping)
+    4. Optional timing anchoring to preserve groove
 
     Args:
-        pattern: Input drum pattern
-        temperature: Spice level (0.5-1.5)
-                    - 0.5-0.9: Conservative (stays close to training)
-                    - 1.0: Normal sampling
-                    - 1.1-1.5: Creative (more variation)
+        pattern: Original user beatbox pattern
+        spice_level: 0.0-1.0 controlling variation amount
+            - Controls timing anchoring (drift, fills) if enabled
+            - Model temperature is FIXED at RHYTHMIC_CREATOR_TEMPERATURE
 
     Returns:
         Tuple of (DrumPattern, success: bool)
     """
     global rhythmic_model
+    import time  # DIAGNOSTIC
+
+    t_start = time.time()  # DIAGNOSTIC
 
     # Initialize model if needed
+    t0 = time.time()  # DIAGNOSTIC
     if rhythmic_model is None:
         if not init_rhythmic_creator():
             print("  Rhythmic creator not available, falling back to groove_preserve")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
+    t_init = time.time() - t0  # DIAGNOSTIC
+    if t_init > 0.1:  # DIAGNOSTIC
+        print(f"  ⏱️  Model init: {t_init:.2f}s")  # DIAGNOSTIC
 
     try:
-        # Use full pattern as context (gives model complete groove understanding)
-        context_hits = pattern.hits
-
-        # Create context pattern
-        context_pattern = DrumPattern(
-            hits=context_hits,
-            loop_duration=pattern.loop_duration
-        )
-
-        # Convert to rhythmic_creator format
-        context_text = chuloopa_to_rhythmic_creator(context_pattern)
+        # Convert to rhythmic_creator format (single loop)
+        t0 = time.time()  # DIAGNOSTIC
+        context_text = chuloopa_to_rhythmic_creator(pattern)
 
         if not context_text:
             print("  Warning: Empty context, falling back")
-            return groove_preserve(pattern), False
+            return generate_musical_variation(pattern, spice_level), False
 
-        # Calculate how many tokens to generate
-        # Model outputs [context echo] + [continuation]
-        # Some continuation hits may use invalid MIDI (melody notes) that get filtered
-        # Generate 6-8x pattern length to ensure enough valid drum hits in continuation
-        # For a 4-hit input, this generates 24-32 new tokens (~8-10 hits after filtering)
-        num_tokens = max(60, len(pattern.hits) * 18)
+        context_tokens = context_text.split()
+        t_prep = time.time() - t0  # DIAGNOSTIC
+        if t_prep > 0.05:  # DIAGNOSTIC
+            print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        print(f"  Generating with rhythmic_creator (temp={temperature:.2f})...")
-        print(f"    Context: {len(context_hits)} hits (full pattern)")
+        # Generate similar number of tokens as input (model will echo + continue)
+        num_tokens = len(context_tokens) + (len(context_tokens) // 3)  # Generate 1/3 more tokens than the input
+
+        print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
+        print(f"    Context: {len(pattern.hits)} hits")
         print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
 
-        # Generate continuation
-        # Note: Model outputs [context echo] + [continuation from context end]
-        # Jake's model does conditional generation = extends the pattern, not replaces it
+        # Generate variation
+        # Model outputs [context echo] + [variation/continuation]
+        t0 = time.time()  # DIAGNOSTIC
         generated_text = rhythmic_model.generate_variation(
             input_pattern=context_text,
             num_tokens=num_tokens,
-            temperature=temperature
+            temperature=RHYTHMIC_CREATOR_TEMPERATURE
         )
+        t_generate = time.time() - t0  # DIAGNOSTIC
+        print(f"    ⏱️  MODEL GENERATION: {t_generate:.2f}s")  # DIAGNOSTIC
 
         generated_tokens = generated_text.split()
-        context_tokens = context_text.split()
         print(f"    Generated: {len(generated_tokens)} tokens ({len(generated_tokens)//3} hits)")
 
-        # The model echoes context then generates continuation
-        # We need to strip the context echo to avoid layering original over variation
-        if len(generated_tokens) > len(context_tokens):
-            # Strip context echo - keep only NEW tokens
-            new_tokens = generated_tokens[len(context_tokens):]
-            new_text = ' '.join(new_tokens)
-            print(f"    Stripping context: {len(new_tokens)} new tokens ({len(new_tokens)//3} new hits)")
-        else:
-            # Model didn't generate enough - use full output
-            new_text = generated_text
-            print(f"    Warning: Output shorter than context, using full output")
-
-        # Convert NEW tokens to CHULOOPA
-        # The model generates continuation starting from where context ended
-        # This continuation is the variation we want!
-        new_pattern = rhythmic_creator_to_chuloopa(new_text, loop_duration=999)
-
-        if not new_pattern.hits:
-            print("  Warning: No valid hits in new pattern, falling back")
-            return groove_preserve(pattern), False
-
-        # The continuation starts after the last hit in the original pattern
-        # Find original end time
-        original_end = max(hit.timestamp for hit in pattern.hits)
-
-        # Take continuation hits (those that come after original pattern)
-        continuation_hits = [
-            hit for hit in new_pattern.hits
-            if hit.timestamp > original_end
-        ]
-
-        # Also take any hits near the start (loop wrap) as fallback
-        wrap_hits = [
-            hit for hit in new_pattern.hits
-            if hit.timestamp <= original_end
-        ]
-
-        # Prefer continuation if it has enough hits, otherwise use wrap
-        # Continuation is better musically, but sometimes has too much invalid MIDI
-        min_hits_threshold = max(3, len(pattern.hits) // 2)
-        use_continuation = len(continuation_hits) >= min_hits_threshold
-
-        source_hits = continuation_hits if use_continuation else wrap_hits
-
-        if not source_hits:
-            print("  Warning: No usable hits in generation, falling back")
-            return groove_preserve(pattern), False
-
-        # Shift hits to start at 0.0
-        min_time = min(hit.timestamp for hit in source_hits)
-        max_time = max(hit.timestamp for hit in source_hits)
-        natural_duration = max_time - min_time
-
-        shifted_hits = []
-        for hit in source_hits:
-            shifted_hits.append(DrumHit(
-                drum_class=hit.drum_class,
-                timestamp=hit.timestamp - min_time,
-                velocity=hit.velocity,
-                delta_time=0.0
-            ))
-
-        # Create raw pattern with natural duration
-        raw_pattern = DrumPattern(hits=shifted_hits, loop_duration=natural_duration)
-        raw_pattern._recalculate_delta_times()
-
-        source_type = "continuation" if use_continuation else "loop wrap"
-        print(f"    Using {source_type} ({len(continuation_hits)} cont / {len(wrap_hits)} wrap): {len(raw_pattern.hits)} hits, duration={natural_duration:.2f}s")
+        # Convert FULL output to CHULOOPA format (DON'T strip context echo)
+        # The full output represents a complete drum pattern
+        t0 = time.time()  # DIAGNOSTIC
+        raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+        t_convert = time.time() - t0  # DIAGNOSTIC
+        if t_convert > 0.1:  # DIAGNOSTIC
+            print(f"    ⏱️  Format conversion: {t_convert:.3f}s")  # DIAGNOSTIC
 
         if not raw_pattern.hits:
-            print("  Warning: Model generated empty pattern, falling back")
-            return groove_preserve(pattern), False
+            print("  Warning: No valid hits in generated pattern, falling back")
+            return generate_musical_variation(pattern, spice_level), False
 
-        # Time-warp to fit exact loop duration (unless --no-warp is set)
-        global use_no_warp
-        if use_no_warp:
-            # Use model's natural timing
-            max_time = max(hit.timestamp for hit in raw_pattern.hits) if raw_pattern.hits else 0
-            raw_pattern.loop_duration = max_time
-            raw_pattern._recalculate_delta_times()
-            variation = raw_pattern
-            print(f"    Using natural timing: {max_time:.2f}s (no time-warping)")
+        # Find natural duration from model output
+        max_time = max(hit.timestamp for hit in raw_pattern.hits)
+        print(f"    Model's natural duration: {max_time:.2f}s (original: {pattern.loop_duration:.2f}s)")
+
+        # Use natural duration (no time-warping)
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=max_time)
+        variation._recalculate_delta_times()
+
+        print(f"    Using natural model duration: {len(variation.hits)} hits, {max_time:.2f}s")
+
+        # Save intermediate files for debugging (if source file is known)
+        if pattern.source_file:
+            variations_dir = Path(pattern.source_file).parent / "variations"
+            variations_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save raw model output (natural duration, no processing)
+            raw_model_file = variations_dir / "track_0_drums_var1_raw_model.txt"
+            variation.to_file(str(raw_model_file))
+            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s natural duration)")
+
+        # Optional timing anchoring (if --no-anchor flag not set)
+        if use_no_anchor:
+            print(f"    Skipping timing anchoring (--no-anchor)")
+            final_variation = variation
         else:
-            # Time-warp to original duration
-            print(f"    Time-warping to {pattern.loop_duration:.2f}s...")
-            variation = fit_to_loop_duration(raw_pattern, pattern.loop_duration)
+            print(f"    Applying timing anchoring (spice: {spice_level:.2f})...")
+            t0 = time.time()  # DIAGNOSTIC
+            anchored = timing_anchor(variation, pattern, spice_level)
+            t_anchor = time.time() - t0  # DIAGNOSTIC
+            print(f"    ⏱️  Timing anchor: {t_anchor:.3f}s")  # DIAGNOSTIC
 
-            if not variation.hits:
-                print("  Warning: No hits after time-warping, falling back")
-                return groove_preserve(pattern), False
+            if not anchored.hits or len(anchored.hits) < 2:
+                print("  Warning: Timing anchoring removed too many hits, using raw model output")
+                final_variation = variation
+            else:
+                final_variation = anchored
+                print(f"    Anchored variation: {len(final_variation.hits)} hits")
 
-        print(f"    Final variation: {len(variation.hits)} hits")
+        t_total = time.time() - t_start  # DIAGNOSTIC
+        print(f"  🏁 TOTAL TIME: {t_total:.2f}s")  # DIAGNOSTIC
 
-        return variation, True
+        print(f"    Final variation: {len(final_variation.hits)} hits, {final_variation.loop_duration:.2f}s")
+        return final_variation, True
 
     except Exception as e:
         print(f"  Warning: rhythmic_creator generation failed: {e}")
         import traceback
         traceback.print_exc()
         print("  Falling back to groove_preserve")
-        return groove_preserve(pattern), False
+        return generate_musical_variation(pattern, spice_level), False
 
 
 # =============================================================================
@@ -856,6 +1067,8 @@ def handle_spice_change(address, spice_level):
 
 def handle_regenerate(address):
     """Handle regenerate request from ChucK."""
+    global current_variation_type
+
     print(f"\n{'='*60}")
     print("GENERATE requested from ChucK (D#1 / Note 39)")
     print(f"{'='*60}")
@@ -870,7 +1083,7 @@ def handle_regenerate(address):
         return
 
     try:
-        generate_variations_for_track(track_file, variation_type='rhythmic_creator')
+        generate_variations_for_track(track_file, variation_type=current_variation_type)
     except Exception as e:
         error_msg = f"Error generating variations: {e}"
         print(error_msg)
@@ -1007,9 +1220,12 @@ if HAVE_WATCHDOG:
                         osc_client.send_message("/chuloopa/error", error_msg)
 
 
-def watch_directory(directory: str, variation_type: str = 'rhythmic_creator'):
+def watch_directory(directory: str, variation_type: str = 'gemini'):
     """Watch directory for drum file changes and listen for OSC messages."""
-    global osc_client
+    global osc_client, current_variation_type
+
+    # Set the global variation type so OSC handlers can use it
+    current_variation_type = variation_type
 
     if not HAVE_WATCHDOG:
         print("Error: watchdog not installed. Install with: pip install watchdog")
@@ -1048,7 +1264,11 @@ def watch_directory(directory: str, variation_type: str = 'rhythmic_creator'):
     observer.start()
 
     print(f"\nWatching for drum file changes in: {directory}")
-    print(f"Variation type: {variation_type}")
+    print(f"Variation type: {variation_type}{' (HEURISTIC MODE - AI disabled)' if use_no_ai else ''}")
+    print(f"Device: {'CPU (forced)' if force_cpu else 'Auto-detect (MPS/CUDA/CPU)'}")
+    if not use_no_ai and variation_type == 'rhythmic_creator':
+        print(f"Context loops: {context_loops}x (pattern repeated {context_loops} times)")
+    print(f"Timing anchor: {'DISABLED (preserves AI timing)' if use_no_anchor else 'enabled'}")
     print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
     print(f"Current spice level: {current_spice_level:.2f}")
     print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
@@ -1092,8 +1312,14 @@ def generate_variation(pattern: DrumPattern,
     Returns:
         Tuple of (DrumPattern, success: bool)
     """
+    # Check if AI is disabled (--no-ai flag)
+    if use_no_ai and variation_type in ['rhythmic_creator', 'gemini']:
+        print(f"  Skipping {variation_type} (--no-ai): using heuristic generation")
+        spice = kwargs.get('temperature', 0.5)
+        return generate_musical_variation(pattern, spice), True  # True = intentional heuristic mode, not a failure
+
     if variation_type == 'rhythmic_creator':
-        return rhythmic_creator_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+        return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'gemini':
         return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
@@ -1205,7 +1431,10 @@ def generate_variation_for_file(filepath: str,
 
         # Generate 1 variation
         print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
-        varied = generate_variation(pattern, variation_type, temperature=current_spice_level, **kwargs)
+        varied, success = generate_variation(pattern, variation_type, **kwargs)
+
+        if not success:
+            print("Warning: Variation generation returned failure flag")
 
         output_file = variations_dir / f"{filepath_obj.stem}_var1.txt"
         varied.to_file(str(output_file))
@@ -1257,6 +1486,41 @@ Variation Types:
     shift            Rotates pattern in time
     random           Combines multiple variation types
 
+Performance Options:
+    --cpu               Force CPU inference instead of GPU
+                        • More consistent performance (no thermal throttling)
+                        • Slower (~15-25s per generation)
+                        • Recommended for M1/M2 MacBook Air (fanless)
+
+    Default (MPS/GPU):  Auto-detect GPU acceleration
+                        • Faster when cool (~8-15s per generation)
+                        • May throttle when hot (20-60s)
+                        • Recommended for M1/M2 Pro/Max with fans
+
+Variation Control:
+    --no-ai             Skip AI entirely, use fast heuristic algorithm
+                        • Instant generation (<0.1s)
+                        • Uses drumming techniques: doubling, ghost notes, triplets
+                        • Preserves exact loop duration
+                        • Controlled by spice level
+                        • Good for testing or low-latency workflows
+
+    --context-loops N   Repeat loop N times in context (1 or 2)
+                        • Default: 2 (doubled pattern reinforces looping)
+                        • 1 = single loop (minimal context, less loop-aware)
+                        • 2 = doubled (RECOMMENDED, best results)
+                        • Higher values (4+) exceed model's vocabulary range
+                        • Only affects rhythmic_creator, not Gemini
+
+    --no-anchor         Skip timing anchoring (preserves AI-generated timing)
+                        • More creative variations with new rhythms
+                        • Model's timing is preserved (not forced to original grid)
+                        • Recommended for more adventurous variations
+
+    Default (anchored): Snap AI hits to original pattern's timing grid
+                        • Safer, stays closer to original groove
+                        • May remove many AI-generated hits
+
 OSC Communication:
     Receives on port 5000:
       /chuloopa/spice <float>        - Spice level (0.0-1.0)
@@ -1296,15 +1560,35 @@ OSC Communication:
     parser.add_argument('--no-warp', action='store_true',
                         help='Skip time-warping (use model\'s natural timing)')
 
+    parser.add_argument('--cpu', action='store_true',
+                        help='Force CPU inference (more consistent, avoids thermal throttling on MPS/GPU)')
+
+    parser.add_argument('--no-anchor', action='store_true',
+                        help='Skip timing anchoring (preserves AI-generated timing, more creative variations)')
+
+    parser.add_argument('--no-ai', action='store_true',
+                        help='Skip AI generation, use fast heuristic algorithm instead (instant generation)')
+
+    parser.add_argument('--context-loops', type=int, default=2, choices=[1, 2],
+                        help='How many times to repeat loop in context (1 or 2, default: 2)')
+
     args = parser.parse_args()
 
-    # Set global no_warp flag
-    global use_no_warp
+    # Set global flags
+    global use_no_warp, force_cpu, use_no_anchor, use_no_ai, context_loops
     use_no_warp = args.no_warp
+    force_cpu = args.cpu
+    use_no_anchor = args.no_anchor
+    use_no_ai = args.no_ai
+    context_loops = args.context_loops
 
     print("=" * 60)
     print("  CHULOOPA Drum Variation AI")
     print("=" * 60)
+    if use_no_ai:
+        print("  Mode: HEURISTIC (AI disabled - instant generation)")
+    elif force_cpu:
+        print("  Device: CPU (forced - consistent performance)")
     print()
 
     # Watch mode

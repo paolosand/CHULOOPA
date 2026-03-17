@@ -23,7 +23,7 @@ CHULOOPA Drums is a real-time drum looping system that:
 **Requirements:**
 - ChucK 1.5.x+ (with ChuGL support)
 - Python 3.10+ with dependencies
-- MIDI controller with CC 18 knob
+- MIDI controller with CC 74 knob
 - Microphone for beatbox input
 
 **Install Python dependencies:**
@@ -239,7 +239,7 @@ Console shows:
 
 ### Step 6: Adjust Spice Level and Regenerate
 
-**Turn the CC 18 knob** on your MIDI controller
+**Turn the CC 74 knob** on your MIDI controller
 
 **In ChucK console:**
 ```
@@ -316,7 +316,7 @@ Track 0 drum data cleared
 ### Spice Control
 | CC Number | Function                   | Visual Feedback |
 |-----------|----------------------------|-----------------|
-| CC 18     | Spice level (0.0-1.0)      | Blue/Orange/Red |
+| CC 74     | Spice level (0.0-1.0)      | Blue/Orange/Red |
 
 **Usage:** Turn knob to adjust creativity level
 
@@ -449,7 +449,7 @@ If it does happen:
 
 ### "Spice knob not working"
 **Solution:**
-- Verify CC 18 is mapped: `python TESTMIDIINPUT.py`
+- Verify CC 74 is mapped: `python TESTMIDIINPUT.py`
 - Turn knob slowly to see "Spice level: XX%" in ChucK console
 - ChuGL window must be open to see visual feedback
 
@@ -500,7 +500,7 @@ If it does happen:
 ## Next Steps
 
 ### Experiment with AI Variations
-- Try different spice levels (CC 18) for different musical contexts
+- Try different spice levels (CC 74) for different musical contexts
 - Regenerate (D#1) multiple times to find interesting variations
 - Toggle between original and variation during performance
 - Record longer/shorter loops to test variation quality
@@ -550,7 +550,7 @@ chuck chuloopa_drums_v2.ck
 #    → Sphere turns green (variation ready)
 # 2. Press Note 38 (D1) to load variation
 #    → Sphere turns blue (variation playing)
-# 3. Turn CC 18 knob to adjust spice level
+# 3. Turn CC 74 knob to adjust spice level
 #    → Text color changes in ChuGL window
 # 4. Press Note 39 (D#1) to regenerate with new spice
 #    → Python generates new variation

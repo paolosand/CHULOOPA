@@ -189,7 +189,7 @@ Result: Variation of exactly 2.0 seconds ✅
 
 **Problem:**
 - Jake's `generate()` method has no temperature parameter
-- Need temperature for spice control (CC 18 knob)
+- Need temperature for spice control (CC 74 knob)
 
 **Solution:**
 Add temperature scaling in wrapper:
@@ -304,7 +304,7 @@ python drum_variation_ai.py --file tracks/track_0/track_0_drums.txt \
    - Run watch mode with rhythmic_creator
    - Record loop in ChucK
    - Verify variation generates automatically
-   - Test spice control (CC 18)
+   - Test spice control (CC 74)
    - Compare to Gemini results
 
 6. **Tune parameters:**
@@ -376,7 +376,7 @@ python drum_variation_ai.py --file tracks/track_0/track_0_drums.txt \
 - Maintain drum class choices and groove
 
 **Q: How does spice control work?**
-✅ Map CC 18 knob to temperature:
+✅ Map CC 74 knob to temperature:
 - Low spice (0.0-0.3) → conservative sampling
 - High spice (0.7-1.0) → creative sampling
 - Temperature scales logits before softmax

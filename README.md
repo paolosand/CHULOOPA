@@ -2,6 +2,8 @@
 
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
+![CHULOOPA_idle_state](<chuloopa - empty state - option 2.png>)
+
 ## Overview
 
 CHULOOPA is a real-time drum looping system built in ChucK that uses machine learning to transcribe vocal beatboxing into drum patterns (kick, snare, hat). The system provides immediate audio feedback during recording, automatically exports symbolic drum data, generates AI-powered variations, and enables seamless pattern switching for live performance.
@@ -81,17 +83,18 @@ chuck chuloopa_drums_v2.ck
   - OFF: Plays original recording (sphere turns red)
 
 - **MIDI Note 39** (D#1): Regenerate variations with current spice level
-  - Python generates new variation using current CC 18 value
+  - Python generates new variation using current CC 74 value
 
 **Spice Control:**
 
-- **CC 18**: Spice level knob (0.0-1.0)
+- **CC 74**: Spice level knob (0.0-1.0)
   - **Low (0.0-0.3)**: Conservative, subtle variations (blue text)
   - **Medium (0.4-0.6)**: Balanced creativity (orange text)
   - **High (0.7-1.0)**: Bold, experimental variations (red text)
   - Visual feedback updates in real-time in ChuGL window
 
 **Future (3-Track Version):**
+
 - Additional tracks will use Notes 40-45 and CC controls 46-53
 
 ---
@@ -137,7 +140,7 @@ chuck chuloopa_drums_v2.ck
 
 ### Adjusting Spice Level
 
-1. **Turn CC 18 knob** on your MIDI controller
+1. **Turn CC 74 knob** on your MIDI controller
 2. **Watch ChuGL window:** Text color changes (blue → orange → red)
 3. **Console shows:** "Spice level: 75%"
 4. **Press D#1** (Note 39) to regenerate with new spice
@@ -153,6 +156,7 @@ chuck chuloopa_drums_v2.ck
 ### Future: Layering Multiple Tracks
 
 Multi-track support coming in Phase 3:
+
 1. Record Track 0 (Note 36/C1): Kick pattern
 2. Record Track 1 (Note 40/E1): Snare pattern
 3. Record Track 2 (Note 41/F1): Hi-hat pattern
@@ -183,7 +187,7 @@ Multi-track support coming in Phase 3:
    ↓
 9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
    ↓
-10. User Toggles Variation (D1) or Adjusts Spice (CC 18) + Regenerates (D#1)
+10. User Toggles Variation (D1) or Adjusts Spice (CC 74) + Regenerates (D#1)
 ```
 
 ### Drums-Only Mode
@@ -249,6 +253,7 @@ Exported files include precise loop timing:
 The system uses OSC (Open Sound Control) for real-time bidirectional communication:
 
 **Ports:**
+
 - ChucK sends to: `localhost:5000` (Python receives)
 - Python sends to: `127.0.0.1:5001` (ChucK receives)
 
@@ -256,15 +261,16 @@ The system uses OSC (Open Sound Control) for real-time bidirectional communicati
 
 **OSC Messages:**
 
-| Address | Direction | Data Type | Purpose |
-|---------|-----------|-----------|---------|
-| `/chuloopa/generation_progress` | Python → ChucK | string | Status updates during generation |
-| `/chuloopa/variations_ready` | Python → ChucK | int | Signals variation is complete |
-| `/chuloopa/regenerate` | ChucK → Python | none | Request new variation with current spice |
-| `/chuloopa/spice_level` | ChucK → Python | float | Update spice level (0.0-1.0) |
-| `/chuloopa/clear` | ChucK → Python | none | Track cleared notification |
+| Address                         | Direction      | Data Type | Purpose                                  |
+| ------------------------------- | -------------- | --------- | ---------------------------------------- |
+| `/chuloopa/generation_progress` | Python → ChucK | string    | Status updates during generation         |
+| `/chuloopa/variations_ready`    | Python → ChucK | int       | Signals variation is complete            |
+| `/chuloopa/regenerate`          | ChucK → Python | none      | Request new variation with current spice |
+| `/chuloopa/spice_level`         | ChucK → Python | float     | Update spice level (0.0-1.0)             |
+| `/chuloopa/clear`               | ChucK → Python | none      | Track cleared notification               |
 
 **Workflow:**
+
 1. User records loop (C1) in ChucK
 2. ChucK exports `track_0_drums.txt`
 3. Python watchdog detects file change
@@ -278,6 +284,7 @@ The system uses OSC (Open Sound Control) for real-time bidirectional communicati
 The visualization window shows a single sphere with color-coded states:
 
 **Sphere Colors:**
+
 - **Gray**: No loop recorded
 - **Red**: Playing original loop
 - **Green** (pulsing): Variation ready (press D1 to load)
@@ -286,11 +293,12 @@ The visualization window shows a single sphere with color-coded states:
 **Spice Level Display:**
 
 Text shows current spice level with color coding:
+
 - **0.0-0.3**: Blue text (conservative variations)
 - **0.4-0.6**: Orange text (balanced creativity)
 - **0.7-1.0**: Red text (experimental variations)
 
-Updates in real-time as you turn CC 18 knob!
+Updates in real-time as you turn CC 74 knob!
 
 ### AI Variation Generation
 
@@ -329,6 +337,7 @@ python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 6. **User loads:** Press D1 to hear the variation
 
 **Model Architecture (rhythmic_creator):**
+
 - **Author:** Jake Chen (Zhaohan Chen), CalArts MFA Thesis 2025
 - **Paper:** "Music As Natural Language: Deep Learning Driven Rhythmic Creation"
 - **Architecture:** Transformer-LSTM Hybrid (4.49M parameters)
@@ -341,11 +350,12 @@ python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 **Spice Level Control:**
 
 The "spice" parameter (0.0-1.0) maps to model temperature for variation creativity:
+
 - **Low spice (0.0-0.3):** Conservative variations, deterministic output
 - **Medium spice (0.4-0.6):** Balanced creativity, moderate randomness
 - **High spice (0.7-1.0):** Experimental variations, high randomness
 
-Adjust with CC 18 knob, then press D#1 to regenerate.
+Adjust with CC 74 knob, then press D#1 to regenerate.
 
 **Why rhythmic_creator over Gemini/Magenta:**
 
@@ -414,7 +424,7 @@ CHULOOPA/
 - [x] Continuation-based variation generation approach
 - [x] OSC communication (Python ↔ ChucK)
 - [x] Automatic variation generation (file watching)
-- [x] Real-time spice level control (CC 18)
+- [x] Real-time spice level control (CC 74)
 - [x] Visual feedback (ChuGL sphere states)
 - [x] Queued variation toggle at loop boundaries
 - [x] Single-track focused workflow
@@ -505,6 +515,7 @@ CHULOOPA/
 - `python-dotenv` - Environment variables
 
 Install Python dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -513,7 +524,7 @@ pip install -r requirements.txt
 
 **Hardware:**
 
-- MIDI controller with CC 18 knob support
+- MIDI controller with CC 74 knob support
 - Microphone for beatbox input
 
 ---
@@ -572,7 +583,7 @@ pip install -r requirements.txt
 
 **Spice knob not working:**
 
-- Verify CC 18 is mapped correctly: `python TESTMIDIINPUT.py`
+- Verify CC 74 is mapped correctly: `python TESTMIDIINPUT.py`
 - Check ChucK console for "Spice level: XX%" messages
 - ChuGL window must be open to see visual feedback
 - Turn knob slowly to see updates

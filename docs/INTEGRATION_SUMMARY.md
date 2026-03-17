@@ -280,7 +280,7 @@ def generate(self, device, idx, hidden, max_new_tokens, temperature=1.0):
 - `temperature = 1.0` → Normal (Jake's default)
 - `temperature = 1.5` → More creative (flatter distribution)
 
-**Maps to CHULOOPA's spice knob (CC 18):**
+**Maps to CHULOOPA's spice knob (CC 74):**
 ```python
 # Spice 0.0-0.3 → temperature 0.7-0.9 (conservative)
 # Spice 0.4-0.6 → temperature 1.0-1.2 (balanced)

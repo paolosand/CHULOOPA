@@ -46,7 +46,7 @@ CHULOOPA provides immediate audio feedback during recording—as you beatbox, yo
 
 **3. AI as Collaborator, Not Replacement**
 
-Once a drum pattern is recorded, CHULOOPA generates variations using a local transformer-LSTM model (rhythmic_creator by Chen, 2025) adapted through a continuation-based approach. Critically, these AI-generated variations preserve the exact loop duration and non-quantized timing of the original beatbox performance. Unlike traditional quantization-based systems that force rhythms onto a grid, CHULOOPA's AI maintains the human "feel" of timing imperfections while introducing musical variations. The performer controls variation creativity in real-time via MIDI CC 18 ("spice level"), maintaining creative agency over the AI's contribution. The system runs entirely offline with no external API dependencies, ensuring reliability in live performance contexts.
+Once a drum pattern is recorded, CHULOOPA generates variations using a local transformer-LSTM model (rhythmic_creator by Chen, 2025) adapted through a continuation-based approach. Critically, these AI-generated variations preserve the exact loop duration and non-quantized timing of the original beatbox performance. Unlike traditional quantization-based systems that force rhythms onto a grid, CHULOOPA's AI maintains the human "feel" of timing imperfections while introducing musical variations. The performer controls variation creativity in real-time via MIDI CC 74 ("spice level"), maintaining creative agency over the AI's contribution. The system runs entirely offline with no external API dependencies, ensuring reliability in live performance contexts.
 
 This represents a shift from AI as autonomous generator to AI as creative collaborator—a "personal drum machine" that learns *your* beatbox vocabulary and augments *your* rhythmic ideas without destroying their natural timing.
 
@@ -78,7 +78,7 @@ We present a continuation-based approach to drum pattern variation using a trans
 
 **3. Co-Creative System Design for Live Performance**
 
-We present CHULOOPA as a complete performance system that keeps the artist "in the loop" through real-time spice control (MIDI CC 18 adjusts variation creativity), queued action systems (pattern switching at musical loop boundaries), and immediate audio feedback (drum samples play as you beatbox). Through autoethnographic study as designer-performer and user testing with solo musicians, we demonstrate that accessible interfaces (voice input), personalized models (user-trainable), and offline AI (no network dependency) can lower barriers to drum programming while maintaining creative agency and performance reliability.
+We present CHULOOPA as a complete performance system that keeps the artist "in the loop" through real-time spice control (MIDI CC 74 adjusts variation creativity), queued action systems (pattern switching at musical loop boundaries), and immediate audio feedback (drum samples play as you beatbox). Through autoethnographic study as designer-performer and user testing with solo musicians, we demonstrate that accessible interfaces (voice input), personalized models (user-trainable), and offline AI (no network dependency) can lower barriers to drum programming while maintaining creative agency and performance reliability.
 
 **Seven Novel Technical Contributions:**
 
@@ -415,7 +415,7 @@ The system uses a "spice level" parameter (0.0-1.0) that maps directly to model 
 - **0.4-0.6:** Balanced creativity (moderate temperature)
 - **0.7-1.0:** Experimental variations (high temperature, more randomness)
 
-Users control spice level in real-time via MIDI CC 18, with visual feedback in the ChuGL interface (blue/orange/red text indicating current level). Regeneration with new spice levels happens on-demand via MIDI trigger.
+Users control spice level in real-time via MIDI CC 74, with visual feedback in the ChuGL interface (blue/orange/red text indicating current level). Regeneration with new spice levels happens on-demand via MIDI trigger.
 
 #### 3.5.4 Timing Preservation and Musical Coherence
 
@@ -633,7 +633,7 @@ CHULOOPA contributes three perspectives to ongoing discourse:
 
 **1. "The Artist in the Loop"** (AIMC 2025 theme)
 
-Real-time spice control (CC 18), queued actions (performer decides when transitions occur), and immediate feedback (hear drums as you beatbox) keep the performer central to the creative process. AI augments rather than replaces human decision-making.
+Real-time spice control (CC 74), queued actions (performer decides when transitions occur), and immediate feedback (hear drums as you beatbox) keep the performer central to the creative process. AI augments rather than replaces human decision-making.
 
 **2. Accessible Creative AI**
 

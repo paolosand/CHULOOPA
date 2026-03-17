@@ -20,3 +20,9 @@ __pycache__/
 
 # Generated track data (runtime only)
 src/tracks/
+
+# ChuGL/ImGui configuration (user-specific window layouts)
+imgui.ini
+
+# Git worktrees
+.worktrees/

@@ -1,8 +1,8 @@
 //---------------------------------------------------------------------
-// name: chuloopa_drums_v2.ck
+// name: chuloopa_drums_v3.ck
 // desc: CHULOOPA - Drum-based looper with real-time beatbox classification
 //       Multi-track looper that transcribes beatbox to drum patterns
-//       V2: Adds ability to load and play drum patterns from txt files
+//       V3: Removes coding bloat and simplifies to single track focus
 //
 // Architecture:
 //   1. Record audio loops (with master sync to prevent drift)
@@ -25,7 +25,7 @@
 //     D#1 (39):               Generate variation with current spice level
 //
 //   SPICE CONTROL:
-//     CC 18:                  Spice level knob (0-127 -> 0.0-1.0)
+//     CC 74:                  Spice level knob (0-127 -> 0.0-1.0)
 //                             Adjusts creativity of AI variations
 //
 // Usage:
@@ -41,13 +41,13 @@
 38 => int NOTE_TOGGLE_VARIATION; // D1 - Toggle variation mode ON/OFF
 39 => int NOTE_REGENERATE;       // D#1 - Regenerate variations with current spice
 
-18 => int CC_SPICE_LEVEL;        // CC 18 - Spice level knob (0-127 -> 0.0-1.0)
+74 => int CC_SPICE_LEVEL;        // CC 74 - Spice level knob (0-127 -> 0.0-1.0) NOTE: changed spice knob for akai LPD 8 instead of Arturia minilab CC 18
 
-0 => int MIDI_DEVICE;
+0 => int MIDI_DEVICE; // always take first available midi device (can be changed to specific device index if needed)
 
 // === OSC CONFIGURATION ===
-5000 => int OSC_SEND_PORT;       // Send to Python on port 5000
-5001 => int OSC_RECEIVE_PORT;    // Receive from Python on port 5001
+5000 => int OSC_SEND_PORT;       // Send to Python drum_variation_ai.py on port 5000
+5001 => int OSC_RECEIVE_PORT;    // Receive from Python drum_variation_ai.py on port 5001
 
 // === CONFIGURATION ===
 1 => int NUM_TRACKS;  // Single track focus for now
@@ -66,131 +66,15 @@ HOP_SIZE::samp => dur HOP;
 0.01 => float MIN_ONSET_STRENGTH;
 150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
 
-// === QUANTIZATION PARAMETERS ===
-false => int ENABLE_QUANTIZATION;    // Enable/disable quantization
-16 => int QUANTIZE_DIVISION;        // Quantize to 16th notes (4=quarter, 8=eighth, 16=sixteenth)
-60.0 => float MIN_BPM;              // Valid BPM range
-200.0 => float MAX_BPM;
+// === FEATURE CONFIGURATION ===
+// Uses 5 features: flux, energy, band1, band2, band5
 
-// === MASTER LOOP SYNC SYSTEM ===
--1 => int master_track;
-0::second => dur master_duration;
-0 => int has_master;
+// === QUANTIZATION REMOVED ===
+// Quantization system removed in v3 (was disabled in v2)
 
-// Valid multipliers for sync (most common musical ratios)
-[0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0] @=> float valid_multipliers[];
+// Master sync system removed (single track only)
 
-// Find best multiplier to sync with master loop
-fun dur findBestMultiplier(dur recorded_duration, dur master_duration) {
-    1000000.0 => float best_error;
-    1.0 => float best_multiplier;
-
-    for(0 => int i; i < valid_multipliers.size(); i++) {
-        valid_multipliers[i] => float mult;
-        master_duration * mult => dur target;
-        Math.fabs((recorded_duration - target) / second) => float error;
-
-        if(error < best_error) {
-            error => best_error;
-            mult => best_multiplier;
-        }
-    }
-
-    return master_duration * best_multiplier;
-}
-
-// Check if any loops exist
-fun int anyLoopsExist() {
-    for(0 => int i; i < NUM_TRACKS; i++) {
-        if(has_loop[i]) return 1;
-    }
-    return 0;
-}
-
-// === QUANTIZATION SYSTEM ===
-
-// Estimate BPM from inter-onset intervals
-fun float estimateBPM(int track) {
-    if(track_drum_timestamps[track].size() < 2) {
-        return 120.0;  // Default BPM if not enough hits
-    }
-
-    // Calculate all inter-onset intervals
-    float intervals[0];
-    for(1 => int i; i < track_drum_timestamps[track].size(); i++) {
-        track_drum_timestamps[track][i] - track_drum_timestamps[track][i-1] => float interval;
-        if(interval > 0.1) {  // Ignore very short intervals (likely flams/doubles)
-            intervals << interval;
-        }
-    }
-
-    if(intervals.size() == 0) return 120.0;
-
-    // Find median interval (more robust than mean)
-    // Sort intervals
-    for(0 => int i; i < intervals.size()-1; i++) {
-        for(i+1 => int j; j < intervals.size(); j++) {
-            if(intervals[j] < intervals[i]) {
-                intervals[i] => float temp;
-                intervals[j] => intervals[i];
-                temp => intervals[j];
-            }
-        }
-    }
-
-    // Get median
-    intervals[intervals.size() / 2] => float median_interval;
-
-    // Convert to BPM (assuming the median interval represents one beat or subdivision)
-    // Try different subdivisions and pick the one that results in reasonable BPM
-    60.0 / median_interval => float bpm_if_beat;
-    60.0 / (median_interval * 2) => float bpm_if_eighth;
-    60.0 / (median_interval * 4) => float bpm_if_sixteenth;
-
-    // Choose the BPM that falls in reasonable range
-    if(bpm_if_beat >= MIN_BPM && bpm_if_beat <= MAX_BPM) return bpm_if_beat;
-    if(bpm_if_eighth >= MIN_BPM && bpm_if_eighth <= MAX_BPM) return bpm_if_eighth;
-    if(bpm_if_sixteenth >= MIN_BPM && bpm_if_sixteenth <= MAX_BPM) return bpm_if_sixteenth;
-
-    // If none in range, clamp to range
-    if(bpm_if_beat < MIN_BPM) return MIN_BPM;
-    if(bpm_if_beat > MAX_BPM) return MAX_BPM;
-    return bpm_if_beat;
-}
-
-// Quantize timestamps to grid
-fun void quantizeTrack(int track) {
-    if(!ENABLE_QUANTIZATION) return;
-    if(track_drum_timestamps[track].size() == 0) return;
-
-    // Estimate BPM
-    estimateBPM(track) => float bpm;
-    <<< "Track", track, "- Estimated BPM:", bpm >>>;
-
-    // Calculate grid size (time between quantization points)
-    60.0 / bpm / (QUANTIZE_DIVISION / 4.0) => float grid_size;  // (QUANTIZE_DIVISION/4) converts to beats
-    <<< "  Quantizing to", QUANTIZE_DIVISION + "th", "notes (grid size:", grid_size, "sec)" >>>;
-
-    // Quantize each timestamp
-    0 => int moves_count;
-    for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
-        track_drum_timestamps[track][i] => float original_time;
-
-        // Find nearest grid point
-        Math.round(original_time / grid_size) => float grid_point;
-        grid_point * grid_size => float quantized_time;
-
-        // Update timestamp
-        quantized_time => track_drum_timestamps[track][i];
-
-        // Track how many were moved
-        if(Math.fabs(original_time - quantized_time) > 0.001) {
-            moves_count++;
-        }
-    }
-
-    <<< "  Quantized", moves_count, "hits" >>>;
-}
+// Quantization functions removed (was disabled, not used)
 
 // === OSC SETUP ===
 OscIn oin;
@@ -201,7 +85,7 @@ oin.listenAll();  // Listen to all OSC addresses
 OscOut oout;
 oout.dest("localhost", OSC_SEND_PORT);
 
-// OSC sender functions
+// OSC sender functions - spice level, regenerate request, track cleared, recording started
 fun void sendSpiceLevel(float spice) {
     oout.start("/chuloopa/spice");
     spice => oout.add;
@@ -347,7 +231,7 @@ for(0 => int i; i < 3; i++) {
     zone @=> drop_zones[i];
     drop_zones[i].sca(0.4);  // Small square
     drop_zones[i].posX(zone_x_positions[i]);
-    drop_zones[i].posY(-2.0);
+    drop_zones[i].posY(-1.5);  // Moved up from -2.0
     drop_zones[i].posZ(0.0);
 
     // Get material reference
@@ -361,9 +245,9 @@ for(0 => int i; i < 3; i++) {
     label @=> zone_labels[i];
     zone_labels[i].text("DROP " + zone_drum_names[i]);
     zone_labels[i].posX(zone_x_positions[i]);
-    zone_labels[i].posY(-2.5);
+    zone_labels[i].posY(-2.0);  // Moved up from -2.5
     zone_labels[i].posZ(0.0);
-    zone_labels[i].sca(0.15);
+    zone_labels[i].sca(0.10);  // Smaller text to prevent overlap
     zone_labels[i].color(@(0.7, 0.7, 0.7));
 
     // Initialize flash state
@@ -399,7 +283,6 @@ Gain output_gains[NUM_TRACKS];
 // === ANALYSIS CHAINS (per track, active only during recording) ===
 FFT track_fft[NUM_TRACKS];
 RMS track_rms[NUM_TRACKS];
-MFCC track_mfcc[NUM_TRACKS];
 
 // Configure each track
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -416,16 +299,11 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0.0 => output_gains[i].gain;  // Zero gain
 
     // Setup analysis chains (connected to adc, but only upchucked during recording)
-    // Note: MFCC must be chained from FFT
-    adc => track_fft[i] =^ track_mfcc[i] => blackhole;
+    adc => track_fft[i] => blackhole;
     adc => track_rms[i] => blackhole;
 
     FRAME_SIZE => track_fft[i].size;
     Windowing.hann(FRAME_SIZE) => track_fft[i].window;
-
-    // MFCC configuration
-    10 => track_mfcc[i].numFilters;  // Number of MEL filters
-    13 => track_mfcc[i].numCoeffs;   // Number of MFCC coefficients
 }
 
 // === DRUM SAMPLE PLAYBACK ===
@@ -470,6 +348,16 @@ for(0 => int i; i < NUM_TRACKS; i++) {
         <<< "WARNING: Could not load", HAT_SAMPLE >>>;
     }
 }
+
+// Set initial sample names for drop zone labels
+getFilename(KICK_SAMPLE) => current_sample_names[0];
+getFilename(SNARE_SAMPLE) => current_sample_names[1];
+getFilename(HAT_SAMPLE) => current_sample_names[2];
+
+// Update zone labels with default samples
+current_sample_names[0] => zone_labels[0].text;
+current_sample_names[1] => zone_labels[1].text;
+current_sample_names[2] => zone_labels[2].text;
 
 // === STATE VARIABLES (per track) ===
 int is_recording[NUM_TRACKS];
@@ -564,8 +452,8 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 
 // === ONSET DETECTION FUNCTIONS ===
 
-fun float spectralFlux(int track) {
-    track_fft[track].upchuck() @=> UAnaBlob @ blob;
+// FIXED: Accept pre-computed FFT blob to prevent double-upchuck timing issues
+fun float spectralFlux(int track, UAnaBlob @ blob) {
     0.0 => float flux;
 
     for(0 => int i; i < FRAME_SIZE/2; i++) {
@@ -626,6 +514,8 @@ int knn_trained;
 // Label names
 ["kick", "snare", "hat"] @=> string label_names[];
 
+// Feature normalization removed (was never enabled, not used)
+
 // Train KNN from CSV file
 fun int trainKNNFromCSV(string filename) {
     <<< "" >>>;
@@ -667,7 +557,7 @@ fun int trainKNNFromCSV(string filename) {
     fin.readLine();  // Skip header again
 
     // Allocate arrays for training data
-    // We'll use 5 features: flux, energy, band1, band2, band5
+    // Using 5 features: flux, energy, band1, band2, band5
     float training_features[num_samples][5];
     int training_labels[num_samples];
 
@@ -707,14 +597,16 @@ fun int trainKNNFromCSV(string filename) {
         // Skip timestamp
         tok.next();
 
-        // Read features: flux, energy, band1, band2, (skip band3, band4), band5
+        // Read 5 features from CSV: flux, energy, band1, band2, band5
         Std.atof(tok.next()) => training_features[sample_idx][0];  // flux
         Std.atof(tok.next()) => training_features[sample_idx][1];  // energy
         Std.atof(tok.next()) => training_features[sample_idx][2];  // band1
         Std.atof(tok.next()) => training_features[sample_idx][3];  // band2
-        tok.next();  // skip band3
-        tok.next();  // skip band4
+        tok.next(); // skip band3
+        tok.next(); // skip band4
         Std.atof(tok.next()) => training_features[sample_idx][4];  // band5
+        // Skip rest
+        for(0 => int i; i < 18; i++) tok.next();
 
         sample_idx++;
     }
@@ -727,13 +619,13 @@ fun int trainKNNFromCSV(string filename) {
     <<< "  Hats:", label_counts[2] >>>;
     <<< "" >>>;
 
-    // Train KNN
+    // Train KNN classifier
     <<< "Training KNN classifier..." >>>;
     knn.train(training_features, training_labels);
 
     // Optional: Set feature weights (can be tuned based on importance)
-    // Equal weights for now
-    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];
+    // MODE 1: 5 weights for 5 features (flux, energy, band1, band2, band5)
+    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 5 weights
     knn.weigh(weights);
 
     <<< "✓ KNN training complete!" >>>;
@@ -745,17 +637,16 @@ fun int trainKNNFromCSV(string filename) {
 
 // === FEATURE EXTRACTION & CLASSIFICATION ===
 
-fun int classifyOnset(int track, float flux) {
-    // Extract same features as training data
-    track_rms[track].upchuck() @=> UAnaBlob @ rms_blob;
+// FIXED: Accept pre-computed blobs to ensure features from same frame as onset detection
+// Uses 5 features for KNN classification: flux, energy, band1, band2, band5
+fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms_blob) {
+    // Extract energy from pre-computed RMS blob
     rms_blob.fval(0) => float energy;
 
-    track_fft[track].upchuck() @=> UAnaBlob @ blob;
-
-    // Frequency band energies (matching training data format)
+    // Frequency band energies from pre-computed FFT blob (matching training data format)
     0.0 => float band1 => float band2 => float band3 => float band4 => float band5;
     for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
+        fft_blob.fval(i) => float mag;
         if(i < FRAME_SIZE/32) mag +=> band1;           // 0-344 Hz
         else if(i < FRAME_SIZE/8) mag +=> band2;       // 344-1378 Hz
         else if(i < FRAME_SIZE/4) mag +=> band3;       // 1378-2756 Hz
@@ -764,7 +655,8 @@ fun int classifyOnset(int track, float flux) {
     }
 
     if(knn_trained) {
-        // Use trained KNN classifier
+        // Use trained KNN classifier with 5 features
+        // Feature order: flux, energy, band1, band2, band5
         float query[5];
         flux => query[0];
         energy => query[1];
@@ -1037,34 +929,9 @@ fun int loadDrumDataFromFile(int track) {
         <<< "No delta_time found - using estimated duration:", file_loop_duration, "sec" >>>;
     }
 
-    // Use master loop duration if it exists, otherwise use file's duration
-    if(has_master) {
-        // Scale timestamps to fit master loop duration
-        master_duration / second => float target_duration;
-        file_loop_duration => float original_duration;
-
-        if(original_duration > 0.001) {
-            target_duration / original_duration => float scale_ratio;
-
-            <<< "Scaling timestamps to match master loop..." >>>;
-            <<< "  Original duration:", original_duration, "sec" >>>;
-            <<< "  Target duration:", target_duration, "sec" >>>;
-            <<< "  Scale ratio:", scale_ratio >>>;
-
-            // Scale all timestamps
-            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
-                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
-            }
-        }
-
-        // Use master loop duration
-        master_duration / second => loop_length[track];
-        master_duration => recorded_duration[track];
-    } else {
-        // No master loop yet - use file's precise duration
-        file_loop_duration => loop_length[track];
-        loop_length[track]::second => recorded_duration[track];
-    }
+    // Use file's duration
+    file_loop_duration => loop_length[track];
+    loop_length[track]::second => recorded_duration[track];
 
     <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
@@ -1177,29 +1044,19 @@ fun int loadVariationFile(int track, int var_num) {
         track_drum_velocities[track] << loaded_velocities[i];
     }
 
-    // Calculate loop duration
+    // Calculate loop duration from file
     0.0 => float file_loop_duration;
     if(has_delta_time_column && last_delta_time > 0.0) {
         max_timestamp + last_delta_time => file_loop_duration;
+        <<< "Using precise loop duration from variation file:", file_loop_duration, "sec" >>>;
     } else {
         max_timestamp + 0.5 => file_loop_duration;
+        <<< "No delta_time found - using estimated duration:", file_loop_duration, "sec" >>>;
     }
 
-    // Use existing loop duration if set
-    if(has_loop[track] && loop_length[track] > 0.0) {
-        loop_length[track] => float target_duration;
-        file_loop_duration => float original_duration;
-
-        if(original_duration > 0.001) {
-            target_duration / original_duration => float scale_ratio;
-            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
-                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
-            }
-        }
-    } else {
-        file_loop_duration => loop_length[track];
-        loop_length[track]::second => recorded_duration[track];
-    }
+    // Always use file's duration (no scaling!)
+    file_loop_duration => loop_length[track];
+    loop_length[track]::second => recorded_duration[track];
 
     <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
@@ -1500,16 +1357,24 @@ fun void mainOnsetDetectionLoop() {
 
         // If a track is recording, perform onset detection
         if(active_track >= 0) {
-            spectralFlux(active_track) => float flux;
+            // FIXED: Extract features ONCE per iteration (prevents timing mismatch bug)
+            // All subsequent operations use these cached blobs from the same audio frame
+            track_fft[active_track].upchuck() @=> UAnaBlob @ fft_blob;
+            track_rms[active_track].upchuck() @=> UAnaBlob @ rms_blob;
+
+            // Calculate flux from cached FFT blob
+            spectralFlux(active_track, fft_blob) => float flux;
             updateFluxHistory(active_track, flux);
             getAdaptiveThreshold(active_track) => float threshold;
 
             if(detectOnset(active_track, flux, threshold)) {
-                // Classify the onset
-                classifyOnset(active_track, flux) => int drum_class;
+                // Classify using SAME cached blobs (no additional upchucks!)
+                // This ensures training and inference use identical timing
+                classifyOnset(active_track, flux, fft_blob, rms_blob) => int drum_class;
 
-                // Calculate velocity from flux
-                Math.min(1.0, flux / 0.1) => float velocity;
+                // Calculate velocity from flux and normalize to 0.7-0.9 range
+                Math.min(1.0, flux / 0.1) => float raw_velocity;
+                0.7 + (raw_velocity * 0.2) => float velocity;  // Maps 0-1 to 0.7-0.9
 
                 // Save to symbolic data
                 saveDrumHit(active_track, drum_class, velocity);
@@ -1529,12 +1394,19 @@ fun void startRecording(int track) {
     <<< "" >>>;
     <<< ">>> TRACK", track, "RECORDING STARTED <<<" >>>;
 
-    // If this track was loaded from file, stop its playback first
-    if(track_loaded_from_file[track]) {
+    // Stop any existing playback (whether from file OR previous recording)
+    if(has_loop[track] || drum_playback_active[track]) {
+        <<< "  Stopping existing playback before new recording" >>>;
         0 => drum_playback_active[track];
+        0 => has_loop[track];
         0 => track_loaded_from_file[track];
         100::ms => now;  // Brief pause to stop playback
     }
+
+    // CRITICAL: Increment playback ID to invalidate any old scheduled hits
+    // This ensures clean separation between recordings
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    <<< "  Playback ID incremented to", drum_playback_id[track], "(clean recording session)" >>>;
 
     // Clear previous drum data
     clearSymbolicData(track);
@@ -1558,45 +1430,13 @@ fun void stopRecording(int track) {
     0 => lisa[track].record;
     0 => is_recording[track];
 
+    // Store loop duration
     lisa[track].recPos() => recorded_duration[track];
-
-    // === MASTER LOOP SYNC ===
-    if(!has_master) {
-        track => master_track;
-        recorded_duration[track] => master_duration;
-        1 => has_master;
-
-        <<< "" >>>;
-        <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  MASTER LOOP SET: Track", track, "          ║" >>>;
-        <<< "╚═══════════════════════════════════════╝" >>>;
-        <<< "Duration:", master_duration / second, "seconds" >>>;
-    } else {
-        findBestMultiplier(recorded_duration[track], master_duration) => dur adjusted;
-        (adjusted / master_duration) $ float => float multiplier;
-
-        // Store original duration
-        recorded_duration[track] / second => float original_duration;
-        adjusted => recorded_duration[track];
-        adjusted / second => float adjusted_duration;
-
-        // Scale drum timings if duration was adjusted
-        if(Math.fabs(adjusted_duration - original_duration) > 0.001 &&
-           track_drum_classes[track].size() > 0) {
-            adjusted_duration / original_duration => float scale_ratio;
-
-            for(0 => int i; i < track_drum_timestamps[track].size(); i++) {
-                track_drum_timestamps[track][i] * scale_ratio => track_drum_timestamps[track][i];
-            }
-        }
-
-        <<< "" >>>;
-        <<< ">>> TRACK", track, "SYNCED TO MASTER <<<" >>>;
-        <<< "Adjusted to", multiplier, "× master length" >>>;
-        <<< "Final length:", recorded_duration[track] / second, "seconds" >>>;
-    }
-
     recorded_duration[track] / second => loop_length[track];
+
+    <<< "" >>>;
+    <<< "Loop duration:", loop_length[track], "seconds" >>>;
+    <<< "" >>>;
 
     if(loop_length[track] > 0.1) {
         0::second => lisa[track].playPos;
@@ -1610,11 +1450,6 @@ fun void stopRecording(int track) {
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
         <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
-
-        // === QUANTIZATION ===
-        if(track_drum_classes[track].size() > 0) {
-            quantizeTrack(track);
-        }
 
         // === AUTO-EXPORT ===
         if(track_drum_classes[track].size() > 0) {
@@ -1651,21 +1486,14 @@ fun void clearTrack(int track) {
     // Stop drum playback
     0 => drum_playback_active[track];
 
+    // CRITICAL: Increment playback ID to invalidate ALL scheduled drum hits
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    <<< "  Playback ID incremented to", drum_playback_id[track], "(invalidates old hits)" >>>;
+
     clearSymbolicData(track);
 
     // Reset file-loaded flag
     0 => track_loaded_from_file[track];
-
-    // Reset master if needed
-    if(track == master_track && !anyLoopsExist()) {
-        <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  MASTER LOOP CLEARED               ║" >>>;
-        <<< "╚═══════════════════════════════════════╝" >>>;
-
-        -1 => master_track;
-        0::second => master_duration;
-        0 => has_master;
-    }
 }
 
 fun void setTrackVolume(int track, float vol) {
@@ -1983,6 +1811,46 @@ fun void visualizationLoop() {
                 }
             }
         }
+
+        // === UPDATE DROP ZONE VISUALS ===
+        for(0 => int i; i < 3; i++) {
+            // Decay flash intensity (200ms flash duration)
+            zone_flash_intensity[i] * 0.85 => zone_flash_intensity[i];
+
+            // Apply flash effect to material
+            if(zone_flash_intensity[i] > 0.1) {
+                // Success flash (green)
+                drop_zone_mats[i].color(zone_colors[i]);
+                drop_zone_mats[i].emission(@(0.5, 1.5, 0.5) * zone_flash_intensity[i]);
+            }
+            else if(zone_flash_intensity[i] < -0.1) {
+                // Error flash (red)
+                drop_zone_mats[i].color(@(1.0, 0.2, 0.2));
+                drop_zone_mats[i].emission(@(2.0, 0.3, 0.3) * Math.fabs(zone_flash_intensity[i]));
+            }
+            else {
+                // Normal state (dim, no emission)
+                drop_zone_mats[i].color(zone_colors[i] * 0.6);
+                drop_zone_mats[i].emission(@(0.0, 0.0, 0.0));
+            }
+        }
+
+        // === DRAG-AND-DROP DETECTION ===
+        if(GWindow.files() != files) {
+            GWindow.files() @=> files;
+
+            if(files.size() > 0) {
+                // Detect drop zone from mouse position
+                UI.getMousePos() => vec2 mousePos;
+                detectZoneFromMouse(mousePos) => int target_zone;
+
+                <<< "" >>>;
+                <<< ">>> FILE DROPPED into", zone_drum_names[target_zone], "zone <<<" >>>;
+
+                // Load sample (hot-swap)
+                loadDrumSample(target_zone, files[0]);
+            }
+        }
     }
 }
 
@@ -2014,7 +1882,7 @@ if(min.num() == 0) {
 <<< "  C#1 (37): Clear track" >>>;
 <<< "  D#1 (39): Generate variation (hot sauce icon appears)" >>>;
 <<< "  D1  (38): Toggle variation ON/OFF (after generation ready)" >>>;
-<<< "  CC  18:   Spice level knob (0.0-1.0, adjust before generating)" >>>;
+<<< "  CC  74:   Spice level knob (0.0-1.0, adjust before generating)" >>>;
 <<< "" >>>;
 <<< "OSC Communication:" >>>;
 <<< "  Sending to: localhost:", OSC_SEND_PORT >>>;
@@ -2029,7 +1897,7 @@ if(min.num() == 0) {
 int ignore_cc[128];
 for(0 => int i; i < 128; i++) 1 => ignore_cc[i];
 
-0 => ignore_cc[CC_SPICE_LEVEL];  // Only listen to CC 18 (spice)
+0 => ignore_cc[CC_SPICE_LEVEL];  // Only listen to CC 74 (spice)
 
 fun void midiListener() {
     while(true) {
@@ -2189,7 +2057,7 @@ fun int loadDrumSample(int zone, string filepath) {
     triggerZoneFlash(zone, 1);  // Green success flash
     getFilename(filepath) => string fname;
     fname => current_sample_names[zone];
-    fname + " | LOADED!" => zone_labels[zone].text;
+    fname => zone_labels[zone].text;  // Just filename, no suffix
 
     <<< "[OK] Sample loaded successfully!" >>>;
     <<< "  Duration:", (test.length() / second) $ float, "sec" >>>;
@@ -2236,7 +2104,7 @@ sendSpiceLevel(DEFAULT_SPICE_LEVEL);  // Send initial spice level as test
 <<< "  2. Press D#1 to generate variation (hot sauce icon appears)" >>>;
 <<< "  3. Wait for green blinking icon (variation ready)" >>>;
 <<< "  4. Press D1 to toggle variation ON/OFF" >>>;
-<<< "  5. Adjust CC 18 knob to change spice, press D#1 to regenerate" >>>;
+<<< "  5. Adjust CC 74 knob to change spice, press D#1 to regenerate" >>>;
 <<< "" >>>;
 <<< "Make sure drum_variation_ai.py is running in watch mode!" >>>;
 <<< "" >>>;
