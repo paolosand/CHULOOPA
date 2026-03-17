@@ -991,7 +991,7 @@ def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPatt
 Add natural human variation through subtle timing shifts, velocity changes, and ghost notes to make the loop feel "alive" like a real drummer playing the groove.
 
 Return the output in the following json format:
-{{"reasoning": "", "pattern": ""}}
+{{"pattern": ""}}
 
 The pattern field should contain the drum data in the exact same CSV format as the input:
 DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
@@ -1003,10 +1003,10 @@ Where:
 
 CRITICAL: The sum of all delta_times must equal the loop duration exactly.
 
-SPICE LEVEL: A float from 0.0 to 1.0 indicating how much variation to apply:
-- 0.0 = minimal variation (very close to original)
-- 0.5 = moderate variation
-- 1.0 = maximum variation (more creative changes)
+SPICE LEVEL: A float from 0.0 to 1.0 controlling how the groove is transformed:
+- 0.0-0.3 (low): Simplify and reduce. Remove ghost notes, thin out hi-hats, strip the pattern back to its essential kick and snare skeleton. Subtle velocity variation only.
+- 0.4-0.6 (mid): Light embellishment. Keep the original hits intact, add occasional ghost notes or a light hi-hat. Small timing and velocity humanization.
+- 0.7-1.0 (high): Add fills, hi-hat density, and ghost notes freely. You may shift or replace individual kick/snare hits with ghost notes for variation. CRITICAL: The overall groove feel must be maintained — the rhythmic character and pulse of the original pattern should remain recognizable.
 
 SPICE LEVEL for this request: {temperature}"""
 
@@ -1016,7 +1016,7 @@ SPICE LEVEL for this request: {temperature}"""
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=system_prompt + "\n\nInput pattern:\n" + user_prompt,
-            config={"temperature": temperature}
+            config={"temperature": temperature, "max_output_tokens": 4096, "thinking_config": {"thinking_budget": 2048}}
         )
 
         # Extract text from response
@@ -1031,7 +1031,6 @@ SPICE LEVEL for this request: {temperature}"""
 
         # Parse JSON response
         result = json.loads(json_text.strip())
-        print(f"  Gemini reasoning: {result.get('reasoning', 'No reasoning provided')}")
 
         # Parse pattern back to DrumPattern
         variation = parse_gemini_pattern(result['pattern'], pattern.loop_duration)
