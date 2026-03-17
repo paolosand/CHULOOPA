@@ -290,7 +290,7 @@ Track 0 - Drum playback started (ID: 3)   <-- NEW ID!
 - [ ] Loading from file (loadDrumDataFromFile)
 - [ ] Loading variations (loadVariationFile)
 - [ ] Variation toggle (D1)
-- [ ] Spice level control (CC 18)
+- [ ] Spice level control (CC 74)
 - [ ] OSC communication with Python
 - [ ] Visual feedback (sphere colors)
 - [ ] Master loop sync

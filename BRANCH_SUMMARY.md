@@ -176,7 +176,7 @@ git commit -m "backup: save pre-refactor state"
 - Note 39 (D#1): Regenerate variations (IMMEDIATE)
 
 **Spice Control:**
-- CC 18: Spice level knob (0.0-1.0, real-time)
+- CC 74: Spice level knob (0.0-1.0, real-time)
 
 **Proposed Changes (Phase 4):**
 - Note 40 (D#1): Cycle to next variation (NEW)

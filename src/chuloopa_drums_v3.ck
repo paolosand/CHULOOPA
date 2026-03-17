@@ -25,7 +25,7 @@
 //     D#1 (39):               Generate variation with current spice level
 //
 //   SPICE CONTROL:
-//     CC 18:                  Spice level knob (0-127 -> 0.0-1.0)
+//     CC 74:                  Spice level knob (0-127 -> 0.0-1.0)
 //                             Adjusts creativity of AI variations
 //
 // Usage:
@@ -41,7 +41,7 @@
 38 => int NOTE_TOGGLE_VARIATION; // D1 - Toggle variation mode ON/OFF
 39 => int NOTE_REGENERATE;       // D#1 - Regenerate variations with current spice
 
-18 => int CC_SPICE_LEVEL;        // CC 18 - Spice level knob (0-127 -> 0.0-1.0)
+74 => int CC_SPICE_LEVEL;        // CC 74 - Spice level knob (0-127 -> 0.0-1.0) NOTE: changed spice knob for akai LPD 8 instead of Arturia minilab CC 18
 
 0 => int MIDI_DEVICE; // always take first available midi device (can be changed to specific device index if needed)
 
@@ -1882,7 +1882,7 @@ if(min.num() == 0) {
 <<< "  C#1 (37): Clear track" >>>;
 <<< "  D#1 (39): Generate variation (hot sauce icon appears)" >>>;
 <<< "  D1  (38): Toggle variation ON/OFF (after generation ready)" >>>;
-<<< "  CC  18:   Spice level knob (0.0-1.0, adjust before generating)" >>>;
+<<< "  CC  74:   Spice level knob (0.0-1.0, adjust before generating)" >>>;
 <<< "" >>>;
 <<< "OSC Communication:" >>>;
 <<< "  Sending to: localhost:", OSC_SEND_PORT >>>;
@@ -1897,7 +1897,7 @@ if(min.num() == 0) {
 int ignore_cc[128];
 for(0 => int i; i < 128; i++) 1 => ignore_cc[i];
 
-0 => ignore_cc[CC_SPICE_LEVEL];  // Only listen to CC 18 (spice)
+0 => ignore_cc[CC_SPICE_LEVEL];  // Only listen to CC 74 (spice)
 
 fun void midiListener() {
     while(true) {
@@ -2104,7 +2104,7 @@ sendSpiceLevel(DEFAULT_SPICE_LEVEL);  // Send initial spice level as test
 <<< "  2. Press D#1 to generate variation (hot sauce icon appears)" >>>;
 <<< "  3. Wait for green blinking icon (variation ready)" >>>;
 <<< "  4. Press D1 to toggle variation ON/OFF" >>>;
-<<< "  5. Adjust CC 18 knob to change spice, press D#1 to regenerate" >>>;
+<<< "  5. Adjust CC 74 knob to change spice, press D#1 to regenerate" >>>;
 <<< "" >>>;
 <<< "Make sure drum_variation_ai.py is running in watch mode!" >>>;
 <<< "" >>>;

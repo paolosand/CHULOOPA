@@ -860,7 +860,7 @@ chuck chuloopa_drums_v2.ck
 # 2. Wait for auto-generation
 # 3. Check console output for "Applying timing anchoring (spice: 0.50)..."
 # 4. Toggle variation (MIDI Note 38) and listen
-# 5. Adjust spice (CC 18) and regenerate (MIDI Note 39)
+# 5. Adjust spice (CC 74) and regenerate (MIDI Note 39)
 # 6. Verify variation feels related to original groove
 ```
 

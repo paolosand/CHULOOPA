@@ -468,7 +468,7 @@ CHULOOPA/
    - Record a loop in CHULOOPA
    - Verify variation generates automatically
    - Check OSC messages work
-   - Test spice level control (CC 18)
+   - Test spice level control (CC 74)
    - Load variation with D1, verify playback
 
 ### Phase 6: Refinement (Day 6-7)

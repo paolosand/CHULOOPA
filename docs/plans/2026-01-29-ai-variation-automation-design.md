@@ -104,14 +104,14 @@ same creative variation, not three different ideas.
 - **Note 39 (D#1)**: Regenerate variations with current spice level
 
 **Knob:**
-- **CC 18**: Spice level (0-127 → 0.0-1.0, default: **0.5**)
+- **CC 74**: Spice level (0-127 → 0.0-1.0, default: **0.5**)
   - Updates display in real-time
   - Sends OSC message to Python immediately
   - Does NOT trigger regeneration automatically
 
 **Regeneration workflow:**
 1. User records loop → Python auto-generates 3 variations at spice 0.5
-2. User adjusts spice knob (CC 18, e.g., to 0.8)
+2. User adjusts spice knob (CC 74, e.g., to 0.8)
 3. User presses **Note 39 (regenerate button)**
 4. ChucK sends OSC message `/chuloopa/regenerate` to Python
 5. Python regenerates 3 new variations at spice 0.8
@@ -129,7 +129,7 @@ same creative variation, not three different ideas.
 **OSC Communication** (low-latency, event-driven):
 
 **ChucK → Python** (sends immediately to `localhost:5000`):
-- `/chuloopa/spice <float>` - Spice level changed (CC 18)
+- `/chuloopa/spice <float>` - Spice level changed (CC 74)
 - `/chuloopa/regenerate` - Regenerate button pressed (Note 39)
 - `/chuloopa/track_cleared` - Track cleared (Note 37)
 - `/chuloopa/recording_started` - Recording started (Note 36 pressed)
@@ -321,7 +321,7 @@ def handle_track_cleared(address):
 - [ ] Implement OSC listener on port 5001
 - [ ] Implement OSC sender to port 5000
 - [ ] Update export path to `src/tracks/track_0/track_0_drums.txt`
-- [ ] Add CC 18 handler for spice knob
+- [ ] Add CC 74 handler for spice knob
 - [ ] Remap buttons: Note 38 (toggle variation), Note 39 (regenerate)
 - [ ] Implement variation mode toggle logic
 - [ ] Implement auto-cycling at loop boundaries
@@ -336,7 +336,7 @@ def handle_track_cleared(address):
 - [ ] Test variation mode toggle and auto-cycling
 - [ ] Test Gemini API integration
 - [ ] Test fallback to groove_preserve if Gemini fails
-- [ ] Test with MIDI controller (CC 18, Notes 36-39)
+- [ ] Test with MIDI controller (CC 74, Notes 36-39)
 
 ## Future Enhancements (Out of Scope)
 

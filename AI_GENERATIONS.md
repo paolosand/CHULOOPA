@@ -367,7 +367,7 @@ User presses D1 → loads variation
 
 ### Spice Control
 
-**MIDI CC 18** controls temperature in real-time:
+**MIDI CC 74** controls temperature in real-time:
 - **0.0-0.3**: Conservative (blue text in ChuGL)
 - **0.4-0.6**: Balanced (orange text)
 - **0.7-1.0**: Experimental (red text)
@@ -377,7 +377,7 @@ The spice level directly maps to model temperature:
 variation, success = generate_variation(
     pattern,
     variation_type='rhythmic_creator',
-    temperature=current_spice_level  # From CC 18
+    temperature=current_spice_level  # From CC 74
 )
 ```
 

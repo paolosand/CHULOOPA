@@ -81,11 +81,11 @@ chuck chuloopa_drums_v2.ck
   - OFF: Plays original recording (sphere turns red)
 
 - **MIDI Note 39** (D#1): Regenerate variations with current spice level
-  - Python generates new variation using current CC 18 value
+  - Python generates new variation using current CC 74 value
 
 **Spice Control:**
 
-- **CC 18**: Spice level knob (0.0-1.0)
+- **CC 74**: Spice level knob (0.0-1.0)
   - **Low (0.0-0.3)**: Conservative, subtle variations (blue text)
   - **Medium (0.4-0.6)**: Balanced creativity (orange text)
   - **High (0.7-1.0)**: Bold, experimental variations (red text)
@@ -137,7 +137,7 @@ chuck chuloopa_drums_v2.ck
 
 ### Adjusting Spice Level
 
-1. **Turn CC 18 knob** on your MIDI controller
+1. **Turn CC 74 knob** on your MIDI controller
 2. **Watch ChuGL window:** Text color changes (blue → orange → red)
 3. **Console shows:** "Spice level: 75%"
 4. **Press D#1** (Note 39) to regenerate with new spice
@@ -183,7 +183,7 @@ Multi-track support coming in Phase 3:
    ↓
 9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
    ↓
-10. User Toggles Variation (D1) or Adjusts Spice (CC 18) + Regenerates (D#1)
+10. User Toggles Variation (D1) or Adjusts Spice (CC 74) + Regenerates (D#1)
 ```
 
 ### Drums-Only Mode
@@ -290,7 +290,7 @@ Text shows current spice level with color coding:
 - **0.4-0.6**: Orange text (balanced creativity)
 - **0.7-1.0**: Red text (experimental variations)
 
-Updates in real-time as you turn CC 18 knob!
+Updates in real-time as you turn CC 74 knob!
 
 ### AI Variation Generation
 
@@ -345,7 +345,7 @@ The "spice" parameter (0.0-1.0) maps to model temperature for variation creativi
 - **Medium spice (0.4-0.6):** Balanced creativity, moderate randomness
 - **High spice (0.7-1.0):** Experimental variations, high randomness
 
-Adjust with CC 18 knob, then press D#1 to regenerate.
+Adjust with CC 74 knob, then press D#1 to regenerate.
 
 **Why rhythmic_creator over Gemini/Magenta:**
 
@@ -414,7 +414,7 @@ CHULOOPA/
 - [x] Continuation-based variation generation approach
 - [x] OSC communication (Python ↔ ChucK)
 - [x] Automatic variation generation (file watching)
-- [x] Real-time spice level control (CC 18)
+- [x] Real-time spice level control (CC 74)
 - [x] Visual feedback (ChuGL sphere states)
 - [x] Queued variation toggle at loop boundaries
 - [x] Single-track focused workflow
@@ -513,7 +513,7 @@ pip install -r requirements.txt
 
 **Hardware:**
 
-- MIDI controller with CC 18 knob support
+- MIDI controller with CC 74 knob support
 - Microphone for beatbox input
 
 ---
@@ -572,7 +572,7 @@ pip install -r requirements.txt
 
 **Spice knob not working:**
 
-- Verify CC 18 is mapped correctly: `python TESTMIDIINPUT.py`
+- Verify CC 74 is mapped correctly: `python TESTMIDIINPUT.py`
 - Check ChucK console for "Spice level: XX%" messages
 - ChuGL window must be open to see visual feedback
 - Turn knob slowly to see updates

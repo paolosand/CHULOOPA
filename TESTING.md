@@ -35,7 +35,7 @@ export GEMINI_API_KEY=your_api_key_here
 ### 3. Connect MIDI Controller
 
 Make sure your MIDI controller is connected with:
-- **CC 18** mapped to a knob (spice level control)
+- **CC 74** mapped to a knob (spice level control)
 - **Note 36** (C1): Record button
 - **Note 37** (C#1): Clear button
 - **Note 38** (D1): Toggle variation button
@@ -124,7 +124,7 @@ Quick Start:
   1. Press C1 to record a beatbox loop
   2. Wait for Python to generate 3 variations
   3. Press D1 to toggle variation mode (auto-cycles)
-  4. Adjust CC 18 knob and press D#1 to regenerate
+  4. Adjust CC 74 knob and press D#1 to regenerate
 ```
 
 **ChuGL window should open** showing a red sphere (no loop yet).
@@ -216,7 +216,7 @@ Loading: /path/to/src/tracks/track_0/variations/track_0_drums_var1.txt
 
 ### Step 5: Adjust Spice Level and Regenerate
 
-1. **Turn the CC 18 knob** on your controller
+1. **Turn the CC 74 knob** on your controller
 
 **Expected:**
 ```
@@ -334,7 +334,7 @@ python TESTMIDIINPUT.py
 ### Problem: Variations sound identical
 
 **Solutions:**
-- Increase spice level (CC 18 knob)
+- Increase spice level (CC 74 knob)
 - Press D#1 to regenerate
 - Check that Gemini API is working (not using fallback)
 

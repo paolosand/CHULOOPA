@@ -200,7 +200,7 @@ Master Coordinator Loop (lines 1320-1389)
 **sendSpiceLevel(float spice)** (line 205):
 - Message: `/chuloopa/spice`
 - Payload: Float (0.0-1.0)
-- Trigger: CC 18 knob movement
+- Trigger: CC 74 knob movement
 - Purpose: Update variation creativity level
 
 ### 4.2 Python → ChucK
@@ -357,7 +357,7 @@ loadVariationFile(0, 1);  // Always loads var1
 ### 6.6 Spice Level Not Sent on Variation Toggle
 
 **Problem:**
-- User adjusts CC 18 (spice level)
+- User adjusts CC 74 (spice level)
 - User presses D1 (toggle variation)
 - Variation loads with OLD spice level
 - User must press D#1 (regenerate) to get new spice
@@ -572,7 +572,7 @@ class TrackState {
 - Record loop → Export → Python generates → OSC ready → Toggle → Verify playback
 
 **Test: Spice Level Propagation**
-- Set CC 18 = 0.8
+- Set CC 74 = 0.8
 - Regenerate variation
 - Verify Python receives 0.8
 - Verify visual feedback shows red color

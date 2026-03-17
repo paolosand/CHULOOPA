@@ -149,7 +149,7 @@ chuck chuloopa_drums_v2.ck
    - Sphere turns BLUE
    - Hear Jake's AI variation!
 
-5. **Turn CC 18 knob** - Adjust spice level
+5. **Turn CC 74 knob** - Adjust spice level
    - Low (0.0-0.3): Conservative
    - High (0.7-1.0): Creative
 
@@ -182,7 +182,7 @@ chuck chuloopa_drums_v2.ck
   - Unexpected drum placements
   - May stray from original groove
 
-**Map to CHULOOPA spice knob (CC 18):**
+**Map to CHULOOPA spice knob (CC 74):**
 ```python
 # Internal mapping in drum_variation_ai.py
 Spice 0.0-0.3 → Temp 0.7-0.9  (conservative)
