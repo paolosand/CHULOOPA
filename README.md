@@ -2,7 +2,7 @@
 
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
-![CHULOOPA_idle_state](<chuloopa - empty state - option 2.png>)
+![CHULOOPA_idle_state](paper/assets/chuloopa%20-%20empty%20state%20-%20option%202.png)
 
 ## Overview
 
