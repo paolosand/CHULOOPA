@@ -1284,8 +1284,6 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     print(f"\nWatching for drum file changes in: {directory}")
     print(f"Variation type: {variation_type}{' (HEURISTIC MODE - AI disabled)' if use_no_ai else ''}")
     print(f"Device: {'CPU (forced)' if force_cpu else 'Auto-detect (MPS/CUDA/CPU)'}")
-    if not use_no_ai and variation_type == 'rhythmic_creator':
-        print(f"Context loops: {context_loops}x (pattern repeated {context_loops} times)")
     print(f"Timing anchor: {'DISABLED (preserves AI timing)' if use_no_anchor else 'enabled'}")
     print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
     print(f"Current spice level: {current_spice_level:.2f}")
@@ -1587,7 +1585,7 @@ OSC Communication:
     parser.add_argument('--no-ai', action='store_true',
                         help='Skip AI generation, use fast heuristic algorithm instead (instant generation)')
 
-    parser.add_argument('--context-loops', type=int, default=2, choices=[1, 2],
+    parser.add_argument('--context-loops', type=int, default=1, choices=[1, 2],
                         help='How many times to repeat loop in context (1 or 2, default: 2)')
 
     args = parser.parse_args()
