@@ -843,34 +843,55 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         token_multiplier = 0.7 + (spice_level * 5.3)
         num_tokens = int(len(context_tokens) * token_multiplier)
 
-        print(f"  Generating variation with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
+        BATCH_SIZE = 3  # Generate N variations in parallel, pick best
+
+        print(f"  Generating {BATCH_SIZE}x variations with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(pattern.hits)} hits, loop={pattern.loop_duration:.2f}s")
-        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) (multiplier={token_multiplier:.1f}×)")
+        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) per candidate (multiplier={token_multiplier:.1f}×)")
 
         t0 = time.time()  # DIAGNOSTIC
         generated_texts = rhythmic_model.generate_variation_batch(
-            batch_size=1,
+            batch_size=BATCH_SIZE,
             input_pattern=context_text,
             num_tokens=num_tokens,
             temperature=RHYTHMIC_CREATOR_TEMPERATURE
         )
         t_generate = time.time() - t0  # DIAGNOSTIC
-        print(f"    ⏱️  MODEL GENERATION: {t_generate:.2f}s")  # DIAGNOSTIC
+        print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
         # Model generates within 0→T
         t0 = time.time()  # DIAGNOSTIC
+        candidates = []
         loop_dur = pattern.loop_duration
-        raw_pattern = rhythmic_creator_to_chuloopa(generated_texts[0], loop_duration=loop_dur)
+        for i, gen_text in enumerate(generated_texts):
+            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=loop_dur)
+            if candidate.hits and len(candidate.hits) >= 2:
+                candidates.append(candidate)
+                print(f"    Candidate {i}: {len(candidate.hits)} hits (0→T)")
+            else:
+                print(f"    Candidate {i}: rejected (too few hits)")
 
         t_convert = time.time() - t0  # DIAGNOSTIC
         if t_convert > 0.1:
             print(f"    ⏱️  Format conversion: {t_convert:.3f}s")
 
-        if not raw_pattern.hits or len(raw_pattern.hits) < 2:
-            print("  Warning: Generated pattern invalid, falling back")
+        if not candidates:
+            print("  Warning: All candidates invalid, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        print(f"    Generated: {len(raw_pattern.hits)} hits (0→T)")
+        # Score: prefer variety of drum types + density close to target
+        def score_candidate(cand):
+            drum_types = len(set(h.drum_class for h in cand.hits))
+            variety = drum_types / 3.0
+            target_count = len(pattern.hits) * (0.7 + spice_level * 1.3)  # 0.7× at low spice → 2.0× at high
+            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits), 1)
+            density = max(0.0, 1.0 - density_err)
+            return 0.4 * variety + 0.6 * density
+
+        raw_pattern = max(candidates, key=score_candidate)
+        scores = [score_candidate(c) for c in candidates]
+        best_idx = scores.index(max(scores))
+        print(f"    Selected candidate {best_idx} (score={scores[best_idx]:.2f}, hits={len(raw_pattern.hits)})")
 
         max_time = max(hit.timestamp for hit in raw_pattern.hits)
         print(f"    Model output: {max_time:.2f}s last hit (loop: {pattern.loop_duration:.2f}s)")
