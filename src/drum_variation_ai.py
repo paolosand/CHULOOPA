@@ -838,8 +838,8 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Generate similar number of tokens as input (model will echo + continue)
-        num_tokens = len(context_tokens) + (len(context_tokens) // 3)  # Generate 1/3 more tokens than the input
+        # Generate 2x context length: echo (~1x) + continuation (~1x) = full loop of new content
+        num_tokens = len(context_tokens) * 2
 
         BATCH_SIZE = 3  # Generate N variations in parallel, pick best
 
