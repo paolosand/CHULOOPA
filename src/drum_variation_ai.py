@@ -106,7 +106,7 @@ current_variation_type = 'rhythmic_creator'  # Default variation type (set by CL
 
 # Fixed model temperature for stability (empirically determined)
 # Spice controls post-processing (timing drift, fills), NOT model temperature
-RHYTHMIC_CREATOR_TEMPERATURE = 0.9
+RHYTHMIC_CREATOR_TEMPERATURE = 0.3
 
 
 # =============================================================================
@@ -838,8 +838,8 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Generate 3x context: echo (~1x) + continuation (~2x) — aggressive to ensure content past T
-        num_tokens = len(context_tokens) * 3
+        # Generate 2.5x context: echo (~1x) + continuation (~1x) + buffer past 2T
+        num_tokens = int(len(context_tokens) * 2.5)
 
         BATCH_SIZE = 3  # Generate N variations in parallel, pick best
 
@@ -858,51 +858,17 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         t_generate = time.time() - t0  # DIAGNOSTIC
         print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
-        # Option D: strip echo, use continuation only, wrap timestamps to loop boundary
-        # - echo = first len(context_tokens) tokens (timestamps 0→T, same as input)
-        # - continuation = remaining tokens (timestamps T→2T+, novel content)
-        # - wrap: timestamp % loop_duration maps continuation back to 0→T
+        # Full output: echo (0→T) + continuation (T→2T), trim anything past 2T
         t0 = time.time()  # DIAGNOSTIC
         candidates = []
         loop_dur = pattern.loop_duration
         for i, gen_text in enumerate(generated_texts):
-            # Strip echo by token position
-            output_tokens = gen_text.split()
-            continuation_tokens = output_tokens[len(context_tokens):]
-            if not continuation_tokens:
-                print(f"    Candidate {i}: rejected (empty continuation)")
-                continue
-
-            # Parse continuation without duration filter
-            raw = rhythmic_creator_to_chuloopa(" ".join(continuation_tokens), loop_duration=9999)
-            if not raw.hits:
-                print(f"    Candidate {i}: rejected (no hits in continuation)")
-                continue
-
-            # Wrap timestamps into 0→T, deduplicate within 30ms per drum class
-            wrapped = []
-            for hit in sorted(raw.hits, key=lambda h: h.timestamp):
-                t_w = hit.timestamp % loop_dur
-                too_close = any(
-                    h.drum_class == hit.drum_class and abs(h.timestamp - t_w) < 0.03
-                    for h in wrapped
-                )
-                if not too_close:
-                    wrapped.append(DrumHit(
-                        drum_class=hit.drum_class,
-                        timestamp=t_w,
-                        velocity=hit.velocity,
-                        delta_time=0.0
-                    ))
-
-            if len(wrapped) < 2:
-                print(f"    Candidate {i}: rejected (too few hits after wrap)")
-                continue
-
-            candidate = DrumPattern(hits=wrapped, loop_duration=loop_dur)
-            candidate._recalculate_delta_times()
-            candidates.append(candidate)
-            print(f"    Candidate {i}: {len(candidate.hits)} hits (continuation, wrapped)")
+            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=2 * loop_dur)
+            if candidate.hits and len(candidate.hits) >= 2:
+                candidates.append(candidate)
+                print(f"    Candidate {i}: {len(candidate.hits)} hits (0→2T)")
+            else:
+                print(f"    Candidate {i}: rejected (too few hits)")
 
         t_convert = time.time() - t0  # DIAGNOSTIC
         if t_convert > 0.1:
@@ -912,12 +878,12 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             print("  Warning: All candidates invalid, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        # Score: prefer variety of drum types + density close to target
+        # Score: prefer variety of drum types + density close to target (2x hits over 2T)
         def score_candidate(cand):
             drum_types = len(set(h.drum_class for h in cand.hits))
             variety = drum_types / 3.0
-            target_count = len(pattern.hits) * (0.7 + spice_level * 0.6)
-            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits), 1)
+            target_count = len(pattern.hits) * 2 * (0.7 + spice_level * 0.6)
+            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits) * 2, 1)
             density = max(0.0, 1.0 - density_err)
             return 0.4 * variety + 0.6 * density
 
@@ -927,12 +893,12 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         print(f"    Selected candidate {best_idx} (score={scores[best_idx]:.2f}, hits={len(raw_pattern.hits)})")
 
         max_time = max(hit.timestamp for hit in raw_pattern.hits)
-        print(f"    Model output: {max_time:.2f}s last hit (loop: {pattern.loop_duration:.2f}s)")
+        print(f"    Model output: {max_time:.2f}s last hit (loop: {2*pattern.loop_duration:.2f}s)")
 
-        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=pattern.loop_duration)
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=2 * pattern.loop_duration)
         variation._recalculate_delta_times()
 
-        print(f"    Variation: {len(variation.hits)} hits, loop={pattern.loop_duration:.2f}s")
+        print(f"    Variation: {len(variation.hits)} hits, loop={2*pattern.loop_duration:.2f}s")
 
         # Save intermediate files for debugging (if source file is known)
         if pattern.source_file:
