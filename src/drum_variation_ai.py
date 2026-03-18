@@ -838,8 +838,8 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Generate 2x context length: echo (~1x) + continuation (~1x) = full loop of new content
-        num_tokens = len(context_tokens) * 2
+        # Generate 3x context: echo (~1x) + continuation (~2x) — aggressive to ensure content past T
+        num_tokens = len(context_tokens) * 3
 
         BATCH_SIZE = 3  # Generate N variations in parallel, pick best
 
@@ -858,16 +858,52 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         t_generate = time.time() - t0  # DIAGNOSTIC
         print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
-        # Convert all candidates, filter, score, pick best
+        # Option D: strip echo, use continuation only, wrap timestamps to loop boundary
+        # - echo = first len(context_tokens) tokens (timestamps 0→T, same as input)
+        # - continuation = remaining tokens (timestamps T→2T+, novel content)
+        # - wrap: timestamp % loop_duration maps continuation back to 0→T
         t0 = time.time()  # DIAGNOSTIC
         candidates = []
+        loop_dur = pattern.loop_duration
         for i, gen_text in enumerate(generated_texts):
-            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=pattern.loop_duration)
-            if candidate.hits and len(candidate.hits) >= 2:
-                candidates.append(candidate)
-                print(f"    Candidate {i}: {len(candidate.hits)} hits")
-            else:
-                print(f"    Candidate {i}: rejected (too few hits)")
+            # Strip echo by token position
+            output_tokens = gen_text.split()
+            continuation_tokens = output_tokens[len(context_tokens):]
+            if not continuation_tokens:
+                print(f"    Candidate {i}: rejected (empty continuation)")
+                continue
+
+            # Parse continuation without duration filter
+            raw = rhythmic_creator_to_chuloopa(" ".join(continuation_tokens), loop_duration=9999)
+            if not raw.hits:
+                print(f"    Candidate {i}: rejected (no hits in continuation)")
+                continue
+
+            # Wrap timestamps into 0→T, deduplicate within 30ms per drum class
+            wrapped = []
+            for hit in sorted(raw.hits, key=lambda h: h.timestamp):
+                t_w = hit.timestamp % loop_dur
+                too_close = any(
+                    h.drum_class == hit.drum_class and abs(h.timestamp - t_w) < 0.03
+                    for h in wrapped
+                )
+                if not too_close:
+                    wrapped.append(DrumHit(
+                        drum_class=hit.drum_class,
+                        timestamp=t_w,
+                        velocity=hit.velocity,
+                        delta_time=0.0
+                    ))
+
+            if len(wrapped) < 2:
+                print(f"    Candidate {i}: rejected (too few hits after wrap)")
+                continue
+
+            candidate = DrumPattern(hits=wrapped, loop_duration=loop_dur)
+            candidate._recalculate_delta_times()
+            candidates.append(candidate)
+            print(f"    Candidate {i}: {len(candidate.hits)} hits (continuation, wrapped)")
+
         t_convert = time.time() - t0  # DIAGNOSTIC
         if t_convert > 0.1:
             print(f"    ⏱️  Format conversion: {t_convert:.3f}s")
