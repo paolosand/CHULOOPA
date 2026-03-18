@@ -21,6 +21,7 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 - **KNN Classifier** - User-trainable personalized drum detection
 - **AI Variation Generation** - Local transformer-LSTM model for offline drum pattern variations with real-time spice control
 - **OSC Integration** - Automatic Python-ChucK communication for seamless AI workflow
+- **Ableton Live Routing** - MIDI output via macOS IAC Driver for full DAW integration (Drum Rack, FX, mixing)
 - **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
 - **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
 - **ChuGL Visualization** - Real-time visual feedback with color-coded states
@@ -55,14 +56,23 @@ python drum_variation_ai.py --watch
 
 This starts the AI variation engine that auto-generates variations when you record loops using Jake Chen's rhythmic_creator model (local inference, no API required).
 
-### 3. Run CHULOOPA Drums V2 (Terminal 2)
+### 3. Run CHULOOPA (Terminal 2)
 
 **IMPORTANT: Must run from src directory**
 
+**Option A — Built-in drum samples (standalone):**
 ```bash
 cd src
 chuck chuloopa_drums_v2.ck
 ```
+
+**Option B — Ableton Live via IAC Driver (recommended for performance):**
+```bash
+cd src
+chuck chuloopa_drums_v3_ableton.ck
+```
+
+> **Ableton setup required for Option B:** Enable IAC Driver in macOS Audio MIDI Setup → create a MIDI track in Ableton → input: IAC Driver Bus 1, Monitor: In → load Drum Rack → assign C1(36)=Kick, D1(38)=Snare, F#1(42)=Hi-hat. See [Ableton Integration](#ableton-integration) below.
 
 **Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file. OSC connection to Python is established automatically.
 
@@ -165,6 +175,54 @@ Multi-track support coming in Phase 3:
 2. Record Track 1 (Note 40/E1): Snare pattern
 3. Record Track 2 (Note 41/F1): Hi-hat pattern
 4. All tracks stay perfectly in sync (master sync system)
+
+---
+
+## Ableton Integration
+
+`chuloopa_drums_v3_ableton.ck` routes all drum hits as MIDI notes to Ableton Live via the macOS **IAC Driver** (built-in virtual MIDI bus), giving you full access to Ableton's Drum Rack, FX chains, and mixing.
+
+### Architecture
+
+```
+ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
+```
+
+### MIDI Note Mapping (GM Standard)
+
+| Drum  | MIDI Note | Pitch |
+|-------|-----------|-------|
+| Kick  | 36        | C1    |
+| Snare | 38        | D1    |
+| Hi-hat| 42        | F#1   |
+
+### macOS IAC Driver Setup (one-time)
+
+1. Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
+2. **Window → Show MIDI Studio**
+3. Double-click **IAC Driver**
+4. Check **"Device is online"**
+5. Confirm **Bus 1** exists → click Apply
+
+### Ableton Live Setup
+
+1. Create a new **MIDI track**
+2. Set MIDI input to **IAC Driver (Bus 1)**
+3. Set Monitor to **In**
+4. Load a **Drum Rack** on the track
+5. Drop samples onto pads: C1 → Kick, D1 → Snare, F#1 → Hi-hat
+
+### Differences from V2 (built-in samples)
+
+| Feature | V2 (chuloopa_drums_v2.ck) | V3 Ableton (chuloopa_drums_v3_ableton.ck) |
+|---------|--------------------------|-------------------------------------------|
+| Audio output | ChucK SndBuf (WAV files) | Ableton Drum Rack via MIDI |
+| Sound design | Fixed WAV samples | Any samples/synths in Ableton |
+| FX | None | Full Ableton FX chain |
+| Velocity | Applied to SndBuf gain | Sent as MIDI velocity (1–127) |
+| ChuGL visuals | ✅ | ✅ (unchanged) |
+| Recording/KNN/OSC | ✅ | ✅ (unchanged) |
+| Drag-and-drop samples | ✅ | Removed (use Ableton instead) |
 
 ---
 
@@ -379,7 +437,8 @@ Adjust with CC 74 knob, then press D#1 to regenerate.
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v2.ck         # Main system (CURRENT)
+│   ├── chuloopa_drums_v2.ck         # Standalone mode (built-in WAV samples)
+│   ├── chuloopa_drums_v3_ableton.ck # Ableton mode (MIDI via IAC Driver) ← NEW
 │   ├── drum_variation_ai.py         # AI variation generator with OSC
 │   ├── drum_sample_recorder.ck      # Training data collector
 │   ├── feature_extraction.ck        # ChucK feature extraction
@@ -555,6 +614,14 @@ pip install -r requirements.txt
 - Check MIDI controller connection
 - Verify MIDI port in code (line 62: `0 => int MIDI_DEVICE;`)
 - Test MIDI: `python TESTMIDIINPUT.py`
+
+**Ableton not receiving drum hits (v3_ableton):**
+
+- Confirm IAC Driver is online in Audio MIDI Setup
+- Set Ableton MIDI track input to "IAC Driver Bus 1" and Monitor to "In"
+- Check ChucK output for `"Opened MIDI output: IAC Driver Bus 1"`
+- Ensure Drum Rack pads are mapped to C1(36), D1(38), F#1(42)
+- If LPD8 not detected as MIDI input, ChucK prints all available ports on startup — use that to verify port numbering
 
 **Classifier accuracy poor:**
 
