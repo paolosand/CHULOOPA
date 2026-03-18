@@ -262,8 +262,8 @@ class RhythmicCreatorModel:
             # Append to sequence
             idx = torch.cat((idx, idx_next), dim=1)
 
-            # Update hidden state for next iteration
-            hidden = h
+            # Do NOT update hidden state — matches Jake's original gen.py behavior
+            # (hidden stays as initial zero state throughout generation)
 
             # DIAGNOSTIC: Track timing for first 10 tokens
             if i < 10:  # DIAGNOSTIC

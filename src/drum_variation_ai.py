@@ -106,7 +106,7 @@ current_variation_type = 'rhythmic_creator'  # Default variation type (set by CL
 
 # Fixed model temperature for stability (empirically determined)
 # Spice controls post-processing (timing drift, fills), NOT model temperature
-RHYTHMIC_CREATOR_TEMPERATURE = 0.3
+RHYTHMIC_CREATOR_TEMPERATURE = 1.0  # Matches Jake's original gen.py (no temperature scaling)
 
 
 # =============================================================================
