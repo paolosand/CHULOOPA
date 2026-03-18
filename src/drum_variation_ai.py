@@ -841,45 +841,62 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         # Generate similar number of tokens as input (model will echo + continue)
         num_tokens = len(context_tokens) + (len(context_tokens) // 3)  # Generate 1/3 more tokens than the input
 
-        print(f"  Generating with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
-        print(f"    Context: {len(pattern.hits)} hits")
-        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits)")
+        BATCH_SIZE = 3  # Generate N variations in parallel, pick best
 
-        # Generate variation
-        # Model outputs [context echo] + [variation/continuation]
+        print(f"  Generating {BATCH_SIZE}x variations with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
+        print(f"    Context: {len(pattern.hits)} hits, loop={pattern.loop_duration:.2f}s")
+        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) per candidate")
+
+        # Generate N variations in one parallel batch pass
         t0 = time.time()  # DIAGNOSTIC
-        generated_text = rhythmic_model.generate_variation(
+        generated_texts = rhythmic_model.generate_variation_batch(
+            batch_size=BATCH_SIZE,
             input_pattern=context_text,
             num_tokens=num_tokens,
             temperature=RHYTHMIC_CREATOR_TEMPERATURE
         )
         t_generate = time.time() - t0  # DIAGNOSTIC
-        print(f"    ⏱️  MODEL GENERATION: {t_generate:.2f}s")  # DIAGNOSTIC
+        print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
-        generated_tokens = generated_text.split()
-        print(f"    Generated: {len(generated_tokens)} tokens ({len(generated_tokens)//3} hits)")
-
-        # Convert FULL output to CHULOOPA format (DON'T strip context echo)
-        # The full output represents a complete drum pattern
+        # Convert all candidates, filter, score, pick best
         t0 = time.time()  # DIAGNOSTIC
-        raw_pattern = rhythmic_creator_to_chuloopa(generated_text, loop_duration=999)
+        candidates = []
+        for i, gen_text in enumerate(generated_texts):
+            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=pattern.loop_duration)
+            if candidate.hits and len(candidate.hits) >= 2:
+                candidates.append(candidate)
+                print(f"    Candidate {i}: {len(candidate.hits)} hits")
+            else:
+                print(f"    Candidate {i}: rejected (too few hits)")
         t_convert = time.time() - t0  # DIAGNOSTIC
-        if t_convert > 0.1:  # DIAGNOSTIC
-            print(f"    ⏱️  Format conversion: {t_convert:.3f}s")  # DIAGNOSTIC
+        if t_convert > 0.1:
+            print(f"    ⏱️  Format conversion: {t_convert:.3f}s")
 
-        if not raw_pattern.hits:
-            print("  Warning: No valid hits in generated pattern, falling back")
+        if not candidates:
+            print("  Warning: All candidates invalid, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        # Find natural duration from model output
-        max_time = max(hit.timestamp for hit in raw_pattern.hits)
-        print(f"    Model's natural duration: {max_time:.2f}s (original: {pattern.loop_duration:.2f}s)")
+        # Score: prefer variety of drum types + density close to target
+        def score_candidate(cand):
+            drum_types = len(set(h.drum_class for h in cand.hits))
+            variety = drum_types / 3.0
+            target_count = len(pattern.hits) * (0.7 + spice_level * 0.6)
+            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits), 1)
+            density = max(0.0, 1.0 - density_err)
+            return 0.4 * variety + 0.6 * density
 
-        # Use natural duration (no time-warping)
-        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=max_time)
+        raw_pattern = max(candidates, key=score_candidate)
+        scores = [score_candidate(c) for c in candidates]
+        best_idx = scores.index(max(scores))
+        print(f"    Selected candidate {best_idx} (score={scores[best_idx]:.2f}, hits={len(raw_pattern.hits)})")
+
+        max_time = max(hit.timestamp for hit in raw_pattern.hits)
+        print(f"    Model output: {max_time:.2f}s last hit (loop: {pattern.loop_duration:.2f}s)")
+
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=pattern.loop_duration)
         variation._recalculate_delta_times()
 
-        print(f"    Using natural model duration: {len(variation.hits)} hits, {max_time:.2f}s")
+        print(f"    Variation: {len(variation.hits)} hits, loop={pattern.loop_duration:.2f}s")
 
         # Save intermediate files for debugging (if source file is known)
         if pattern.source_file:

@@ -119,6 +119,10 @@ def rhythmic_creator_to_chuloopa(text: str, loop_duration: float):
             start_time = float(tokens[i + 1])
             end_time = float(tokens[i + 2])
 
+            # Skip hits beyond loop boundary (if loop_duration is a real value)
+            if loop_duration < 999 and start_time >= loop_duration:
+                continue
+
             # Map MIDI note to CHULOOPA drum class
             # Skip unknown MIDI notes (melody notes, non-drum percussion)
             if midi_note not in MIDI_TO_CHULOOPA:
