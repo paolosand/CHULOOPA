@@ -838,47 +838,67 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Spice controls token count: ×0.7 (low) → ×6 (high)
-        # Interpolate linearly: spice 0.0 → 0.7×, spice 0.5 → 3.35×, spice 1.0 → 6×
-        token_multiplier = 0.7 + (spice_level * 5.3)
-        num_tokens = int(len(context_tokens) * token_multiplier)
+        # Generate 2.5x context: echo (~1x) + continuation (~1x) + buffer past 2T
+        num_tokens = int(len(context_tokens) * 2.5)
 
-        print(f"  Generating variation with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
+        BATCH_SIZE = 3  # Generate N variations in parallel, pick best
+
+        print(f"  Generating {BATCH_SIZE}x variations with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(pattern.hits)} hits, loop={pattern.loop_duration:.2f}s")
-        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) (multiplier={token_multiplier:.1f}×)")
+        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) per candidate")
 
+        # Generate N variations in one parallel batch pass
         t0 = time.time()  # DIAGNOSTIC
         generated_texts = rhythmic_model.generate_variation_batch(
-            batch_size=1,
+            batch_size=BATCH_SIZE,
             input_pattern=context_text,
             num_tokens=num_tokens,
             temperature=RHYTHMIC_CREATOR_TEMPERATURE
         )
         t_generate = time.time() - t0  # DIAGNOSTIC
-        print(f"    ⏱️  MODEL GENERATION: {t_generate:.2f}s")  # DIAGNOSTIC
+        print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
-        # Model generates within 0→T
+        # Full output: echo (0→T) + continuation (T→2T), trim anything past 2T
         t0 = time.time()  # DIAGNOSTIC
+        candidates = []
         loop_dur = pattern.loop_duration
-        raw_pattern = rhythmic_creator_to_chuloopa(generated_texts[0], loop_duration=loop_dur)
+        for i, gen_text in enumerate(generated_texts):
+            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=2 * loop_dur)
+            if candidate.hits and len(candidate.hits) >= 2:
+                candidates.append(candidate)
+                print(f"    Candidate {i}: {len(candidate.hits)} hits (0→2T)")
+            else:
+                print(f"    Candidate {i}: rejected (too few hits)")
 
         t_convert = time.time() - t0  # DIAGNOSTIC
         if t_convert > 0.1:
             print(f"    ⏱️  Format conversion: {t_convert:.3f}s")
 
-        if not raw_pattern.hits or len(raw_pattern.hits) < 2:
-            print("  Warning: Generated pattern invalid, falling back")
+        if not candidates:
+            print("  Warning: All candidates invalid, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        print(f"    Generated: {len(raw_pattern.hits)} hits (0→T)")
+        # Score: prefer variety of drum types + density close to target (2x hits over 2T)
+        def score_candidate(cand):
+            drum_types = len(set(h.drum_class for h in cand.hits))
+            variety = drum_types / 3.0
+            target_count = len(pattern.hits) * 2 * (0.7 + spice_level * 0.6)
+            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits) * 2, 1)
+            density = max(0.0, 1.0 - density_err)
+            return 0.4 * variety + 0.6 * density
+
+        raw_pattern = max(candidates, key=score_candidate)
+        scores = [score_candidate(c) for c in candidates]
+        best_idx = scores.index(max(scores))
+        print(f"    Selected candidate {best_idx} (score={scores[best_idx]:.2f}, hits={len(raw_pattern.hits)})")
 
         max_time = max(hit.timestamp for hit in raw_pattern.hits)
-        print(f"    Model output: {max_time:.2f}s last hit (loop: {pattern.loop_duration:.2f}s)")
+        print(f"    Model output: {max_time:.2f}s last hit (loop: {2*pattern.loop_duration:.2f}s)")
 
-        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=pattern.loop_duration)
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=2 * pattern.loop_duration)
         variation._recalculate_delta_times()
 
-        print(f"    Variation: {len(variation.hits)} hits, loop={pattern.loop_duration:.2f}s")
+        print(f"    Variation: {len(variation.hits)} hits, loop={2*pattern.loop_duration:.2f}s")
 
         # Save intermediate files for debugging (if source file is known)
         if pattern.source_file:
@@ -888,7 +908,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             # Save raw model output (natural duration, no processing)
             raw_model_file = variations_dir / "track_0_drums_var1_raw_model.txt"
             variation.to_file(str(raw_model_file))
-            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s, loop={pattern.loop_duration:.2f}s)")
+            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s natural duration)")
 
         # Optional timing anchoring (if --no-anchor flag not set)
         if use_no_anchor:
@@ -1064,11 +1084,11 @@ def handle_spice_change(address, spice_level):
 
 
 def handle_regenerate(address):
-    """Handle regenerate request from ChucK."""
+    """Handle regenerate request from ChucK — generates full 5-variation bank."""
     global current_variation_type
 
     print(f"\n{'='*60}")
-    print("GENERATE requested from ChucK (D#1 / Note 39)")
+    print("REGENERATE BANK requested from ChucK (D#1 / Note 39)")
     print(f"{'='*60}")
 
     track_file = DEFAULT_TRACK_DIR / "track_0_drums.txt"
@@ -1081,9 +1101,9 @@ def handle_regenerate(address):
         return
 
     try:
-        generate_variations_for_track(track_file, variation_type=current_variation_type)
+        generate_variation_bank(track_file, variation_type=current_variation_type)
     except Exception as e:
-        error_msg = f"Error generating variations: {e}"
+        error_msg = f"Error generating variation bank: {e}"
         print(error_msg)
         if osc_client:
             osc_client.send_message("/chuloopa/error", error_msg)
@@ -1158,6 +1178,94 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
     print(f"{'='*60}\n")
 
 
+def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
+    """Generate 5 variations at fixed spice levels (0.2/0.4/0.6/0.8/1.0) for the bank.
+
+    Sends OSC progress (/chuloopa/bank_progress 1-5) after each variation,
+    then /chuloopa/bank_ready 5 when complete.
+    """
+    global osc_client
+
+    BANK_SPICE_LEVELS = [0.2, 0.4, 0.6, 0.8, 1.0]
+
+    print(f"\n{'='*60}")
+    print("GENERATING VARIATION BANK (5 spice levels)")
+    print(f"  Spice levels: {BANK_SPICE_LEVELS}")
+    print(f"  Variation type: {variation_type}")
+    print(f"{'='*60}")
+
+    if not track_file.exists():
+        error_msg = f"Error: Track file not found: {track_file}"
+        print(error_msg)
+        if osc_client:
+            osc_client.send_message("/chuloopa/error", error_msg)
+        return
+
+    print(f"Loading: {track_file}")
+    pattern = DrumPattern.from_file(str(track_file))
+
+    if not pattern.hits:
+        error_msg = "Warning: No hits found in pattern"
+        print(error_msg)
+        if osc_client:
+            osc_client.send_message("/chuloopa/error", error_msg)
+        return
+
+    print(f"  Loaded {len(pattern.hits)} hits, duration: {pattern.loop_duration:.3f}s")
+
+    # Create variations directory
+    variations_dir = DEFAULT_VARIATIONS_DIR
+    variations_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, spice in enumerate(BANK_SPICE_LEVELS):
+        var_num = i + 1
+
+        if osc_client:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"Generating var {var_num}/5 (spice {spice:.1f})...")
+
+        print(f"\n  [{var_num}/5] Generating variation (spice: {spice:.2f})")
+
+        try:
+            varied, success = generate_variation(pattern, variation_type, temperature=spice)
+
+            output_file = variations_dir / f"track_0_drums_var{var_num}.txt"
+            varied.to_file(str(output_file))
+            print(f"  Saved: {output_file}")
+
+            if osc_client:
+                osc_client.send_message("/chuloopa/bank_progress", var_num)
+
+        except Exception as e:
+            print(f"  Warning: Failed to generate var {var_num}: {e}")
+            # Save a fallback humanized variation so the slot is always filled
+            try:
+                fallback = humanize_pattern(pattern,
+                                           timing_variance=0.005 + 0.02 * spice,
+                                           velocity_variance=0.05 + 0.1 * spice)
+                output_file = variations_dir / f"track_0_drums_var{var_num}.txt"
+                fallback.to_file(str(output_file))
+                print(f"  Fallback saved: {output_file}")
+                if osc_client:
+                    osc_client.send_message("/chuloopa/bank_progress", var_num)
+            except Exception as e2:
+                print(f"  Fallback also failed: {e2}")
+
+    # Send completion notification
+    if osc_client:
+        try:
+            osc_client.send_message("/chuloopa/bank_ready", 5)
+            osc_client.send_message("/chuloopa/generation_progress", "Bank ready! (5 variations)")
+            print(f"\n  Sent /chuloopa/bank_ready 5 to ChucK ({OSC_HOST}:{OSC_SEND_PORT})")
+        except Exception as e:
+            print(f"  ERROR sending bank_ready OSC: {e}")
+    else:
+        print("  WARNING: OSC client not initialized, cannot notify ChucK")
+
+    print(f"\n✓ Variation bank complete ({len(BANK_SPICE_LEVELS)} variations)")
+    print(f"{'='*60}\n")
+
+
 # =============================================================================
 # FILE WATCHING
 # =============================================================================
@@ -1210,9 +1318,9 @@ if HAVE_WATCHDOG:
                 time.sleep(0.5)
 
                 try:
-                    generate_variations_for_track(filepath, self.variation_type)
+                    generate_variation_bank(filepath, self.variation_type)
                 except Exception as e:
-                    error_msg = f"Error generating variations: {e}"
+                    error_msg = f"Error generating variation bank: {e}"
                     print(error_msg)
                     if osc_client:
                         osc_client.send_message("/chuloopa/error", error_msg)
@@ -1255,8 +1363,8 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     server_thread.daemon = True
     server_thread.start()
 
-    # Setup file watcher (auto_generate=False means only generate on OSC request)
-    handler = DrumFileHandler(variation_type=variation_type, auto_generate=False)
+    # Setup file watcher (auto_generate=True: generate bank automatically on new recording)
+    handler = DrumFileHandler(variation_type=variation_type, auto_generate=True)
     observer = Observer()
     observer.schedule(handler, directory, recursive=False)
     observer.start()
