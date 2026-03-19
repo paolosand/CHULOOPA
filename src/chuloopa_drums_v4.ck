@@ -1263,20 +1263,10 @@ fun void oscListener() {
                 <<< "" >>>;
             }
             else if(msg.address == "/chuloopa/bank_ready") {
-                // Full variation bank available
-                msg.getInt(0) => int num_vars;
                 1 => bank_ready;
-                num_vars => bank_progress;
                 1 => variations_ready;
                 0 => generation_failed;
-                // Mark all variations as available
-                for(1 => int i; i <= num_vars && i <= NUM_VARIATIONS; i++) {
-                    1 => variation_available[i];
-                }
-                <<< "" >>>;
-                <<< "✓ Python: Variation bank ready! (" + num_vars + " variations)" >>>;
-                <<< "  Audio-driven spice will select variation automatically" >>>;
-                <<< "" >>>;
+                <<< "Bank ready — auto-switching enabled" >>>;
             }
             else if(msg.address == "/chuloopa/bank_progress") {
                 // Incremental bank progress
@@ -2004,6 +1994,9 @@ fun void midiListener() {
                         // Recalculate effective spice with new ceiling
                         Math.min(detected_spice_level, spice_ceiling) => effective_spice;
                         <<< "Spice ceiling:", (spice_ceiling * 100) $ int, "% | Effective:", (effective_spice * 100) $ int, "%" >>>;
+                        oout.start("/chuloopa/spice_ceiling");
+                        spice_ceiling => oout.add;
+                        oout.send();
                     }
                 }
             }
