@@ -99,7 +99,7 @@ osc_client = None
 # Global state
 current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
-use_no_anchor = False  # Skip timing anchoring if True
+use_no_anchor = True  # Timing anchoring off by default (rhythmic_creator output is solid)
 use_no_ai = False  # Force heuristic generation (skip AI) if True
 context_loops = 1  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 1
 current_variation_type = 'rhythmic_creator'  # Default variation type (set by CLI --type arg)
@@ -116,7 +116,7 @@ RHYTHMIC_CREATOR_TEMPERATURE = 1.0  # Matches Jake's original gen.py (no tempera
 @dataclass
 class DrumHit:
     """Single drum hit with timing and velocity."""
-    drum_class: int      # 0=kick, 1=snare, 2=hat
+    midi_note: int       # GM MIDI note number (36=kick, 38=snare, 42=hat)
     timestamp: float     # seconds from loop start
     velocity: float      # 0.0-1.0
     delta_time: float    # seconds until next hit (or loop end)
@@ -151,12 +151,16 @@ class DrumPattern:
                 if not line or line.startswith('#'):
                     continue
 
-                # Parse data line: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
+                # Parse data line: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME
                 try:
                     parts = line.split(',')
                     if len(parts) >= 4:
+                        raw = int(parts[0])
+                        # Backward compat: old files use 0/1/2 class notation
+                        _LEGACY_MAP = {0: 36, 1: 38, 2: 42}
+                        midi_note = _LEGACY_MAP.get(raw, raw) if raw <= 2 else raw
                         hit = DrumHit(
-                            drum_class=int(parts[0]),
+                            midi_note=midi_note,
                             timestamp=float(parts[1]),
                             velocity=float(parts[2]),
                             delta_time=float(parts[3])
@@ -180,8 +184,8 @@ class DrumPattern:
         with open(filepath, 'w') as f:
             # Write header
             f.write(f"# Track Drum Data (AI Generated Variation)\n")
-            f.write(f"# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME\n")
-            f.write(f"# Classes: 0=kick, 1=snare, 2=hat\n")
+            f.write(f"# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\n")
+            f.write(f"# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)\n")
             f.write(f"# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
             f.write(f"# Total loop duration: {self.loop_duration:.6f} seconds\n")
 
@@ -190,7 +194,7 @@ class DrumPattern:
                 # Normalize velocity: clamp to 0-1, then map to 0.7-0.9
                 normalized_velocity = max(0.0, min(1.0, hit.velocity))
                 normalized_velocity = 0.7 + (normalized_velocity * 0.2)
-                f.write(f"{hit.drum_class},{hit.timestamp:.6f},{normalized_velocity:.6f},{hit.delta_time:.6f}\n")
+                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{normalized_velocity:.6f},{hit.delta_time:.6f}\n")
 
     def _recalculate_delta_times(self):
         """Recalculate delta_times based on timestamps and loop duration."""
@@ -211,7 +215,7 @@ class DrumPattern:
     def copy(self) -> 'DrumPattern':
         """Create a deep copy of the pattern."""
         return DrumPattern(
-            hits=[DrumHit(h.drum_class, h.timestamp, h.velocity, h.delta_time)
+            hits=[DrumHit(h.midi_note, h.timestamp, h.velocity, h.delta_time)
                   for h in self.hits],
             loop_duration=self.loop_duration,
             source_file=self.source_file
@@ -276,11 +280,11 @@ def mutate_pattern(pattern: DrumPattern,
         if random.random() < remove_probability:
             continue
 
-        # Maybe swap drum class
+        # Maybe swap drum note
         if random.random() < swap_probability:
-            # Swap to a different class
-            other_classes = [c for c in [0, 1, 2] if c != hit.drum_class]
-            hit.drum_class = random.choice(other_classes)
+            # Swap to a different note
+            other_classes = [n for n in [36, 38, 42] if n != hit.midi_note]
+            hit.midi_note = random.choice(other_classes)
 
         new_hits.append(hit)
 
@@ -291,7 +295,7 @@ def mutate_pattern(pattern: DrumPattern,
 
             if ghost_timestamp < result.loop_duration:
                 ghost_hit = DrumHit(
-                    drum_class=random.choice([0, 1, 2]),
+                    midi_note=random.choice([36, 38, 42]),
                     timestamp=ghost_timestamp,
                     velocity=hit.velocity * random.uniform(0.3, 0.6),
                     delta_time=0.0
@@ -332,7 +336,7 @@ def densify_pattern(pattern: DrumPattern,
             for j in range(num_fills):
                 fill_time = current.timestamp + gap * (j + 1) / (num_fills + 1)
                 fill_hit = DrumHit(
-                    drum_class=2,  # Usually hats for fills
+                    midi_note=42,  # Usually closed hi-hat for fills
                     timestamp=fill_time,
                     velocity=random.uniform(0.3, 0.6),
                     delta_time=0.0
@@ -402,7 +406,7 @@ def timing_anchor(model_pattern: DrumPattern,
             # If multiple hits map to same slot, keep hit with highest velocity
             if nearest_pos not in grid_slots or model_hit.velocity > grid_slots[nearest_pos].velocity:
                 grid_slots[nearest_pos] = DrumHit(
-                    drum_class=model_hit.drum_class,  # Trust model's choice
+                    midi_note=model_hit.midi_note,  # Trust model's choice
                     timestamp=nearest_pos,
                     velocity=model_hit.velocity,
                     delta_time=0.0  # Will recalculate
@@ -464,7 +468,7 @@ def fit_to_loop_duration(pattern: DrumPattern, target_duration: float) -> DrumPa
         # Keep only hits within target duration (allow hits at boundary)
         if new_timestamp <= target_duration:
             fitted_hits.append(DrumHit(
-                drum_class=hit.drum_class,
+                midi_note=hit.midi_note,
                 timestamp=new_timestamp,
                 velocity=hit.velocity,
                 delta_time=0.0  # Will recalculate
@@ -485,18 +489,18 @@ def rebuild_timestamps(varied_groove: List[dict], original_start_time: float = 0
     timestamps from delta times (which are manipulated by mutations).
 
     Args:
-        varied_groove: List of {'class', 'vel', 'delta'} dicts
+        varied_groove: List of {'midi_note', 'vel', 'delta'} dicts
         original_start_time: Timestamp of first hit in original pattern
 
     Returns:
-        List of {'class', 'timestamp', 'vel', 'delta'} dicts
+        List of {'midi_note', 'timestamp', 'vel', 'delta'} dicts
     """
     final_output = []
     current_time = original_start_time
 
     for hit in varied_groove:
         final_output.append({
-            'class': hit['class'],
+            'midi_note': hit['midi_note'],
             'timestamp': current_time,
             'vel': hit['vel'],
             'delta': hit['delta']
@@ -549,25 +553,25 @@ def generate_musical_variation(pattern: DrumPattern, spice_level: float) -> Drum
 
     # Convert to dict format for easier manipulation
     drum_data = [
-        {'class': h.drum_class, 'vel': h.velocity, 'delta': h.delta_time, 'timestamp': h.timestamp}
+        {'midi_note': h.midi_note, 'vel': h.velocity, 'delta': h.delta_time, 'timestamp': h.timestamp}
         for h in pattern.hits
     ]
 
     varied_groove = []
 
     for i, hit in enumerate(drum_data):
-        c = hit['class']
+        c = hit['midi_note']
         v = hit['vel']
         d = hit['delta']
 
         # PROTECT ANCHORS (always protected regardless of spice)
         # Protect: first hit, strong backbeats (snares with high velocity)
-        is_anchor = (i == 0) or (c == 1 and v > 0.7)
+        is_anchor = (i == 0) or (c in (37, 38, 39, 40) and v > 0.7)
 
         if is_anchor:
             # Just humanize velocity slightly
             v = max(0.1, min(1.0, v + random.uniform(-0.03, 0.03)))
-            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+            varied_groove.append({'midi_note': c, 'vel': v, 'delta': d})
             continue
 
         # Apply mutations with spice-scaled probabilities
@@ -576,37 +580,37 @@ def generate_musical_variation(pattern: DrumPattern, spice_level: float) -> Drum
         if roll < probs['double']:
             # Double the hit (split delta in half)
             half_delta = d / 2.0
-            varied_groove.append({'class': c, 'vel': v * 0.9, 'delta': half_delta})
-            varied_groove.append({'class': c, 'vel': v * 0.7, 'delta': half_delta})
+            varied_groove.append({'midi_note': c, 'vel': v * 0.9, 'delta': half_delta})
+            varied_groove.append({'midi_note': c, 'vel': v * 0.7, 'delta': half_delta})
 
         elif roll < probs['double'] + probs['ghost']:
             # Add ghost note (snare)
             half_delta = d / 2.0
-            varied_groove.append({'class': c, 'vel': v, 'delta': half_delta})
-            varied_groove.append({'class': 1, 'vel': random.uniform(0.15, 0.35), 'delta': half_delta})
+            varied_groove.append({'midi_note': c, 'vel': v, 'delta': half_delta})
+            varied_groove.append({'midi_note': 38, 'vel': random.uniform(0.15, 0.35), 'delta': half_delta})
 
-        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] and c == 2:
-            # Hi-hat triplets (only for hats)
+        elif roll < probs['double'] + probs['ghost'] + probs['triplet'] and c == 42:
+            # Hi-hat triplets (only for closed hi-hat)
             third_delta = d / 3.0
-            varied_groove.append({'class': 2, 'vel': v, 'delta': third_delta})
-            varied_groove.append({'class': 2, 'vel': v * 0.6, 'delta': third_delta})
-            varied_groove.append({'class': 2, 'vel': v * 0.8, 'delta': third_delta})
+            varied_groove.append({'midi_note': 42, 'vel': v, 'delta': third_delta})
+            varied_groove.append({'midi_note': 42, 'vel': v * 0.6, 'delta': third_delta})
+            varied_groove.append({'midi_note': 42, 'vel': v * 0.8, 'delta': third_delta})
 
         elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] and len(varied_groove) > 0:
             # Shift to "and" (syncopation)
             # Push this note later by extending previous note's delta
             shift_amount = d / 2.0
             varied_groove[-1]['delta'] += shift_amount  # Lengthen previous note
-            varied_groove.append({'class': c, 'vel': v, 'delta': d - shift_amount})  # Shorten current
+            varied_groove.append({'midi_note': c, 'vel': v, 'delta': d - shift_amount})  # Shorten current
 
         elif roll < probs['double'] + probs['ghost'] + probs['triplet'] + probs['shift_and'] + probs['substitute']:
             # Drum substitution (swap weak kicks for hats, or hats for weak kicks)
-            new_class = 2 if c == 0 else 0
-            varied_groove.append({'class': new_class, 'vel': v * 0.8, 'delta': d})
+            new_class = 42 if c in (35, 36) else 36
+            varied_groove.append({'midi_note': new_class, 'vel': v * 0.8, 'delta': d})
 
         else:
             # Pass through unchanged
-            varied_groove.append({'class': c, 'vel': v, 'delta': d})
+            varied_groove.append({'midi_note': c, 'vel': v, 'delta': d})
 
     # Rebuild timestamps from delta times to preserve exact loop duration
     final_hits_data = rebuild_timestamps(varied_groove, original_start_time=pattern.hits[0].timestamp if pattern.hits else 0.0)
@@ -615,7 +619,7 @@ def generate_musical_variation(pattern: DrumPattern, spice_level: float) -> Drum
     final_hits = []
     for hit_data in final_hits_data:
         final_hits.append(DrumHit(
-            drum_class=hit_data['class'],
+            midi_note=hit_data['midi_note'],
             timestamp=hit_data['timestamp'],
             velocity=hit_data['vel'],
             delta_time=hit_data['delta']
@@ -646,7 +650,7 @@ def simplify_pattern(pattern: DrumPattern,
     # Always keep the first kick
     first_kick = None
     for hit in result.hits:
-        if hit.drum_class == 0:
+        if hit.midi_note in (35, 36):
             first_kick = hit
             break
 
@@ -722,7 +726,7 @@ def groove_preserve(pattern: DrumPattern,
     for hit in result.hits:
         # 1. Timing humanization (Gaussian, tighter than humanize_pattern)
         # Kicks tend to be more on-beat, hats/snares can be looser
-        if hit.drum_class == 0:  # kick - tighter timing
+        if hit.midi_note in (35, 36):  # kick - tighter timing
             timing_shift = random.gauss(0, timing_variance / 3)
         else:  # snare/hat - slightly looser
             timing_shift = random.gauss(0, timing_variance / 2)
@@ -740,9 +744,9 @@ def groove_preserve(pattern: DrumPattern,
         vel_shift = random.gauss(0, velocity_variance / 2)
 
         # Accent pattern: boost downbeats and backbeats slightly
-        if is_downbeat and hit.drum_class == 0:  # Kick on downbeat
+        if is_downbeat and hit.midi_note in (35, 36):  # Kick on downbeat
             vel_shift += accent_shift * random.uniform(0.5, 1.0)
-        elif is_backbeat and hit.drum_class == 1:  # Snare on backbeat
+        elif is_backbeat and hit.midi_note in (37, 38, 39, 40):  # Snare on backbeat
             vel_shift += accent_shift * random.uniform(0.3, 0.8)
 
         hit.velocity = max(0.1, min(1.0, hit.velocity + vel_shift))
@@ -762,7 +766,7 @@ def groove_preserve(pattern: DrumPattern,
 # Try to import rhythmic creator model
 try:
     from rhythmic_creator_model import get_model as get_rhythmic_model
-    from format_converters import chuloopa_to_rhythmic_creator, rhythmic_creator_to_chuloopa
+    from format_converters import chuloopa_to_rhythmic_creator, rhythmic_creator_to_chuloopa, VALID_GM_DRUM_NOTES
     HAVE_RHYTHMIC_CREATOR = True
 except ImportError as e:
     HAVE_RHYTHMIC_CREATOR = False
@@ -838,14 +842,16 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Generate 2.5x context: echo (~1x) + continuation (~1x) + buffer past 2T
-        num_tokens = int(len(context_tokens) * 2.5)
+        # Spice controls token count: ×0.7 (low) → ×3 (high)
+        # Interpolate linearly: spice 0.0 → 0.7×, spice 0.5 → 1.85×, spice 1.0 → 3.0×
+        token_multiplier = 0.7 + (spice_level * 2.3)
+        num_tokens = int(len(context_tokens) * token_multiplier)
 
         BATCH_SIZE = 3  # Generate N variations in parallel, pick best
 
         print(f"  Generating {BATCH_SIZE}x variations with rhythmic_creator (temp={RHYTHMIC_CREATOR_TEMPERATURE:.2f}, spice={spice_level:.2f})...")
         print(f"    Context: {len(pattern.hits)} hits, loop={pattern.loop_duration:.2f}s")
-        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) per candidate")
+        print(f"    Generating: {num_tokens} tokens (~{num_tokens//3} hits) per candidate (multiplier={token_multiplier:.1f}×)")
 
         # Generate N variations in one parallel batch pass
         t0 = time.time()  # DIAGNOSTIC
@@ -858,15 +864,15 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         t_generate = time.time() - t0  # DIAGNOSTIC
         print(f"    ⏱️  MODEL GENERATION (batch={BATCH_SIZE}): {t_generate:.2f}s")  # DIAGNOSTIC
 
-        # Full output: echo (0→T) + continuation (T→2T), trim anything past 2T
+        # Model generates within 0→T
         t0 = time.time()  # DIAGNOSTIC
         candidates = []
         loop_dur = pattern.loop_duration
         for i, gen_text in enumerate(generated_texts):
-            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=2 * loop_dur)
+            candidate = rhythmic_creator_to_chuloopa(gen_text, loop_duration=loop_dur)
             if candidate.hits and len(candidate.hits) >= 2:
                 candidates.append(candidate)
-                print(f"    Candidate {i}: {len(candidate.hits)} hits (0→2T)")
+                print(f"    Candidate {i}: {len(candidate.hits)} hits (0→T)")
             else:
                 print(f"    Candidate {i}: rejected (too few hits)")
 
@@ -878,12 +884,12 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             print("  Warning: All candidates invalid, falling back")
             return generate_musical_variation(pattern, spice_level), False
 
-        # Score: prefer variety of drum types + density close to target (2x hits over 2T)
+        # Score: prefer variety of drum types + density close to target
         def score_candidate(cand):
-            drum_types = len(set(h.drum_class for h in cand.hits))
-            variety = drum_types / 3.0
-            target_count = len(pattern.hits) * 2 * (0.7 + spice_level * 0.6)
-            density_err = abs(len(cand.hits) - target_count) / max(len(pattern.hits) * 2, 1)
+            drum_types = len(set(h.midi_note for h in cand.hits))
+            variety = min(1.0, drum_types / 5.0)
+            target_count = len(pattern.hits) * (0.7 + spice_level * 2.3)  # 0.7× at low spice → 3.0× at high (matches token multiplier)
+            density_err = abs(len(cand.hits) - target_count) / max(target_count, 1)
             density = max(0.0, 1.0 - density_err)
             return 0.4 * variety + 0.6 * density
 
@@ -893,12 +899,12 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         print(f"    Selected candidate {best_idx} (score={scores[best_idx]:.2f}, hits={len(raw_pattern.hits)})")
 
         max_time = max(hit.timestamp for hit in raw_pattern.hits)
-        print(f"    Model output: {max_time:.2f}s last hit (loop: {2*pattern.loop_duration:.2f}s)")
+        print(f"    Model output: {max_time:.2f}s last hit (loop: {pattern.loop_duration:.2f}s)")
 
-        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=2 * pattern.loop_duration)
+        variation = DrumPattern(hits=raw_pattern.hits, loop_duration=pattern.loop_duration)
         variation._recalculate_delta_times()
 
-        print(f"    Variation: {len(variation.hits)} hits, loop={2*pattern.loop_duration:.2f}s")
+        print(f"    Variation: {len(variation.hits)} hits, loop={pattern.loop_duration:.2f}s")
 
         # Save intermediate files for debugging (if source file is known)
         if pattern.source_file:
@@ -908,7 +914,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
             # Save raw model output (natural duration, no processing)
             raw_model_file = variations_dir / "track_0_drums_var1_raw_model.txt"
             variation.to_file(str(raw_model_file))
-            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s natural duration)")
+            print(f"    Saved raw model output: {raw_model_file.name} ({len(variation.hits)} hits, {max_time:.2f}s, loop={pattern.loop_duration:.2f}s)")
 
         # Optional timing anchoring (if --no-anchor flag not set)
         if use_no_anchor:
@@ -952,16 +958,22 @@ def pattern_to_gemini_prompt(pattern: DrumPattern) -> str:
         f"Loop duration: {pattern.loop_duration:.6f} seconds",
         f"Total hits: {len(pattern.hits)}",
         "",
-        "Pattern (DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME):",
-        "# Classes: 0=kick, 1=snare, 2=hat"
+        "Pattern (MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME):",
+        "# MIDI_NOTE: GM drum note (36=kick, 38=snare, 42=closed hat, 44=pedal hat, 46=open hat, 49=crash, 51=ride, etc.)"
     ]
     for hit in pattern.hits:
-        lines.append(f"{hit.drum_class},{hit.timestamp:.6f},{hit.velocity:.6f},{hit.delta_time:.6f}")
+        lines.append(f"{hit.midi_note},{hit.timestamp:.6f},{hit.velocity:.6f},{hit.delta_time:.6f}")
     return "\n".join(lines)
 
 
 def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern:
     """Parse Gemini's pattern output back to DrumPattern."""
+    # Import VALID_GM_DRUM_NOTES for validation (may not be available if format_converters not loaded)
+    try:
+        from format_converters import VALID_GM_DRUM_NOTES as _VALID_NOTES
+    except ImportError:
+        _VALID_NOTES = set(range(27, 88))
+
     hits = []
     for line in pattern_text.strip().split('\n'):
         line = line.strip()
@@ -970,8 +982,11 @@ def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern
         parts = line.split(',')
         if len(parts) >= 4:
             try:
+                midi_note = int(parts[0])
+                if midi_note not in _VALID_NOTES:
+                    continue
                 hits.append(DrumHit(
-                    drum_class=int(parts[0]),
+                    midi_note=midi_note,
                     timestamp=float(parts[1]),
                     velocity=float(parts[2]),
                     delta_time=float(parts[3])
@@ -981,12 +996,17 @@ def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern
     return DrumPattern(hits=hits, loop_duration=loop_duration)
 
 
-def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPattern:
+def gemini_variation(pattern: DrumPattern, spice_level: float = 0.5) -> DrumPattern:
     """Generate variation using Gemini AI.
+
+    Spice controls target hit density:
+        0.0 → ~0.7× original hits (sparse skeleton)
+        0.5 → ~1.35× original hits (moderate embellishment)
+        1.0 → ~2.0× original hits (dense fills, hi-hats, ghost notes)
 
     Args:
         pattern: Input drum pattern
-        temperature: Sampling temperature (0.0-1.0, default 0.7)
+        spice_level: 0.0-1.0 controlling hit density of the variation
 
     Returns:
         Tuple of (DrumPattern, success: bool)
@@ -1001,41 +1021,61 @@ def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPatt
         print("Warning: GEMINI_API_KEY not set, falling back to groove_preserve")
         return groove_preserve(pattern), False
 
+    # Compute target hit count: 0.7× at spice=0.0, 1.35× at spice=0.5, 2.0× at spice=1.0
+    hit_multiplier = 0.7 + (spice_level * 1.3)
+    target_hits = max(1, round(len(pattern.hits) * hit_multiplier))
+
     try:
         # Client reads API key from GEMINI_API_KEY environment variable
         client = genai.Client()
 
-        system_prompt = f"""You are a drum loop generator. Given an input drum pattern you will output a variation of an existing drum pattern given the previous pattern and the output variant's target "spice" level. While maintaining the same key groove and ensuring that the total loop duration is exactly the same. Ensure you always understand the user's groove first before trying to variate.
+        system_prompt = f"""You are an expert drum loop programmer. Generate a variation of the input drum pattern that targets approximately {target_hits} total hits (original has {len(pattern.hits)} hits). Use hit count as a proxy for overall energy and complexity — not just hi-hat density.
 
-Add natural human variation through subtle timing shifts, velocity changes, and ghost notes to make the loop feel "alive" like a real drummer playing the groove.
+ENERGY LEVEL GUIDE (based on target hit count relative to original):
+- Fewer hits than original → reduce complexity: simplify rhythms, drop fills, thin out percussion. The pattern should feel more open and spacious.
+- Similar hits to original → reinterpret the groove: swap instruments, shift accents, vary velocities, add ghost notes where hits are removed elsewhere. Keep the same energy, change the texture.
+- More hits than original → raise the energy: add kick doubles, snare ghost notes, off-beat accents, toms, syncopation, anticipations. Think like a drummer who is "heating up" — the groove gets busier and more intense across ALL drum voices, not just cymbals.
 
-Return the output in the following json format:
-{{"pattern": ""}}
+IMPORTANT: Do NOT default to hi-hats as the primary way to add hits. Spread additional complexity across the full kit — kicks, snares, toms, and cymbals all contribute to energy.
 
-The pattern field should contain the drum data in the exact same CSV format as the input:
-DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME
+AVAILABLE DRUM SOUNDS (use any that serve the groove):
+- 35/36: Bass drum (kick) — doubles, anticipations, syncopation
+- 38/40: Snare — backbeat, ghost notes, drags
+- 37: Cross-stick — subtle snare replacement or accent
+- 42: Closed hi-hat
+- 44: Pedal hi-hat
+- 46: Open hi-hat (use for accents, not filler)
+- 49/57: Crash cymbal (section accents only)
+- 51: Ride cymbal
+- 41/43/45/47/48/50: Toms low→high (fills, accents)
+- 39: Hand clap (use sparingly)
+
+RULES:
+1. The rhythmic backbone (kick/snare pulse) must remain recognizable — don't erase the original groove
+2. Loop duration must be EXACTLY {pattern.loop_duration:.6f} seconds
+3. Sum of all DELTA_TIME values must equal the loop duration exactly
+4. Velocities should feel human: kick ~0.7-0.9, snare ~0.6-0.85, ghost notes ~0.2-0.4, cymbals ~0.3-0.6
+5. Aim for {target_hits} hits (±2 acceptable) — spread across the full kit, not just one voice
+6. No random note dumps — every hit should serve the groove
+
+OUTPUT FORMAT (JSON):
+{{"pattern": "MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\nMIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\n..."}}
+
 Where:
-- DRUM_CLASS: 0=kick, 1=snare, 2=hat
-- TIMESTAMP: seconds from loop start
+- MIDI_NOTE: integer GM drum note number
+- TIMESTAMP: seconds from loop start (0.0 to < {pattern.loop_duration:.6f})
 - VELOCITY: 0.0-1.0
-- DELTA_TIME: seconds until next hit (last hit's delta_time = time until loop end)
+- DELTA_TIME: seconds until next hit; last hit's DELTA_TIME = time remaining until loop end
 
-CRITICAL: The sum of all delta_times must equal the loop duration exactly.
-
-SPICE LEVEL: A float from 0.0 to 1.0 controlling how the groove is transformed:
-- 0.0-0.3 (low): Simplify and reduce. Remove ghost notes, thin out hi-hats, strip the pattern back to its essential kick and snare skeleton. Subtle velocity variation only.
-- 0.4-0.6 (mid): Light embellishment. Keep the original hits intact, add occasional ghost notes or a light hi-hat. Small timing and velocity humanization.
-- 0.7-1.0 (high): Add fills, hi-hat density, and ghost notes freely. You may shift or replace individual kick/snare hits with ghost notes for variation. CRITICAL: The overall groove feel must be maintained — the rhythmic character and pulse of the original pattern should remain recognizable.
-
-SPICE LEVEL for this request: {temperature}"""
+Hits must be sorted by TIMESTAMP ascending."""
 
         user_prompt = pattern_to_gemini_prompt(pattern)
 
-        print(f"  Calling Gemini API ({GEMINI_MODEL})...")
+        print(f"  Calling Gemini API ({GEMINI_MODEL}, spice={spice_level:.2f}, target={target_hits} hits)...")
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=system_prompt + "\n\nInput pattern:\n" + user_prompt,
-            config={"temperature": temperature, "max_output_tokens": 4096, "thinking_config": {"thinking_budget": 2048}}
+            config={"temperature": 1.0, "max_output_tokens": 4096, "thinking_config": {"thinking_budget": 2048}}
         )
 
         # Extract text from response
@@ -1426,7 +1466,7 @@ def generate_variation(pattern: DrumPattern,
         return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'gemini':
-        return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+        return gemini_variation(pattern, spice_level=kwargs.get('spice_level', current_spice_level))
 
     elif variation_type == 'groove_preserve':
         return groove_preserve(
