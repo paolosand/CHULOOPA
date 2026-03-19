@@ -108,6 +108,14 @@ current_variation_type = 'rhythmic_creator'  # Default variation type (set by CL
 # Spice controls post-processing (timing drift, fills), NOT model temperature
 RHYTHMIC_CREATOR_TEMPERATURE = 1.0  # Matches Jake's original gen.py (no temperature scaling)
 
+# Ceiling-aware staged bank generation state
+current_ceiling = 1.0           # Updated via /chuloopa/spice_ceiling OSC
+bank_generation_ceiling = -1.0  # -1 = no bank generated yet; updated before each generation pass
+stop_event = threading.Event()  # Set to cancel in-progress generation thread
+generation_lock = threading.Lock()  # Ensures one generation thread at a time
+generation_queue = []           # List of slot ints (1-5) or -1 (sentinel = send bank_ready)
+generation_thread = None        # type: Optional[threading.Thread]
+
 
 # =============================================================================
 # DATA STRUCTURES
@@ -1124,7 +1132,7 @@ def handle_spice_change(address, spice_level):
 
 
 def handle_regenerate(address):
-    """Handle regenerate request from ChucK — generates full 5-variation bank."""
+    """Handle regenerate request from ChucK — cancels in-progress, starts fresh full bank."""
     global current_variation_type
 
     print(f"\n{'='*60}")
@@ -1141,7 +1149,8 @@ def handle_regenerate(address):
         return
 
     try:
-        generate_variation_bank(track_file, variation_type=current_variation_type)
+        cancel_generation()
+        start_full_bank_generation()
     except Exception as e:
         error_msg = f"Error generating variation bank: {e}"
         print(error_msg)
@@ -1154,6 +1163,22 @@ def handle_track_cleared(address):
     print("Track cleared notification received")
     # Could delete variations here if desired
     # For now, just log it
+
+
+def handle_ceiling_change(address, new_ceiling):
+    """Handle spice ceiling change from ChucK v4 CC 74."""
+    global current_ceiling
+    current_ceiling = max(0.0, min(1.0, new_ceiling))
+    print(f"\n>>> OSC RECEIVED: /chuloopa/spice_ceiling = {current_ceiling:.2f} <<<\n")
+
+    # Only generate new slots if ceiling raised enough, bank exists, and pattern exists
+    if (current_ceiling > bank_generation_ceiling + 0.1
+            and bank_generation_ceiling >= 0.0
+            and track_file_exists()):
+        new_slots = compute_new_slots(current_ceiling, bank_generation_ceiling)
+        if new_slots:
+            print(f"  Ceiling raised: generating newly reachable slots {new_slots}")
+            queue_generation(new_slots)
 
 
 def generate_variations_for_track(track_file: Path, variation_type: str = 'rhythmic_creator'):
@@ -1218,21 +1243,196 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
     print(f"{'='*60}\n")
 
 
-def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
-    """Generate 5 variations at fixed spice levels (0.2/0.4/0.6/0.8/1.0) for the bank.
+def track_file_exists() -> bool:
+    """Check if the main track file exists."""
+    return (DEFAULT_TRACK_DIR / "track_0_drums.txt").exists()
 
-    Sends OSC progress (/chuloopa/bank_progress 1-5) after each variation,
-    then /chuloopa/bank_ready 5 when complete.
+
+def reachable_slots(ceiling: float) -> list:
+    """Return list of var indices (1-5) reachable at given ceiling."""
+    if ceiling < 0.1:
+        return []
+    elif ceiling < 0.3:
+        return [1]
+    elif ceiling < 0.5:
+        return [1, 2]
+    elif ceiling < 0.7:
+        return [1, 2, 3]
+    elif ceiling < 0.9:
+        return [1, 2, 3, 4]
+    else:
+        return [1, 2, 3, 4, 5]
+
+
+def spread_priority(slots: list) -> list:
+    """Reorder slots: Stage 1 (spread) first, Stage 2 (gap-fill) second.
+
+    Stage 1 spreads coverage across the range:
+      5 slots: first, middle, last  = [0], [2], [4]
+      4 slots: first, 2nd, last     = [0], [1], [3]
+      3 slots: all (no split)
+      <=2 slots: all (no split)
+    Stage 2 fills the gaps.
     """
-    global osc_client
+    n = len(slots)
+    if n <= 3:
+        return list(slots)
+    elif n == 4:
+        stage1 = [slots[0], slots[1], slots[3]]
+        stage2 = [slots[2]]
+        return stage1 + stage2
+    else:  # n == 5
+        stage1 = [slots[0], slots[2], slots[4]]
+        stage2 = [slots[1], slots[3]]
+        return stage1 + stage2
 
-    BANK_SPICE_LEVELS = [0.2, 0.4, 0.6, 0.8, 1.0]
 
-    print(f"\n{'='*60}")
-    print("GENERATING VARIATION BANK (5 spice levels)")
-    print(f"  Spice levels: {BANK_SPICE_LEVELS}")
-    print(f"  Variation type: {variation_type}")
-    print(f"{'='*60}")
+def compute_new_slots(new_ceiling: float, old_ceiling: float) -> list:
+    """Return slots newly reachable at new_ceiling that weren't at old_ceiling,
+    ordered by spread priority."""
+    old_slots = set(reachable_slots(old_ceiling))
+    new_slots = set(reachable_slots(new_ceiling))
+    newly_reachable = sorted(new_slots - old_slots)
+    return spread_priority(newly_reachable)
+
+
+def cancel_generation():
+    """Signal the running generation thread to stop and wait for it."""
+    global generation_thread, generation_queue
+    stop_event.set()
+    if generation_thread and generation_thread.is_alive():
+        generation_thread.join(timeout=2.0)
+    stop_event.clear()
+    generation_queue.clear()
+
+
+def _generation_worker():
+    """Worker thread: pops slots from generation_queue and generates them."""
+    global generation_thread, bank_generation_ceiling, osc_client
+    variations_dir = DEFAULT_VARIATIONS_DIR
+    variations_dir.mkdir(parents=True, exist_ok=True)
+
+    track_file = DEFAULT_TRACK_DIR / "track_0_drums.txt"
+    if not track_file.exists():
+        print("  Worker: track file not found, aborting")
+        return
+
+    pattern = DrumPattern.from_file(str(track_file))
+    if not pattern.hits:
+        print("  Worker: no hits in pattern, aborting")
+        return
+
+    stage1_done = False  # Track whether we've sent bank_ready
+
+    while True:
+        if stop_event.is_set():
+            print("  Worker: stop requested, exiting")
+            break
+
+        with generation_lock:
+            if not generation_queue:
+                break  # Queue empty, done
+            slot = generation_queue.pop(0)
+
+        # Sentinel: send bank_ready and continue
+        if slot == -1:
+            if osc_client:
+                try:
+                    osc_client.send_message("/chuloopa/bank_ready", 0)
+                    osc_client.send_message("/chuloopa/generation_progress", "Stage 1 complete — auto-switching enabled")
+                except Exception as e:
+                    print(f"  Worker: OSC error sending bank_ready: {e}")
+            stage1_done = True
+            continue
+
+        # Generate variation for this slot
+        spice = [0.2, 0.4, 0.6, 0.8, 1.0][slot - 1]  # Fixed spice per slot
+        print(f"\n  [Worker] Generating var{slot} (spice={spice:.1f})...")
+
+        if osc_client:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"Generating var{slot}/5 (spice {spice:.1f})...")
+
+        try:
+            varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
+            output_file = variations_dir / f"track_0_drums_var{slot}.txt"
+            varied.to_file(str(output_file))
+            print(f"  [Worker] var{slot} saved: {output_file}")
+
+            if osc_client:
+                osc_client.send_message("/chuloopa/bank_progress", slot)
+
+        except Exception as e:
+            print(f"  [Worker] Failed var{slot}: {e}")
+            try:
+                fallback = humanize_pattern(pattern, timing_variance=0.005 + 0.02 * spice,
+                                            velocity_variance=0.05 + 0.1 * spice)
+                output_file = variations_dir / f"track_0_drums_var{slot}.txt"
+                fallback.to_file(str(output_file))
+                print(f"  [Worker] Fallback var{slot} saved")
+                if osc_client:
+                    osc_client.send_message("/chuloopa/bank_progress", slot)
+            except Exception as e2:
+                print(f"  [Worker] Fallback also failed: {e2}")
+
+    # Update bank_generation_ceiling after all queued slots complete
+    bank_generation_ceiling = current_ceiling
+    print(f"  [Worker] Done. bank_generation_ceiling={bank_generation_ceiling:.2f}")
+
+
+def queue_generation(slots: list):
+    """Append slots to generation_queue; start worker thread if not running."""
+    global generation_thread
+    with generation_lock:
+        generation_queue.extend(slots)
+        if generation_thread is None or not generation_thread.is_alive():
+            generation_thread = threading.Thread(target=_generation_worker, daemon=True)
+            generation_thread.start()
+            print(f"  Started generation worker (queued: {generation_queue})")
+
+
+def start_full_bank_generation():
+    """Cancel any in-progress generation and start fresh full bank at current_ceiling."""
+    global bank_generation_ceiling
+    slots = reachable_slots(current_ceiling)
+    if not slots:
+        print(f"Warning: No slots reachable at ceiling={current_ceiling:.2f} — skipping generation")
+        if osc_client:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"Ceiling {current_ceiling:.2f} too low — no variations")
+        return
+
+    ordered = spread_priority(slots)
+    # Stage boundary: Stage 1 = first min(3, n) slots, then sentinel, then Stage 2
+    stage1_end = min(3, len(ordered))
+    stage1 = ordered[:stage1_end]
+    stage2 = ordered[stage1_end:]
+
+    bank_generation_ceiling = current_ceiling
+    print(f"\n  Starting full bank: ceiling={current_ceiling:.2f}, slots={ordered}")
+    print(f"  Stage 1: {stage1}  Stage 2: {stage2}")
+
+    with generation_lock:
+        generation_queue.clear()
+        generation_queue.extend(stage1)
+        generation_queue.append(-1)   # Sentinel: send bank_ready after Stage 1
+        generation_queue.extend(stage2)
+
+    global generation_thread
+    with generation_lock:
+        if generation_thread is None or not generation_thread.is_alive():
+            generation_thread = threading.Thread(target=_generation_worker, daemon=True)
+            generation_thread.start()
+
+
+def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
+    """Generate variation bank using ceiling-aware staged generation.
+
+    Slots are ordered: Stage 1 (spread), then Stage 2 (gap-fill).
+    /chuloopa/bank_ready 0 is sent after Stage 1 to enable auto-switching.
+    """
+    global current_variation_type
+    current_variation_type = variation_type
 
     if not track_file.exists():
         error_msg = f"Error: Track file not found: {track_file}"
@@ -1241,69 +1441,8 @@ def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_cr
             osc_client.send_message("/chuloopa/error", error_msg)
         return
 
-    print(f"Loading: {track_file}")
-    pattern = DrumPattern.from_file(str(track_file))
-
-    if not pattern.hits:
-        error_msg = "Warning: No hits found in pattern"
-        print(error_msg)
-        if osc_client:
-            osc_client.send_message("/chuloopa/error", error_msg)
-        return
-
-    print(f"  Loaded {len(pattern.hits)} hits, duration: {pattern.loop_duration:.3f}s")
-
-    # Create variations directory
-    variations_dir = DEFAULT_VARIATIONS_DIR
-    variations_dir.mkdir(parents=True, exist_ok=True)
-
-    for i, spice in enumerate(BANK_SPICE_LEVELS):
-        var_num = i + 1
-
-        if osc_client:
-            osc_client.send_message("/chuloopa/generation_progress",
-                                    f"Generating var {var_num}/5 (spice {spice:.1f})...")
-
-        print(f"\n  [{var_num}/5] Generating variation (spice: {spice:.2f})")
-
-        try:
-            varied, success = generate_variation(pattern, variation_type, temperature=spice)
-
-            output_file = variations_dir / f"track_0_drums_var{var_num}.txt"
-            varied.to_file(str(output_file))
-            print(f"  Saved: {output_file}")
-
-            if osc_client:
-                osc_client.send_message("/chuloopa/bank_progress", var_num)
-
-        except Exception as e:
-            print(f"  Warning: Failed to generate var {var_num}: {e}")
-            # Save a fallback humanized variation so the slot is always filled
-            try:
-                fallback = humanize_pattern(pattern,
-                                           timing_variance=0.005 + 0.02 * spice,
-                                           velocity_variance=0.05 + 0.1 * spice)
-                output_file = variations_dir / f"track_0_drums_var{var_num}.txt"
-                fallback.to_file(str(output_file))
-                print(f"  Fallback saved: {output_file}")
-                if osc_client:
-                    osc_client.send_message("/chuloopa/bank_progress", var_num)
-            except Exception as e2:
-                print(f"  Fallback also failed: {e2}")
-
-    # Send completion notification
-    if osc_client:
-        try:
-            osc_client.send_message("/chuloopa/bank_ready", 5)
-            osc_client.send_message("/chuloopa/generation_progress", "Bank ready! (5 variations)")
-            print(f"\n  Sent /chuloopa/bank_ready 5 to ChucK ({OSC_HOST}:{OSC_SEND_PORT})")
-        except Exception as e:
-            print(f"  ERROR sending bank_ready OSC: {e}")
-    else:
-        print("  WARNING: OSC client not initialized, cannot notify ChucK")
-
-    print(f"\n✓ Variation bank complete ({len(BANK_SPICE_LEVELS)} variations)")
-    print(f"{'='*60}\n")
+    cancel_generation()
+    start_full_bank_generation()
 
 
 # =============================================================================
@@ -1358,6 +1497,7 @@ if HAVE_WATCHDOG:
                 time.sleep(0.5)
 
                 try:
+                    cancel_generation()
                     generate_variation_bank(filepath, self.variation_type)
                 except Exception as e:
                     error_msg = f"Error generating variation bank: {e}"
@@ -1394,6 +1534,7 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     disp.map("/chuloopa/spice", handle_spice_change)
     disp.map("/chuloopa/regenerate", handle_regenerate)
     disp.map("/chuloopa/track_cleared", handle_track_cleared)
+    disp.map("/chuloopa/spice_ceiling", handle_ceiling_change)
 
     server = osc_server.ThreadingOSCUDPServer((OSC_HOST, OSC_RECEIVE_PORT), disp)
     print(f"OSC server listening on {OSC_HOST}:{OSC_RECEIVE_PORT}")
