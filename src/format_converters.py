@@ -3,8 +3,8 @@
 format_converters.py - Convert between CHULOOPA and rhythmic_creator formats
 
 CHULOOPA format:
-    DrumHit(drum_class, timestamp, velocity, delta_time)
-    - drum_class: 0=kick, 1=snare, 2=hat
+    DrumHit(midi_note, timestamp, velocity, delta_time)
+    - midi_note: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)
     - timestamp: seconds from loop start
     - velocity: 0.0-1.0
     - delta_time: seconds until next hit
@@ -47,6 +47,19 @@ MIDI_TO_CHULOOPA = {
     59: 2,  # ride cymbal 2
 }
 
+# GM percussion range (filters out melody notes)
+VALID_GM_DRUM_NOTES = set(range(27, 88))
+
+# Map MIDI note to category for scoring/visual impulse mapping
+MIDI_TO_CATEGORY = {
+    # Kicks (category 0)
+    35: 0, 36: 0,
+    # Snares (category 1)
+    37: 1, 38: 1, 39: 1, 40: 1,
+    # Everything else (category 2) — hats, cymbals, toms, etc.
+}
+# Default for anything not in MIDI_TO_CATEGORY is 2 (hat/other)
+
 
 def chuloopa_to_rhythmic_creator(pattern) -> str:
     """
@@ -64,8 +77,8 @@ def chuloopa_to_rhythmic_creator(pattern) -> str:
     tokens = []
 
     for hit in pattern.hits:
-        # Map drum class to MIDI note
-        midi_note = CHULOOPA_TO_MIDI.get(hit.drum_class, 36)
+        # Use MIDI note directly from hit
+        midi_note = hit.midi_note
 
         # Start time is the timestamp
         start_time = hit.timestamp
@@ -123,19 +136,16 @@ def rhythmic_creator_to_chuloopa(text: str, loop_duration: float):
             if loop_duration < 999 and start_time >= loop_duration:
                 continue
 
-            # Map MIDI note to CHULOOPA drum class
-            # Skip unknown MIDI notes (melody notes, non-drum percussion)
-            if midi_note not in MIDI_TO_CHULOOPA:
+            # Skip non-drum MIDI notes (melody notes outside GM percussion range)
+            if midi_note not in VALID_GM_DRUM_NOTES:
                 continue
-
-            drum_class = MIDI_TO_CHULOOPA[midi_note]
 
             # Assign velocity based on position
             velocity = assign_velocity(start_time, loop_duration)
 
             # Create hit
             hit = DrumHit(
-                drum_class=drum_class,
+                midi_note=midi_note,
                 timestamp=start_time,
                 velocity=velocity,
                 delta_time=0.0  # Will be recalculated

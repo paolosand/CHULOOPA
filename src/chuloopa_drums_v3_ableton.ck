@@ -31,9 +31,9 @@
 //
 // MIDI Output (IAC Driver):
 //   Drum MIDI notes follow General MIDI standard:
-//     Kick  -> Note 36 (C1)
-//     Snare -> Note 38 (D1)
-//     Hi-hat -> Note 42 (F#1)
+//     Live beatbox: Kick->36, Snare->38, Hi-hat->42
+//     AI variations: Any GM percussion note (27-87)
+//       e.g., 44=pedal hat, 46=open hat, 49=crash, 51=ride, toms, etc.
 //   All notes sent on MIDI Channel 1 (data1 = 0x90/0x80).
 //   Enable the IAC Driver in macOS Audio MIDI Setup before running.
 //
@@ -141,9 +141,6 @@ if (!midiout.open("IAC Driver Bus 1")) {
 // MIDI channel for drums (0 = channel 1)
 0 => int DRUM_MIDI_CHANNEL;
 
-// Drum class to MIDI note mapping (GM standard)
-// 0=kick=36(C1), 1=snare=38(D1), 2=hihat=42(F#1)
-[36, 38, 42] @=> int DRUM_MIDI_NOTES[];
 
 // === CHUGL VISUALIZATION SETUP ===
 GG.scene() @=> GScene @ scene;
@@ -350,7 +347,7 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 
 // === SYMBOLIC DRUM DATA STORAGE (per track) ===
 // Each track stores drum hits: [class, velocity, timestamp]
-int track_drum_classes[NUM_TRACKS][0];      // 0=kick, 1=snare, 2=hat
+int track_midi_notes[NUM_TRACKS][0];        // GM MIDI note numbers
 float track_drum_timestamps[NUM_TRACKS][0]; // Start times (seconds from loop start)
 float track_drum_velocities[NUM_TRACKS][0]; // Velocities (0-1.0)
 
@@ -620,23 +617,25 @@ fun void saveDrumHit(int track, int drum_class, float velocity) {
         // Calculate timestamp relative to loop start
         (now - record_start_time[track]) / second => float timestamp;
 
-        // Store drum hit
-        track_drum_classes[track] << drum_class;
+        // Convert KNN class (0/1/2) to MIDI note before storing
+        [36, 38, 42] @=> int knn_to_midi[];
+        knn_to_midi[drum_class] => int midi_note;
+        track_midi_notes[track] << midi_note;
         track_drum_timestamps[track] << timestamp;
         track_drum_velocities[track] << velocity;
 
         // Play drum hit immediately for real-time feedback during recording
-        playDrumHit(drum_class, velocity);
+        playDrumHit(midi_note, velocity);
 
         ["KICK", "SNARE", "HAT"] @=> string class_names[];
         <<< "Track", track, "-", class_names[drum_class], "at", timestamp, "sec |",
-            "Total hits:", track_drum_classes[track].size() >>>;
+            "Total hits:", track_midi_notes[track].size() >>>;
     }
 }
 
 // Clear symbolic data for a track
 fun void clearSymbolicData(int track) {
-    track_drum_classes[track].clear();
+    track_midi_notes[track].clear();
     track_drum_timestamps[track].clear();
     track_drum_velocities[track].clear();
 
@@ -645,7 +644,7 @@ fun void clearSymbolicData(int track) {
 
 // Export symbolic data to file
 fun void exportSymbolicData(int track) {
-    if(track_drum_classes[track].size() == 0) {
+    if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "has no drum data to export" >>>;
         return;
     }
@@ -661,20 +660,20 @@ fun void exportSymbolicData(int track) {
 
     // Write header
     fout.write("# Track " + track + " Drum Data\n");
-    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME\n");
-    fout.write("# Classes: 0=kick, 1=snare, 2=hat\n");
+    fout.write("# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\n");
+    fout.write("# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)\n");
     fout.write("# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n");
     fout.write("# Total loop duration: " + loop_length[track] + " seconds\n");
 
     // Write each hit with delta_time
-    for(0 => int i; i < track_drum_classes[track].size(); i++) {
-        track_drum_classes[track][i] => int drum_class;
+    for(0 => int i; i < track_midi_notes[track].size(); i++) {
+        track_midi_notes[track][i] => int midi_note;
         track_drum_timestamps[track][i] => float timestamp;
         track_drum_velocities[track][i] => float velocity;
 
         // Calculate delta_time (time until next hit, or until loop end)
         0.0 => float delta_time;
-        if(i < track_drum_classes[track].size() - 1) {
+        if(i < track_midi_notes[track].size() - 1) {
             // Time to next hit
             track_drum_timestamps[track][i+1] - timestamp => delta_time;
         } else {
@@ -682,12 +681,12 @@ fun void exportSymbolicData(int track) {
             loop_length[track] - timestamp => delta_time;
         }
 
-        fout.write(drum_class + "," + timestamp + "," + velocity + "," + delta_time + "\n");
+        fout.write(midi_note + "," + timestamp + "," + velocity + "," + delta_time + "\n");
     }
 
     fout.close();
 
-    <<< ">>> Track", track, "exported to", filename, "(" + track_drum_classes[track].size(), "hits) <<<" >>>;
+    <<< ">>> Track", track, "exported to", filename, "(" + track_midi_notes[track].size(), "hits) <<<" >>>;
     <<< "    Total loop duration:", loop_length[track], "seconds" >>>;
 }
 
@@ -806,9 +805,14 @@ fun int loadDrumDataFromFile(int track) {
             delta_time => last_delta_time;  // Keep updating, last one is important
         }
 
-        // Validate
-        if(drum_class < 0 || drum_class > 2) {
-            <<< "WARNING: Invalid drum class", drum_class, "on line", line_count >>>;
+        // Backward compat: old files use 0/1/2 class notation
+        if(drum_class <= 2 && drum_class >= 0) {
+            [36, 38, 42] @=> int legacy_map[];
+            legacy_map[drum_class] => drum_class;  // Convert to MIDI note
+        }
+        // Validate GM percussion range
+        if(drum_class < 27 || drum_class > 87) {
+            <<< "WARNING: Invalid MIDI note", drum_class, "on line", line_count, "- skipping" >>>;
             continue;
         }
 
@@ -833,7 +837,7 @@ fun int loadDrumDataFromFile(int track) {
 
     // Copy loaded data to track arrays
     for(0 => int i; i < loaded_classes.size(); i++) {
-        track_drum_classes[track] << loaded_classes[i];
+        track_midi_notes[track] << loaded_classes[i];
         track_drum_timestamps[track] << loaded_timestamps[i];
         track_drum_velocities[track] << loaded_velocities[i];
     }
@@ -855,7 +859,7 @@ fun int loadDrumDataFromFile(int track) {
     file_loop_duration => loop_length[track];
     loop_length[track]::second => recorded_duration[track];
 
-    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loaded", track_midi_notes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
 
     // Mark track as loaded from file
@@ -939,7 +943,11 @@ fun int loadVariationFile(int track, int var_num) {
             delta_time => last_delta_time;
         }
 
-        if(drum_class < 0 || drum_class > 2) continue;
+        if(drum_class <= 2 && drum_class >= 0) {
+            [36, 38, 42] @=> int legacy_map[];
+            legacy_map[drum_class] => drum_class;
+        }
+        if(drum_class < 27 || drum_class > 87) continue;
 
         loaded_classes << drum_class;
         loaded_timestamps << timestamp;
@@ -960,7 +968,7 @@ fun int loadVariationFile(int track, int var_num) {
 
     // Copy to track arrays
     for(0 => int i; i < loaded_classes.size(); i++) {
-        track_drum_classes[track] << loaded_classes[i];
+        track_midi_notes[track] << loaded_classes[i];
         track_drum_timestamps[track] << loaded_timestamps[i];
         track_drum_velocities[track] << loaded_velocities[i];
     }
@@ -979,7 +987,7 @@ fun int loadVariationFile(int track, int var_num) {
     file_loop_duration => loop_length[track];
     loop_length[track]::second => recorded_duration[track];
 
-    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loaded", track_midi_notes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
 
     1 => track_loaded_from_file[track];
@@ -996,27 +1004,26 @@ fun int loadVariationFile(int track, int var_num) {
 
 // === DRUM PLAYBACK FUNCTIONS (MIDI OUTPUT via IAC Driver) ===
 
-fun void playDrumHit(int drum_class, float velocity) {
-    // Map drum class to MIDI note
-    DRUM_MIDI_NOTES[drum_class] => int note;
+fun void playDrumHit(int midi_note, float velocity) {
+    // midi_note is used directly — no lookup needed
 
     // Convert velocity 0.0-1.0 to MIDI velocity 1-127
     Math.max(1.0, velocity * 127.0) $ int => int midi_vel;
     if (midi_vel > 127) 127 => midi_vel;
 
-    // Set visual impulse for ChuGL visualization
-    if (drum_class == 0) {
+    // Map MIDI note to visual impulse category
+    if (midi_note >= 35 && midi_note <= 36) {
         1 => kick_impulse;
-    } else if (drum_class == 1) {
+    } else if (midi_note >= 37 && midi_note <= 40) {
         1 => snare_impulse;
-    } else if (drum_class == 2) {
+    } else {
         1 => hat_impulse;
     }
 
     // Send MIDI Note On
     MidiMsg mmsg;
     (0x90 | DRUM_MIDI_CHANNEL) => mmsg.data1;
-    note => mmsg.data2;
+    midi_note => mmsg.data2;
     midi_vel => mmsg.data3;
     midiout.send(mmsg);
 
@@ -1025,13 +1032,13 @@ fun void playDrumHit(int drum_class, float velocity) {
 
     // Send MIDI Note Off
     (0x80 | DRUM_MIDI_CHANNEL) => mmsg.data1;
-    note => mmsg.data2;
+    midi_note => mmsg.data2;
     0 => mmsg.data3;
     midiout.send(mmsg);
 }
 
 // Scheduled drum playback
-fun void playScheduledDrumHit(int track, int drum_class, float velocity,
+fun void playScheduledDrumHit(int track, int midi_note, float velocity,
                               time scheduled_time, int my_playback_id) {
     // Wait until scheduled time
     scheduled_time - now => dur wait_time;
@@ -1046,12 +1053,12 @@ fun void playScheduledDrumHit(int track, int drum_class, float velocity,
     }
 
     // Play the drum hit via MIDI
-    playDrumHit(drum_class, velocity);
+    playDrumHit(midi_note, velocity);
 }
 
 // Main drum playback loop for a track
 fun void drumPlaybackLoop(int track) {
-    if(track_drum_classes[track].size() == 0) {
+    if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "- No drum hits to play" >>>;
         return;
     }
@@ -1063,7 +1070,7 @@ fun void drumPlaybackLoop(int track) {
 
     <<< "Track", track, "- Drum playback started (ID:", my_playback_id, ")" >>>;
     <<< "  Loop duration:", total_duration, "sec" >>>;
-    <<< "  Drum hits:", track_drum_classes[track].size() >>>;
+    <<< "  Drum hits:", track_midi_notes[track].size() >>>;
 
     // NOTE: Sync is handled by masterSyncCoordinator - we start immediately
     // The coordinator ensures we only start at loop boundaries
@@ -1075,13 +1082,13 @@ fun void drumPlaybackLoop(int track) {
         now => loop_start_time[track];
 
         // Schedule all drum hits for this loop iteration
-        for(0 => int i; i < track_drum_classes[track].size(); i++) {
+        for(0 => int i; i < track_midi_notes[track].size(); i++) {
             if(!drum_playback_active[track] || !has_loop[track] || drum_playback_id[track] != my_playback_id) break;
 
             loop_start_time[track] + track_drum_timestamps[track][i]::second => time hit_time;
 
             spork ~ playScheduledDrumHit(track,
-                                        track_drum_classes[track][i],
+                                        track_midi_notes[track][i],
                                         track_drum_velocities[track][i],
                                         hit_time,
                                         my_playback_id);  // Pass session ID
@@ -1378,15 +1385,15 @@ fun void stopRecording(int track) {
         0 => track_loaded_from_file[track];  // Mark as recorded (not loaded)
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
-        <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
+        <<< ">>> Captured", track_midi_notes[track].size(), "drum hits <<<" >>>;
 
         // === AUTO-EXPORT ===
-        if(track_drum_classes[track].size() > 0) {
+        if(track_midi_notes[track].size() > 0) {
             exportSymbolicData(track);
         }
 
         // === ENABLE DRUM PLAYBACK ===
-        if(track_drum_classes[track].size() > 0) {
+        if(track_midi_notes[track].size() > 0) {
             1 => drum_playback_active[track];
 
             spork ~ drumPlaybackLoop(track);
