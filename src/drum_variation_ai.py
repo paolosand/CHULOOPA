@@ -995,12 +995,17 @@ def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern
     return DrumPattern(hits=hits, loop_duration=loop_duration)
 
 
-def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPattern:
+def gemini_variation(pattern: DrumPattern, spice_level: float = 0.5) -> DrumPattern:
     """Generate variation using Gemini AI.
+
+    Spice controls target hit density (mirrors rhythmic_creator token count approach):
+        0.0 → ~0.7× original hits (sparse skeleton)
+        0.5 → ~1.85× original hits (moderate embellishment)
+        1.0 → ~3.0× original hits (dense fills, hi-hats, ghost notes)
 
     Args:
         pattern: Input drum pattern
-        temperature: Sampling temperature (0.0-1.0, default 0.7)
+        spice_level: 0.0-1.0 controlling hit density of the variation
 
     Returns:
         Tuple of (DrumPattern, success: bool)
@@ -1015,41 +1020,63 @@ def gemini_variation(pattern: DrumPattern, temperature: float = 0.7) -> DrumPatt
         print("Warning: GEMINI_API_KEY not set, falling back to groove_preserve")
         return groove_preserve(pattern), False
 
+    # Compute target hit count: 0.7× at spice=0.0, 1.85× at spice=0.5, 3.0× at spice=1.0
+    hit_multiplier = 0.7 + (spice_level * 2.3)
+    target_hits = max(1, round(len(pattern.hits) * hit_multiplier))
+
     try:
         # Client reads API key from GEMINI_API_KEY environment variable
         client = genai.Client()
 
-        system_prompt = f"""You are a drum loop generator. Given an input drum pattern you will output a variation of an existing drum pattern given the previous pattern and the output variant's target "spice" level. While maintaining the same key groove and ensuring that the total loop duration is exactly the same. Ensure you always understand the user's groove first before trying to variate.
+        system_prompt = f"""You are an expert drum loop programmer. Your job is to generate a variation of a given drum loop by targeting a specific number of drum hits while preserving the original groove.
 
-Add natural human variation through subtle timing shifts, velocity changes, and ghost notes to make the loop feel "alive" like a real drummer playing the groove.
+TASK: Generate a variation of the input pattern with approximately {target_hits} total hits (original has {len(pattern.hits)} hits).
 
-Return the output in the following json format:
-{{"pattern": ""}}
+HIT DENSITY GUIDE:
+- Fewer hits than original → strip back to the essential kick/snare skeleton, remove hi-hats and ghost notes
+- Similar hits to original → light humanization (subtle timing/velocity shifts, occasional ghost note swap)
+- More hits than original → add hi-hat subdivisions, ghost notes on snare, kick doubles, fills. The more hits requested, the more elaborate the embellishment.
 
-The pattern field should contain the drum data in the exact same CSV format as the input:
-MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME
+AVAILABLE DRUM SOUNDS (standard GM MIDI drum notes — use any that fit tastefully):
+- 35/36: Bass drum (kick)
+- 38/40: Snare drum
+- 37: Snare cross-stick (for subtle ghost hits)
+- 42: Closed hi-hat
+- 44: Pedal hi-hat
+- 46: Open hi-hat
+- 49: Crash cymbal (use sparingly — accents only)
+- 51: Ride cymbal
+- 55: Splash cymbal
+- 57: Crash cymbal 2
+- 39: Hand clap (use sparingly)
+- 41/43/45/47/48/50: Tom drums (low → high, use for fills)
+
+RULES:
+1. Preserve the core kick and snare placement — the rhythmic backbone must remain recognizable
+2. The total loop duration must be EXACTLY {pattern.loop_duration:.6f} seconds
+3. The sum of all DELTA_TIME values must equal the loop duration exactly
+4. Velocities should feel human — vary them naturally (kick ~0.7-0.9, snare ~0.6-0.85, hats ~0.3-0.6, ghost notes ~0.2-0.4)
+5. Stay tasteful and consistent with the musical style of the input — no random note dumps
+6. Aim for exactly {target_hits} hits (±2 is acceptable)
+
+OUTPUT FORMAT (JSON):
+{{"pattern": "MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\nMIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\n..."}}
+
 Where:
-- MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=closed hat, etc.)
-- TIMESTAMP: seconds from loop start
+- MIDI_NOTE: integer GM drum note number
+- TIMESTAMP: seconds from loop start (0.0 to < {pattern.loop_duration:.6f})
 - VELOCITY: 0.0-1.0
-- DELTA_TIME: seconds until next hit (last hit's delta_time = time until loop end)
+- DELTA_TIME: seconds until next hit; last hit's DELTA_TIME = time remaining until loop end
 
-CRITICAL: The sum of all delta_times must equal the loop duration exactly.
-
-SPICE LEVEL: A float from 0.0 to 1.0 controlling how the groove is transformed:
-- 0.0-0.3 (low): Simplify and reduce. Remove ghost notes, thin out hi-hats, strip the pattern back to its essential kick and snare skeleton. Subtle velocity variation only.
-- 0.4-0.6 (mid): Light embellishment. Keep the original hits intact, add occasional ghost notes or a light hi-hat. Small timing and velocity humanization.
-- 0.7-1.0 (high): Add fills, hi-hat density, and ghost notes freely. You may shift or replace individual kick/snare hits with ghost notes for variation. CRITICAL: The overall groove feel must be maintained — the rhythmic character and pulse of the original pattern should remain recognizable.
-
-SPICE LEVEL for this request: {temperature}"""
+Hits must be sorted by TIMESTAMP ascending."""
 
         user_prompt = pattern_to_gemini_prompt(pattern)
 
-        print(f"  Calling Gemini API ({GEMINI_MODEL})...")
+        print(f"  Calling Gemini API ({GEMINI_MODEL}, spice={spice_level:.2f}, target={target_hits} hits)...")
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=system_prompt + "\n\nInput pattern:\n" + user_prompt,
-            config={"temperature": temperature, "max_output_tokens": 4096, "thinking_config": {"thinking_budget": 2048}}
+            config={"temperature": 1.0, "max_output_tokens": 4096, "thinking_config": {"thinking_budget": 2048}}
         )
 
         # Extract text from response
@@ -1352,7 +1379,7 @@ def generate_variation(pattern: DrumPattern,
         return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'gemini':
-        return gemini_variation(pattern, temperature=kwargs.get('temperature', 0.7))
+        return gemini_variation(pattern, spice_level=kwargs.get('spice_level', current_spice_level))
 
     elif variation_type == 'groove_preserve':
         return groove_preserve(
@@ -1584,8 +1611,8 @@ OSC Communication:
     parser.add_argument('--backup', '-b', action='store_true',
                         help='Create backup before overwriting')
 
-    parser.add_argument('--temperature', type=float, default=0.7,
-                        help='Gemini sampling temperature (0.0-1.0, default 0.7)')
+    parser.add_argument('--temperature', type=float, default=0.5,
+                        help='Spice level for Gemini (0.0-1.0, controls target hit density: 0.7x-3.0x original, default 0.5)')
 
     parser.add_argument('--no-warp', action='store_true',
                         help='Skip time-warping (use model\'s natural timing)')
