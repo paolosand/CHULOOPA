@@ -998,10 +998,10 @@ def parse_gemini_pattern(pattern_text: str, loop_duration: float) -> DrumPattern
 def gemini_variation(pattern: DrumPattern, spice_level: float = 0.5) -> DrumPattern:
     """Generate variation using Gemini AI.
 
-    Spice controls target hit density (mirrors rhythmic_creator token count approach):
+    Spice controls target hit density:
         0.0 → ~0.7× original hits (sparse skeleton)
-        0.5 → ~1.85× original hits (moderate embellishment)
-        1.0 → ~3.0× original hits (dense fills, hi-hats, ghost notes)
+        0.5 → ~1.35× original hits (moderate embellishment)
+        1.0 → ~2.0× original hits (dense fills, hi-hats, ghost notes)
 
     Args:
         pattern: Input drum pattern
@@ -1020,8 +1020,8 @@ def gemini_variation(pattern: DrumPattern, spice_level: float = 0.5) -> DrumPatt
         print("Warning: GEMINI_API_KEY not set, falling back to groove_preserve")
         return groove_preserve(pattern), False
 
-    # Compute target hit count: 0.7× at spice=0.0, 1.85× at spice=0.5, 3.0× at spice=1.0
-    hit_multiplier = 0.7 + (spice_level * 2.3)
+    # Compute target hit count: 0.7× at spice=0.0, 1.35× at spice=0.5, 2.0× at spice=1.0
+    hit_multiplier = 0.7 + (spice_level * 1.3)
     target_hits = max(1, round(len(pattern.hits) * hit_multiplier))
 
     try:
