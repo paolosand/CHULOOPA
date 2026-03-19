@@ -21,6 +21,7 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 - **KNN Classifier** - User-trainable personalized drum detection
 - **AI Variation Generation** - Local transformer-LSTM model for offline drum pattern variations with real-time spice control
 - **OSC Integration** - Automatic Python-ChucK communication for seamless AI workflow
+- **Ableton Live Routing** - MIDI output via macOS IAC Driver for full DAW integration (Drum Rack, FX, mixing)
 - **Pattern Loading** - Load/swap drum patterns from files at loop boundaries
 - **Symbolic Export** - Auto-saves drum data with precise timing (delta_time format)
 - **ChuGL Visualization** - Real-time visual feedback with color-coded states
@@ -55,13 +56,22 @@ python drum_variation_ai.py --watch
 
 This starts the AI variation engine that auto-generates variations when you record loops using Jake Chen's rhythmic_creator model (local inference, no API required).
 
-### 3. Run CHULOOPA Drums V2 (Terminal 2)
+### 3. Run CHULOOPA (Terminal 2)
 
 **IMPORTANT: Must run from src directory**
 
+**Stable — Ableton Live via IAC Driver (current default):**
 ```bash
 cd src
-chuck chuloopa_drums_v2.ck
+chuck chuloopa_drums_v3_ableton.ck
+```
+
+> **Ableton setup required:** Enable IAC Driver in macOS Audio MIDI Setup → create a MIDI track in Ableton → input: IAC Driver Bus 1, Monitor: In → load Drum Rack → assign C1(36)=Kick, D1(38)=Snare, F#1(42)=Hi-hat. See [Ableton Integration](#ableton-integration) below.
+
+**Standalone — No Ableton required:**
+```bash
+cd src
+chuck chuloopa_drums_v3.ck
 ```
 
 **Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file. OSC connection to Python is established automatically.
@@ -87,7 +97,7 @@ chuck chuloopa_drums_v2.ck
   - OFF: Plays original recording (sphere turns red)
 
 - **MIDI Note 39** (D#1): Regenerate variations with current spice level
-  - Python generates new variation using current CC 74 value
+  - Python generates new variation using current spice token count
 
 **Spice Control:**
 
@@ -111,9 +121,9 @@ chuck chuloopa_drums_v2.ck
    ```bash
    cd src && python drum_variation_ai.py --watch
    ```
-2. **Terminal 2:** Start ChucK
+2. **Terminal 2:** Start ChucK (stable Ableton pipeline)
    ```bash
-   cd src && chuck chuloopa_drums_v2.ck
+   cd src && chuck chuloopa_drums_v3_ableton.ck
    ```
 3. **Verify:** Both terminals show "OSC connection established"
 
@@ -168,10 +178,59 @@ Multi-track support coming in Phase 3:
 
 ---
 
+## Ableton Integration
+
+`chuloopa_drums_v3_ableton.ck` routes all drum hits as MIDI notes to Ableton Live via the macOS **IAC Driver** (built-in virtual MIDI bus), giving you full access to Ableton's Drum Rack, FX chains, and mixing.
+
+### Architecture
+
+```
+ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
+```
+
+### MIDI Note Mapping (GM Standard)
+
+| Drum  | MIDI Note | Pitch |
+|-------|-----------|-------|
+| Kick  | 36        | C1    |
+| Snare | 38        | D1    |
+| Hi-hat| 42        | F#1   |
+
+### macOS IAC Driver Setup (one-time)
+
+1. Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
+2. **Window → Show MIDI Studio**
+3. Double-click **IAC Driver**
+4. Check **"Device is online"**
+5. Confirm **Bus 1** exists → click Apply
+
+### Ableton Live Setup
+
+1. Create a new **MIDI track**
+2. Set MIDI input to **IAC Driver (Bus 1)**
+3. Set Monitor to **In**
+4. Load a **Drum Rack** on the track
+5. Drop samples onto pads: C1 → Kick, D1 → Snare, F#1 → Hi-hat
+
+### Differences from V3 standalone
+
+| Feature | V3 standalone (chuloopa_drums_v3.ck) | V3 Ableton (chuloopa_drums_v3_ableton.ck) |
+|---------|--------------------------------------|-------------------------------------------|
+| Audio output | ChucK SndBuf (WAV files) | Ableton Drum Rack via MIDI |
+| Sound design | Fixed WAV samples | Any samples/synths in Ableton |
+| FX | None | Full Ableton FX chain |
+| Velocity | Applied to SndBuf gain | Sent as MIDI velocity (1–127) |
+| ChuGL visuals | ✅ | ✅ (unchanged) |
+| Recording/KNN/OSC | ✅ | ✅ (unchanged) |
+| Ableton required | ❌ | ✅ |
+
+---
+
 ## Technical Architecture
 
 ### Complete Pipeline
 
+**Stable pipeline (v3_ableton + drum_variation_ai.py):**
 ```
 1. Start Python Watch Mode (Terminal 1) + Start ChucK (Terminal 2)
    ↓
@@ -181,17 +240,30 @@ Multi-track support coming in Phase 3:
    ↓
 4. Real-time Transcription (Onset Detection + KNN Classification)
    ↓
-5. Drum Sample Playback (Instant Feedback)
+5. MIDI output → Ableton Drum Rack via IAC Driver
    ↓
 6. Symbolic Data Export (track_0_drums.txt with delta_time)
    ↓
 7. Python Watchdog Detects File Change
    ↓
-8. AI Variation Generation (rhythmic_creator model with current spice level)
+8. AI Variation Generation (rhythmic_creator, spice → token count ceiling, max 3×)
    ↓
 9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
    ↓
 10. User Toggles Variation (D1) or Adjusts Spice (CC 74) + Regenerates (D#1)
+```
+
+**In-progress pipeline (v4 + drum_variation_ai_v2.py + spice_detector.ck):**
+```
+1. spice_detector.ck (Terminal 2) analyzes live audio → sends /chuloopa/spice via OSC
+   ↓
+2. Python (Terminal 1) pre-generates bank of 5 variations (spice 0.2/0.4/0.6/0.8/1.0)
+   ↓
+3. chuloopa_drums_v4.ck (Terminal 3) records beatbox → KNN → Ableton MIDI
+   ↓
+4. Audio-driven spice level automatically selects matching variation from bank
+   ↓
+5. CC 74 sets spice ceiling (caps how high audio-driven spice can go)
 ```
 
 ### Drums-Only Mode
@@ -330,9 +402,9 @@ python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 
 1. **File watching:** Python watchdog monitors `src/tracks/track_0/track_0_drums.txt`
 2. **Auto-trigger:** When file changes (after recording), generation starts automatically
-3. **Model inference:** Transformer-LSTM generates continuation with temperature control:
+3. **Model inference:** Transformer-LSTM generates continuation via token count control:
    - Converts pattern to MIDI triplet format (`note start_time end_time`)
-   - Generates continuation sequence (not loop wrap)
+   - Generates continuation tokens up to spice-determined ceiling (max 3× context)
    - Strips context echo and extracts new material
    - Shifts continuation to start at 0.0s
    - Time-warps to match original loop duration exactly
@@ -353,11 +425,11 @@ python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
 
 **Spice Level Control:**
 
-The "spice" parameter (0.0-1.0) maps to model temperature for variation creativity:
+The "spice" parameter (0.0-1.0) maps to a **token count ceiling** for variation creativity — higher spice allows the rhythmic_creator model to generate more additional tokens (more new content) on top of the original context. The ceiling is capped at 3× the original token count to keep output musical.
 
-- **Low spice (0.0-0.3):** Conservative variations, deterministic output
-- **Medium spice (0.4-0.6):** Balanced creativity, moderate randomness
-- **High spice (0.7-1.0):** Experimental variations, high randomness
+- **Low spice (0.0-0.3):** Conservative — minimal additional tokens, close to original
+- **Medium spice (0.4-0.6):** Balanced — moderate new content, light embellishment
+- **High spice (0.7-1.0):** Experimental — maximum tokens (up to 3× context), bold variations
 
 Adjust with CC 74 knob, then press D#1 to regenerate.
 
@@ -379,8 +451,15 @@ Adjust with CC 74 knob, then press D#1 to regenerate.
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v2.ck         # Main system (CURRENT)
-│   ├── drum_variation_ai.py         # AI variation generator with OSC
+│   ├── chuloopa_drums_v3_ableton.ck # STABLE: Ableton mode (MIDI via IAC Driver)
+│   ├── drum_variation_ai.py         # STABLE: AI variation generator with OSC
+│   │
+│   ├── chuloopa_drums_v4.ck         # IN PROGRESS: Audio-driven spice + variation bank
+│   ├── drum_variation_ai_v2.py      # IN PROGRESS: Variation bank engine (5 variants)
+│   ├── spice_detector.ck            # IN PROGRESS: Audio-driven spice → OSC
+│   │
+│   ├── chuloopa_drums_v3.ck          # Standalone mode (built-in WAV samples, no Ableton)
+│   ├── chuloopa_drums_v2.ck          # Archived: earlier standalone version
 │   ├── drum_sample_recorder.ck      # Training data collector
 │   ├── feature_extraction.ck        # ChucK feature extraction
 │   │
@@ -435,11 +514,13 @@ CHULOOPA/
 - [x] Offline operation (no API dependencies)
 - [x] Alternative Gemini API option preserved for studio use
 
-**In Progress:**
+**In Progress (v4 pipeline):**
 
-- [ ] Multi-variation support (generate 3-5 variants, random selection on toggle)
+- [ ] Audio-driven spice detection (`spice_detector.ck` → OSC → Python + ChucK)
+- [ ] Variation bank: 5 pre-generated variants at fixed spice levels (0.2/0.4/0.6/0.8/1.0)
+- [ ] Auto-selection: pattern switches based on detected spice level (no manual knob needed)
+- [ ] CC 74 as spice ceiling (caps how high audio-driven spice can go)
 - [ ] Improved ChuGL visualizations (per-drum-hit feedback)
-- [ ] Fine-tune rhythmic_creator on drum-only dataset (reduce MIDI filtering)
 
 ### Phase 3: Multi-Track Support (Planned - Q1 2026)
 
@@ -555,6 +636,14 @@ pip install -r requirements.txt
 - Check MIDI controller connection
 - Verify MIDI port in code (line 62: `0 => int MIDI_DEVICE;`)
 - Test MIDI: `python TESTMIDIINPUT.py`
+
+**Ableton not receiving drum hits (v3_ableton):**
+
+- Confirm IAC Driver is online in Audio MIDI Setup
+- Set Ableton MIDI track input to "IAC Driver Bus 1" and Monitor to "In"
+- Check ChucK output for `"Opened MIDI output: IAC Driver Bus 1"`
+- Ensure Drum Rack pads are mapped to C1(36), D1(38), F#1(42)
+- If LPD8 not detected as MIDI input, ChucK prints all available ports on startup — use that to verify port numbering
 
 **Classifier accuracy poor:**
 

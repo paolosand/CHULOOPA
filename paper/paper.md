@@ -320,7 +320,7 @@ A Python script (`drum_variation_ai.py`) runs in background watch mode, monitori
 
 1. Loads the drum pattern (drum class, timestamp, velocity, delta_time)
 2. Converts to rhythmic_creator format (MIDI triplets: `note start_time end_time`)
-3. Generates continuation using transformer-LSTM model with temperature control
+3. Generates continuation using transformer-LSTM model with token count control (spice → token ceiling, max 3× context)
 4. Strips context echo and extracts continuation hits
 5. Shifts continuation to start at 0.0s and time-warps to match original duration
 6. Saves variation to `track_0_drums_var1.txt`
@@ -408,12 +408,15 @@ Tested across 5 consecutive generations with 4-hit input patterns:
 - Success rate: 100% (all variations musically coherent)
 - Average generation time: 3-5 seconds (CPU only, no GPU required)
 
-#### 3.5.3 Temperature Control for Variation Intensity
+#### 3.5.3 Spice Control for Variation Intensity
 
-The system uses a "spice level" parameter (0.0-1.0) that maps directly to model temperature:
-- **0.0-0.3:** Conservative variations (low temperature, deterministic)
-- **0.4-0.6:** Balanced creativity (moderate temperature)
-- **0.7-1.0:** Experimental variations (high temperature, more randomness)
+The system uses a "spice level" parameter (0.0-1.0) that maps to a **token count ceiling** — specifically, how many additional tokens the model generates beyond the original context, capped at 3× the context length. Higher spice allows more new rhythmic content to emerge:
+
+- **0.0-0.3:** Conservative variations — minimal additional tokens, close to original
+- **0.4-0.6:** Balanced creativity — moderate new content, light embellishment
+- **0.7-1.0:** Experimental variations — maximum tokens (up to 3× context), bold new material
+
+This approach was discovered through systematic testing: temperature alone produced inconsistent results, while token count directly controls *how much* new material the model generates on top of the original pattern — a more predictable and musically meaningful control axis.
 
 Users control spice level in real-time via MIDI CC 74, with visual feedback in the ChuGL interface (blue/orange/red text indicating current level). Regeneration with new spice levels happens on-demand via MIDI trigger.
 
@@ -554,12 +557,12 @@ CHULOOPA's offline-first architecture (local transformer-LSTM, no API calls) ref
 
 **Why offline matters:**
 - **Reliability:** No network latency, rate limits, or API outages mid-performance
-- **Consistency:** Deterministic generation at low temperatures (reproducible variations)
+- **Consistency:** Low spice (token count ceiling) produces near-deterministic output (reproducible variations)
 - **Cost:** No per-request fees or quota limits
 - **Privacy:** Beatbox recordings stay local (user voice data not sent to cloud)
 - **Latency:** 3-5s local inference vs. 5-10s+ API round-trips
 
-**Tradeoff:** Gemini API produces more sophisticated musical reasoning through prompting (e.g., "generate a busier variation with more hi-hats"). Local models require temperature as the only creativity control. We accept this limitation for performance reliability.
+**Tradeoff:** Gemini API produces more sophisticated musical reasoning through prompting (e.g., "generate a busier variation with more hi-hats"). Local models use token count ceiling as the primary creativity control — less expressive than natural language prompts, but more predictable and reliable for live performance. We accept this limitation for offline reliability.
 
 **Future direction:** As on-device LLMs improve (e.g., Phi-3, Llama on laptop CPUs), we may achieve both sophisticated reasoning *and* offline operation.
 
@@ -709,8 +712,8 @@ This positions AI as *personal drum machine*—learning your beatbox vocabulary,
 ### Looking Forward
 
 We envision CHULOOPA as a step toward more accessible, personalized creative AI tools. Future work includes:
+- **Audio-driven spice (v4, in progress):** `spice_detector.ck` analyzes live ensemble audio (guitar, vocal, room) to compute a composite spice level automatically — the system selects variation density to match the energy of the performance, without manual knob control. A pre-generated bank of 5 variations (at spice levels 0.2/0.4/0.6/0.8/1.0) enables real-time automatic switching.
 - Multi-track support (3 simultaneous tracks with per-track spice control)
-- Multi-variation generation (3-5 variants with random selection)
 - Fine-tuning rhythmic_creator on drum-only dataset (reduce MIDI filtering)
 - Alternative input modalities (tapping, drawing, humming) for accessibility
 - Longitudinal study (3-6 months) with solo performers integrating CHULOOPA into actual performances

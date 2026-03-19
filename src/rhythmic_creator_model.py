@@ -165,6 +165,54 @@ class RhythmicCreatorModel:
 
         return decoded
 
+    def generate_variation_batch(self,
+                                 batch_size: int = 3,
+                                 input_pattern: str = None,
+                                 num_tokens: int = 300,
+                                 temperature: float = 1.0) -> list:
+        """
+        Generate N variations in parallel from the same input context.
+
+        Because torch.multinomial samples independently per row, each batch
+        element gets a different random variation — same compute cost per token
+        as single generation, but N results in one pass.
+
+        Args:
+            batch_size: Number of parallel variations to generate
+            input_pattern: Space-separated MIDI events (rhythmic_creator format)
+            num_tokens: Tokens to generate per variation
+            temperature: Sampling temperature
+
+        Returns:
+            List of N generated pattern strings
+        """
+        if not input_pattern:
+            context = torch.zeros((batch_size, 1), dtype=torch.long, device=self.device)
+        else:
+            input_tokens = input_pattern.split()
+            try:
+                encoded = self.processor.encode_with_mapping(input_tokens)
+            except KeyError as e:
+                raise ValueError(f"Unknown token in input pattern: {e}")
+            # Repeat the same context N times: [1, seq_len] → [N, seq_len]
+            single = torch.tensor([encoded], dtype=torch.long, device=self.device)
+            context = single.repeat(batch_size, 1)
+
+        hidden = self.model.init_hidden(batch_size=batch_size, device=self.device)
+
+        with torch.no_grad():
+            generated = self._generate_with_temperature(
+                context, hidden, num_tokens, temperature
+            )
+
+        # Decode each batch element separately
+        results = []
+        for i in range(batch_size):
+            decoded = self.processor.decode_with_mapping(generated[i].tolist())
+            results.append(decoded)
+
+        return results
+
     def _generate_with_temperature(self,
                                    idx: torch.Tensor,
                                    hidden: tuple,
@@ -214,8 +262,8 @@ class RhythmicCreatorModel:
             # Append to sequence
             idx = torch.cat((idx, idx_next), dim=1)
 
-            # Update hidden state for next iteration
-            hidden = h
+            # Do NOT update hidden state — matches Jake's original gen.py behavior
+            # (hidden stays as initial zero state throughout generation)
 
             # DIAGNOSTIC: Track timing for first 10 tokens
             if i < 10:  # DIAGNOSTIC
