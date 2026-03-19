@@ -97,7 +97,7 @@ Press K/S/H to record samples, Q to quit
 **File created:**
 - `training_samples.csv` - Your personalized training data
 
-**Note:** The KNN classifier will automatically train when you start CHULOOPA Drums V2!
+**Note:** The KNN classifier will automatically train when you start CHULOOPA!
 
 ---
 
@@ -128,15 +128,23 @@ Ready! Press Ctrl+C to stop
 
 **Keep this terminal open!** It will auto-generate variations when you record loops.
 
-### Step 3: Run CHULOOPA Drums V2 (Terminal 2)
+### Step 3: Run CHULOOPA (Terminal 2)
 
 **IMPORTANT: Must run from src directory**
 
-In a **second terminal**, run:
+In a **second terminal**, run the stable Ableton pipeline:
 
 ```bash
 cd src
-chuck chuloopa_drums_v2.ck
+chuck chuloopa_drums_v3_ableton.ck
+```
+
+> **Ableton required:** IAC Driver must be enabled and an Ableton MIDI track set up (input: IAC Driver Bus 1, Monitor: In, with Drum Rack mapping C1→Kick, D1→Snare, F#1→Hi-hat). See README.md for full setup.
+
+**Standalone fallback (no Ableton):**
+```bash
+cd src
+chuck chuloopa_drums_v3.ck
 ```
 
 You'll see:
@@ -382,7 +390,7 @@ Same format as original, but with AI-modified:
 
 ### "ChucK not receiving OSC messages"
 **Solution:**
-- Must run from `src` directory: `cd src && chuck chuloopa_drums_v2.ck`
+- Must run from `src` directory: `cd src && chuck chuloopa_drums_v3_ableton.ck`
 - Check port 5001 is free: `lsof -i :5001`
 - Look for "OSC listener started on port 5001" in ChucK output
 - Verify Python is using `127.0.0.1` not `localhost`
@@ -391,7 +399,7 @@ Same format as original, but with AI-modified:
 **Solution:**
 - Check MIDI controller is connected
 - Test MIDI: `python TESTMIDIINPUT.py`
-- Verify MIDI port: Edit line 62 in `chuloopa_drums_v2.ck`
+- Verify MIDI port: Edit line 62 in `chuloopa_drums_v3_ableton.ck`
   ```chuck
   0 => int MIDI_DEVICE;  // Try changing to 1, 2, etc.
   ```
@@ -506,7 +514,7 @@ If it does happen:
 - Record longer/shorter loops to test variation quality
 
 ### Customize Your System
-- Adjust onset detection sensitivity (line 76 in `chuloopa_drums_v2.ck`)
+- Adjust onset detection sensitivity (line 76 in `chuloopa_drums_v3_ableton.ck`)
 - Change loop duration limit (line 66): `30::second => dur MAX_LOOP_DURATION;`
 - Modify drum samples in `samples/` directory
 - Edit training data in `training_samples.csv`
@@ -542,7 +550,7 @@ python drum_variation_ai.py --watch
 
 # Step 3: Start ChucK (Terminal 2, new terminal)
 cd src
-chuck chuloopa_drums_v2.ck
+chuck chuloopa_drums_v3_ableton.ck
 
 # On your MIDI controller:
 # 1. Press & hold Note 36 (C1), beatbox "BOOM tss BOOM tss", release
@@ -569,7 +577,7 @@ chuck chuloopa_drums_v2.ck
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v2.ck         ← Main ChucK system (START HERE!)
+│   ├── chuloopa_drums_v3_ableton.ck         ← Main ChucK system (START HERE!)
 │   ├── drum_variation_ai.py         ← AI variation engine with OSC
 │   ├── drum_sample_recorder.ck      ← Training sample collector
 │   │
@@ -608,7 +616,7 @@ CHULOOPA/
 chuck src/drum_sample_recorder.ck
 
 # Step 2: Loop! (classifier trains automatically)
-chuck src/chuloopa_drums_v2.ck
+chuck src/chuloopa_drums_v3_ableton.ck
 ```
 
 🥁 Happy beatboxing! 🎵
