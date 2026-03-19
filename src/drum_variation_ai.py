@@ -1028,36 +1028,34 @@ def gemini_variation(pattern: DrumPattern, spice_level: float = 0.5) -> DrumPatt
         # Client reads API key from GEMINI_API_KEY environment variable
         client = genai.Client()
 
-        system_prompt = f"""You are an expert drum loop programmer. Your job is to generate a variation of a given drum loop by targeting a specific number of drum hits while preserving the original groove.
+        system_prompt = f"""You are an expert drum loop programmer. Generate a variation of the input drum pattern that targets approximately {target_hits} total hits (original has {len(pattern.hits)} hits). Use hit count as a proxy for overall energy and complexity — not just hi-hat density.
 
-TASK: Generate a variation of the input pattern with approximately {target_hits} total hits (original has {len(pattern.hits)} hits).
+ENERGY LEVEL GUIDE (based on target hit count relative to original):
+- Fewer hits than original → reduce complexity: simplify rhythms, drop fills, thin out percussion. The pattern should feel more open and spacious.
+- Similar hits to original → reinterpret the groove: swap instruments, shift accents, vary velocities, add ghost notes where hits are removed elsewhere. Keep the same energy, change the texture.
+- More hits than original → raise the energy: add kick doubles, snare ghost notes, off-beat accents, toms, syncopation, anticipations. Think like a drummer who is "heating up" — the groove gets busier and more intense across ALL drum voices, not just cymbals.
 
-HIT DENSITY GUIDE:
-- Fewer hits than original → strip back to the essential kick/snare skeleton, remove hi-hats and ghost notes
-- Similar hits to original → light humanization (subtle timing/velocity shifts, occasional ghost note swap)
-- More hits than original → add hi-hat subdivisions, ghost notes on snare, kick doubles, fills. The more hits requested, the more elaborate the embellishment.
+IMPORTANT: Do NOT default to hi-hats as the primary way to add hits. Spread additional complexity across the full kit — kicks, snares, toms, and cymbals all contribute to energy.
 
-AVAILABLE DRUM SOUNDS (standard GM MIDI drum notes — use any that fit tastefully):
-- 35/36: Bass drum (kick)
-- 38/40: Snare drum
-- 37: Snare cross-stick (for subtle ghost hits)
+AVAILABLE DRUM SOUNDS (use any that serve the groove):
+- 35/36: Bass drum (kick) — doubles, anticipations, syncopation
+- 38/40: Snare — backbeat, ghost notes, drags
+- 37: Cross-stick — subtle snare replacement or accent
 - 42: Closed hi-hat
 - 44: Pedal hi-hat
-- 46: Open hi-hat
-- 49: Crash cymbal (use sparingly — accents only)
+- 46: Open hi-hat (use for accents, not filler)
+- 49/57: Crash cymbal (section accents only)
 - 51: Ride cymbal
-- 55: Splash cymbal
-- 57: Crash cymbal 2
+- 41/43/45/47/48/50: Toms low→high (fills, accents)
 - 39: Hand clap (use sparingly)
-- 41/43/45/47/48/50: Tom drums (low → high, use for fills)
 
 RULES:
-1. Preserve the core kick and snare placement — the rhythmic backbone must remain recognizable
-2. The total loop duration must be EXACTLY {pattern.loop_duration:.6f} seconds
-3. The sum of all DELTA_TIME values must equal the loop duration exactly
-4. Velocities should feel human — vary them naturally (kick ~0.7-0.9, snare ~0.6-0.85, hats ~0.3-0.6, ghost notes ~0.2-0.4)
-5. Stay tasteful and consistent with the musical style of the input — no random note dumps
-6. Aim for exactly {target_hits} hits (±2 is acceptable)
+1. The rhythmic backbone (kick/snare pulse) must remain recognizable — don't erase the original groove
+2. Loop duration must be EXACTLY {pattern.loop_duration:.6f} seconds
+3. Sum of all DELTA_TIME values must equal the loop duration exactly
+4. Velocities should feel human: kick ~0.7-0.9, snare ~0.6-0.85, ghost notes ~0.2-0.4, cymbals ~0.3-0.6
+5. Aim for {target_hits} hits (±2 acceptable) — spread across the full kit, not just one voice
+6. No random note dumps — every hit should serve the groove
 
 OUTPUT FORMAT (JSON):
 {{"pattern": "MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\nMIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\\n..."}}
