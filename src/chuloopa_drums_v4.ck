@@ -59,7 +59,6 @@
 
 // === VOLUME SETTINGS ===
 0.0 => float AUDIO_LOOP_VOLUME;   // Original beatbox audio (DISABLED - drums only!)
-0.8 => float DRUM_SAMPLE_VOLUME;  // Transcribed drum samples (0.0-1.0)
 
 // === ONSET DETECTION PARAMETERS ===
 512 => int FRAME_SIZE;
@@ -89,24 +88,30 @@ oin.listenAll();  // Listen to all OSC addresses
 OscOut oout;
 oout.dest("localhost", OSC_SEND_PORT);
 
-// === V4: GAIN FADE (for silence gate mute/unmute) ===
-// Smooth ramp to avoid clicks. Sporked as concurrent shred.
-fun void fadeGain(int track, float target_gain, dur ramp_time) {
-    if(track < 0 || track >= NUM_TRACKS) return;
+// === MIDI OUTPUT TO IAC DRIVER (for Ableton routing) ===
+MidiOut midiout;
+int midi_port_found;
 
-    drum_gain[track].gain() => float start_gain;
-    target_gain - start_gain => float gain_delta;
-
-    // Step count: ~20 steps over ramp_time for smooth fade
-    20 => int steps;
-    ramp_time / steps => dur step_dur;
-
-    for(1 => int s; s <= steps; s++) {
-        start_gain + gain_delta * (s $ float / steps) => drum_gain[track].gain;
-        step_dur => now;
+// Try to open IAC Driver Bus 1 by name
+if (!midiout.open("IAC Driver Bus 1")) {
+    // Fallback: try port index iteration
+    0 => midi_port_found;
+    for (0 => int p; p < 10; p++) {
+        if (midiout.open(p)) {
+            1 => midi_port_found;
+            <<< "Opened MIDI output port:", p, midiout.name() >>>;
+            break;
+        }
     }
-    target_gain => drum_gain[track].gain;  // Ensure exact target
+    if (!midi_port_found) {
+        <<< "ERROR: Could not open IAC Driver. Enable it in Audio MIDI Setup." >>>;
+    }
+} else {
+    <<< "Opened MIDI output: IAC Driver Bus 1" >>>;
 }
+
+// MIDI channel for drums (0 = channel 1)
+0 => int DRUM_MIDI_CHANNEL;
 
 // === V4: SPICE TO VARIATION INDEX MAPPING ===
 // Maps effective_spice (0.0-1.0) to variation index (0=original, 1-5)
@@ -227,68 +232,6 @@ bottle.rotY(Math.PI / 6);   // Face forward slightly
 // Store base position for animation
 2.0 => float bottle_base_y;
 
-// === DROP ZONE STATE VARIABLES ===
-// For drag-and-drop detection
-GWindow.files() @=> string files[];
-
-// Drop zone visual elements
-GMesh drop_zones[3];
-PhongMaterial drop_zone_mats[3];
-GText zone_labels[3];
-
-// Flash effect state
-float zone_flash_intensity[3];
-time zone_flash_start[3];
-
-// Zone configuration
-float zone_x_positions[3];
--1.5 => zone_x_positions[0];  // Kick (left)
-0.0 => zone_x_positions[1];   // Snare (center)
-1.5 => zone_x_positions[2];   // Hat (right)
-
-vec3 zone_colors[3];
-@(0.9, 0.2, 0.2) => zone_colors[0];  // Red (kick)
-@(1.0, 0.6, 0.1) => zone_colors[1];  // Orange (snare)
-@(0.2, 0.8, 0.9) => zone_colors[2];  // Cyan (hat)
-
-string zone_drum_names[3];
-"KICK" => zone_drum_names[0];
-"SNARE" => zone_drum_names[1];
-"HAT" => zone_drum_names[2];
-
-string current_sample_names[3];
-
-// === CREATE DROP ZONES ===
-for(0 => int i; i < 3; i++) {
-    // Create drop zone square
-    GMesh zone(new CubeGeometry, new PhongMaterial) --> scene;
-    zone @=> drop_zones[i];
-    drop_zones[i].sca(0.4);  // Small square
-    drop_zones[i].posX(zone_x_positions[i]);
-    drop_zones[i].posY(-1.5);  // Moved up from -2.0
-    drop_zones[i].posZ(0.0);
-
-    // Get material reference
-    drop_zones[i].mat() $ PhongMaterial @=> drop_zone_mats[i];
-    drop_zone_mats[i].color(zone_colors[i] * 0.6);  // Dim initially
-    drop_zone_mats[i].specular(zone_colors[i] * 0.3);
-    drop_zone_mats[i].emission(@(0.0, 0.0, 0.0));
-
-    // Create text label
-    GText label --> scene;
-    label @=> zone_labels[i];
-    zone_labels[i].text("DROP " + zone_drum_names[i]);
-    zone_labels[i].posX(zone_x_positions[i]);
-    zone_labels[i].posY(-2.0);  // Moved up from -2.5
-    zone_labels[i].posZ(0.0);
-    zone_labels[i].sca(0.10);  // Smaller text to prevent overlap
-    zone_labels[i].color(@(0.7, 0.7, 0.7));
-
-    // Initialize flash state
-    0.0 => zone_flash_intensity[i];
-    now => zone_flash_start[i];
-}
-
 // === TEXT DISPLAYS ===
 GText spice_text --> scene;
 spice_text.text("SPICE: 50%");
@@ -339,59 +282,6 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     FRAME_SIZE => track_fft[i].size;
     Windowing.hann(FRAME_SIZE) => track_fft[i].window;
 }
-
-// === DRUM SAMPLE PLAYBACK ===
-// Each track plays back its transcribed drums using the same 3 samples
-SndBuf kick_sample[NUM_TRACKS];
-SndBuf snare_sample[NUM_TRACKS];
-SndBuf hat_sample[NUM_TRACKS];
-Gain drum_gain[NUM_TRACKS];
-
-// Sample paths (work from project root or src directory)
-me.dir() + "/samples/kick.wav" => string KICK_SAMPLE;
-me.dir() + "/samples/snare.wav" => string SNARE_SAMPLE;
-me.dir() + "/samples/hat.WAV" => string HAT_SAMPLE;  // Note: uppercase .WAV
-
-for(0 => int i; i < NUM_TRACKS; i++) {
-    // Setup drum sample players WITHOUT envelopes
-    // Each sample gets its own path to the master gain
-    kick_sample[i] => drum_gain[i] => dac;
-    snare_sample[i] => drum_gain[i];
-    hat_sample[i] => drum_gain[i];
-
-    DRUM_SAMPLE_VOLUME => drum_gain[i].gain;  // Master drum volume
-
-    // Load samples
-    KICK_SAMPLE => kick_sample[i].read;
-    SNARE_SAMPLE => snare_sample[i].read;
-    HAT_SAMPLE => hat_sample[i].read;
-
-    // CRITICAL: Set all samples to NOT play on startup
-    kick_sample[i].samples() => kick_sample[i].pos;  // Move to end
-    snare_sample[i].samples() => snare_sample[i].pos;
-    hat_sample[i].samples() => hat_sample[i].pos;
-
-    // Verify samples loaded
-    if(kick_sample[i].samples() == 0) {
-        <<< "WARNING: Could not load", KICK_SAMPLE >>>;
-    }
-    if(snare_sample[i].samples() == 0) {
-        <<< "WARNING: Could not load", SNARE_SAMPLE >>>;
-    }
-    if(hat_sample[i].samples() == 0) {
-        <<< "WARNING: Could not load", HAT_SAMPLE >>>;
-    }
-}
-
-// Set initial sample names for drop zone labels
-getFilename(KICK_SAMPLE) => current_sample_names[0];
-getFilename(SNARE_SAMPLE) => current_sample_names[1];
-getFilename(HAT_SAMPLE) => current_sample_names[2];
-
-// Update zone labels with default samples
-current_sample_names[0] => zone_labels[0].text;
-current_sample_names[1] => zone_labels[1].text;
-current_sample_names[2] => zone_labels[2].text;
 
 // === STATE VARIABLES (per track) ===
 int is_recording[NUM_TRACKS];
@@ -486,8 +376,8 @@ for(0 => int i; i < NUM_TRACKS; i++) {
 }
 
 // === SYMBOLIC DRUM DATA STORAGE (per track) ===
-// Each track stores drum hits: [class, velocity, timestamp]
-int track_drum_classes[NUM_TRACKS][0];      // 0=kick, 1=snare, 2=hat
+// Each track stores drum hits as GM MIDI notes
+int track_midi_notes[NUM_TRACKS][0];        // GM MIDI note numbers (36=kick, 38=snare, 42=hat)
 float track_drum_timestamps[NUM_TRACKS][0]; // Start times (seconds from loop start)
 float track_drum_velocities[NUM_TRACKS][0]; // Velocities (0-1.0)
 
@@ -757,23 +647,25 @@ fun void saveDrumHit(int track, int drum_class, float velocity) {
         // Calculate timestamp relative to loop start
         (now - record_start_time[track]) / second => float timestamp;
 
-        // Store drum hit
-        track_drum_classes[track] << drum_class;
+        // Convert KNN class (0/1/2) to MIDI note before storing
+        [36, 38, 42] @=> int knn_to_midi[];
+        knn_to_midi[drum_class] => int midi_note;
+        track_midi_notes[track] << midi_note;
         track_drum_timestamps[track] << timestamp;
         track_drum_velocities[track] << velocity;
 
         // Play drum hit immediately for real-time feedback during recording
-        playDrumHit(track, drum_class, velocity);
+        playDrumHit(midi_note, velocity);
 
         ["KICK", "SNARE", "HAT"] @=> string class_names[];
         <<< "Track", track, "-", class_names[drum_class], "at", timestamp, "sec |",
-            "Total hits:", track_drum_classes[track].size() >>>;
+            "Total hits:", track_midi_notes[track].size() >>>;
     }
 }
 
 // Clear symbolic data for a track
 fun void clearSymbolicData(int track) {
-    track_drum_classes[track].clear();
+    track_midi_notes[track].clear();
     track_drum_timestamps[track].clear();
     track_drum_velocities[track].clear();
 
@@ -782,7 +674,7 @@ fun void clearSymbolicData(int track) {
 
 // Export symbolic data to file
 fun void exportSymbolicData(int track) {
-    if(track_drum_classes[track].size() == 0) {
+    if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "has no drum data to export" >>>;
         return;
     }
@@ -798,20 +690,20 @@ fun void exportSymbolicData(int track) {
 
     // Write header
     fout.write("# Track " + track + " Drum Data\n");
-    fout.write("# Format: DRUM_CLASS,TIMESTAMP,VELOCITY,DELTA_TIME\n");
-    fout.write("# Classes: 0=kick, 1=snare, 2=hat\n");
+    fout.write("# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\n");
+    fout.write("# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)\n");
     fout.write("# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n");
     fout.write("# Total loop duration: " + loop_length[track] + " seconds\n");
 
     // Write each hit with delta_time
-    for(0 => int i; i < track_drum_classes[track].size(); i++) {
-        track_drum_classes[track][i] => int drum_class;
+    for(0 => int i; i < track_midi_notes[track].size(); i++) {
+        track_midi_notes[track][i] => int midi_note;
         track_drum_timestamps[track][i] => float timestamp;
         track_drum_velocities[track][i] => float velocity;
 
         // Calculate delta_time (time until next hit, or until loop end)
         0.0 => float delta_time;
-        if(i < track_drum_classes[track].size() - 1) {
+        if(i < track_midi_notes[track].size() - 1) {
             // Time to next hit
             track_drum_timestamps[track][i+1] - timestamp => delta_time;
         } else {
@@ -819,12 +711,12 @@ fun void exportSymbolicData(int track) {
             loop_length[track] - timestamp => delta_time;
         }
 
-        fout.write(drum_class + "," + timestamp + "," + velocity + "," + delta_time + "\n");
+        fout.write(midi_note + "," + timestamp + "," + velocity + "," + delta_time + "\n");
     }
 
     fout.close();
 
-    <<< ">>> Track", track, "exported to", filename, "(" + track_drum_classes[track].size(), "hits) <<<" >>>;
+    <<< ">>> Track", track, "exported to", filename, "(" + track_midi_notes[track].size(), "hits) <<<" >>>;
     <<< "    Total loop duration:", loop_length[track], "seconds" >>>;
 }
 
@@ -943,9 +835,14 @@ fun int loadDrumDataFromFile(int track) {
             delta_time => last_delta_time;  // Keep updating, last one is important
         }
 
-        // Validate
-        if(drum_class < 0 || drum_class > 2) {
-            <<< "WARNING: Invalid drum class", drum_class, "on line", line_count >>>;
+        // Backward compat: old files use 0/1/2 class notation
+        if(drum_class <= 2 && drum_class >= 0) {
+            [36, 38, 42] @=> int legacy_map[];
+            legacy_map[drum_class] => drum_class;  // Convert to MIDI note
+        }
+        // Validate GM percussion range
+        if(drum_class < 27 || drum_class > 87) {
+            <<< "WARNING: Invalid MIDI note", drum_class, "on line", line_count, "- skipping" >>>;
             continue;
         }
 
@@ -970,7 +867,7 @@ fun int loadDrumDataFromFile(int track) {
 
     // Copy loaded data to track arrays
     for(0 => int i; i < loaded_classes.size(); i++) {
-        track_drum_classes[track] << loaded_classes[i];
+        track_midi_notes[track] << loaded_classes[i];
         track_drum_timestamps[track] << loaded_timestamps[i];
         track_drum_velocities[track] << loaded_velocities[i];
     }
@@ -992,7 +889,7 @@ fun int loadDrumDataFromFile(int track) {
     file_loop_duration => loop_length[track];
     loop_length[track]::second => recorded_duration[track];
 
-    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loaded", track_midi_notes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
 
     // Mark track as loaded from file
@@ -1001,12 +898,11 @@ fun int loadDrumDataFromFile(int track) {
 
     // Enable drum-only playback
     1 => drum_playback_active[track];
-    0.8 => drum_gain[track].gain;
 
     // Start drum playback with NEW playback ID (old scheduled hits are invalidated)
     spork ~ drumPlaybackLoop(track);
 
-    <<< ">>> TRACK", track, "LOADED FROM FILE (DRUM-ONLY MODE, Playback ID:", drum_playback_id[track], ") <<<" >>>;
+    <<< ">>> TRACK", track, "LOADED FROM FILE (MIDI DRUMS, Playback ID:", drum_playback_id[track], ") <<<" >>>;
     <<< "" >>>;
 
     return 1;
@@ -1077,7 +973,12 @@ fun int loadVariationFile(int track, int var_num) {
             delta_time => last_delta_time;
         }
 
-        if(drum_class < 0 || drum_class > 2) continue;
+        // Backward compat: old files use 0/1/2 class notation
+        if(drum_class <= 2 && drum_class >= 0) {
+            [36, 38, 42] @=> int legacy_map[];
+            legacy_map[drum_class] => drum_class;
+        }
+        if(drum_class < 27 || drum_class > 87) continue;
 
         loaded_classes << drum_class;
         loaded_timestamps << timestamp;
@@ -1098,7 +999,7 @@ fun int loadVariationFile(int track, int var_num) {
 
     // Copy to track arrays
     for(0 => int i; i < loaded_classes.size(); i++) {
-        track_drum_classes[track] << loaded_classes[i];
+        track_midi_notes[track] << loaded_classes[i];
         track_drum_timestamps[track] << loaded_timestamps[i];
         track_drum_velocities[track] << loaded_velocities[i];
     }
@@ -1117,13 +1018,12 @@ fun int loadVariationFile(int track, int var_num) {
     file_loop_duration => loop_length[track];
     loop_length[track]::second => recorded_duration[track];
 
-    <<< "✓ Loaded", track_drum_classes[track].size(), "drum hits" >>>;
+    <<< "✓ Loaded", track_midi_notes[track].size(), "drum hits" >>>;
     <<< "✓ Loop length:", loop_length[track], "seconds" >>>;
 
     1 => track_loaded_from_file[track];
     1 => has_loop[track];
     1 => drum_playback_active[track];
-    0.8 => drum_gain[track].gain;
 
     spork ~ drumPlaybackLoop(track);
 
@@ -1133,35 +1033,43 @@ fun int loadVariationFile(int track, int var_num) {
     return 1;
 }
 
-// === DRUM PLAYBACK FUNCTIONS ===
+// === DRUM PLAYBACK FUNCTIONS (MIDI OUTPUT via IAC Driver) ===
 
-fun void playDrumHit(int track, int drum_class, float velocity) {
-    // Map velocity (0.0-1.0) to gain multiplier
-    Math.max(0.3, Math.min(1.0, velocity)) => float vel_gain;
+fun void playDrumHit(int midi_note, float velocity) {
+    if(is_muted) return;  // Silence gate
 
-    // Trigger appropriate sample - they'll play to completion naturally
-    if(drum_class == 0) {  // Kick
-        0 => kick_sample[track].pos;  // Reset to beginning
-        vel_gain * 0.6 => kick_sample[track].gain;  // Apply velocity
-        // Trigger visual impulse
-        vel_gain => kick_impulse;
+    // Convert velocity 0.0-1.0 to MIDI velocity 1-127
+    Math.max(1.0, velocity * 127.0) $ int => int midi_vel;
+    if (midi_vel > 127) 127 => midi_vel;
+
+    // Map MIDI note to visual impulse category
+    if (midi_note >= 35 && midi_note <= 36) {
+        1 => kick_impulse;
+    } else if (midi_note >= 37 && midi_note <= 40) {
+        1 => snare_impulse;
+    } else {
+        1 => hat_impulse;
     }
-    else if(drum_class == 1) {  // Snare
-        0 => snare_sample[track].pos;
-        vel_gain * 0.5 => snare_sample[track].gain;
-        // Trigger visual impulse
-        vel_gain => snare_impulse;
-    }
-    else if(drum_class == 2) {  // Hat
-        0 => hat_sample[track].pos;
-        vel_gain * 0.4 => hat_sample[track].gain;
-        // Trigger visual impulse
-        vel_gain => hat_impulse;
-    }
+
+    // Send MIDI Note On
+    MidiMsg mmsg;
+    (0x90 | DRUM_MIDI_CHANNEL) => mmsg.data1;
+    midi_note => mmsg.data2;
+    midi_vel => mmsg.data3;
+    midiout.send(mmsg);
+
+    // Brief note duration
+    50::ms => now;
+
+    // Send MIDI Note Off
+    (0x80 | DRUM_MIDI_CHANNEL) => mmsg.data1;
+    midi_note => mmsg.data2;
+    0 => mmsg.data3;
+    midiout.send(mmsg);
 }
 
 // Scheduled drum playback
-fun void playScheduledDrumHit(int track, int drum_class, float velocity,
+fun void playScheduledDrumHit(int track, int midi_note, float velocity,
                               time scheduled_time, int my_playback_id) {
     // Wait until scheduled time
     scheduled_time - now => dur wait_time;
@@ -1175,13 +1083,13 @@ fun void playScheduledDrumHit(int track, int drum_class, float velocity,
         return;  // Old session, abort
     }
 
-    // Play the drum hit
-    playDrumHit(track, drum_class, velocity);
+    // Play the drum hit via MIDI
+    playDrumHit(midi_note, velocity);
 }
 
 // Main drum playback loop for a track
 fun void drumPlaybackLoop(int track) {
-    if(track_drum_classes[track].size() == 0) {
+    if(track_midi_notes[track].size() == 0) {
         <<< "Track", track, "- No drum hits to play" >>>;
         return;
     }
@@ -1193,7 +1101,7 @@ fun void drumPlaybackLoop(int track) {
 
     <<< "Track", track, "- Drum playback started (ID:", my_playback_id, ")" >>>;
     <<< "  Loop duration:", total_duration, "sec" >>>;
-    <<< "  Drum hits:", track_drum_classes[track].size() >>>;
+    <<< "  Drum hits:", track_midi_notes[track].size() >>>;
 
     // NOTE: Sync is handled by masterSyncCoordinator - we start immediately
     // The coordinator ensures we only start at loop boundaries
@@ -1205,13 +1113,13 @@ fun void drumPlaybackLoop(int track) {
         now => loop_start_time[track];
 
         // Schedule all drum hits for this loop iteration
-        for(0 => int i; i < track_drum_classes[track].size(); i++) {
+        for(0 => int i; i < track_midi_notes[track].size(); i++) {
             if(!drum_playback_active[track] || !has_loop[track] || drum_playback_id[track] != my_playback_id) break;
 
             loop_start_time[track] + track_drum_timestamps[track][i]::second => time hit_time;
 
             spork ~ playScheduledDrumHit(track,
-                                        track_drum_classes[track][i],
+                                        track_midi_notes[track][i],
                                         track_drum_velocities[track][i],
                                         hit_time,
                                         my_playback_id);  // Pass session ID
@@ -1408,14 +1316,12 @@ fun void oscListener() {
                 // Apply ceiling
                 Math.min(detected_spice_level, spice_ceiling) => effective_spice;
 
-                // Silence gate → mute/unmute drums
+                // Silence gate → mute/unmute drums (playDrumHit checks is_muted flag)
                 if(effective_spice <= 0.0 && !is_muted && has_loop[0]) {
                     1 => is_muted;
-                    spork ~ fadeGain(0, 0.0, 100::ms);
                     <<< "Silence detected → drums muted" >>>;
                 } else if(effective_spice > 0.0 && is_muted) {
                     0 => is_muted;
-                    spork ~ fadeGain(0, DRUM_SAMPLE_VOLUME, 100::ms);
                     <<< "Energy resumed → drums unmuted" >>>;
                 }
             }
@@ -1593,22 +1499,19 @@ fun void stopRecording(int track) {
         0 => track_loaded_from_file[track];  // Mark as recorded (not loaded)
 
         <<< ">>> TRACK", track, "LOOPING <<<" >>>;
-        <<< ">>> Captured", track_drum_classes[track].size(), "drum hits <<<" >>>;
+        <<< ">>> Captured", track_midi_notes[track].size(), "drum hits <<<" >>>;
 
         // === AUTO-EXPORT ===
-        if(track_drum_classes[track].size() > 0) {
+        if(track_midi_notes[track].size() > 0) {
             exportSymbolicData(track);
         }
 
         // === ENABLE DRUM PLAYBACK ===
-        if(track_drum_classes[track].size() > 0) {
+        if(track_midi_notes[track].size() > 0) {
             1 => drum_playback_active[track];
 
-            // Drums-only mode
-            0.8 => drum_gain[track].gain;
-
             spork ~ drumPlaybackLoop(track);
-            <<< ">>> DRUM PLAYBACK ENABLED (Drums Only Mode) <<<" >>>;
+            <<< ">>> DRUM PLAYBACK ENABLED (MIDI via IAC Driver) <<<" >>>;
         } else {
             <<< ">>> No drum hits detected <<<" >>>;
         }
@@ -1648,20 +1551,12 @@ fun void clearTrack(int track) {
         0 => spice_stable_count;
         0 => spice_stable_target;
         for(0 => int i; i < 6; i++) 0 => variation_available[i];
-        // Restore drum gain if was muted
-        DRUM_SAMPLE_VOLUME => drum_gain[track].gain;
     }
 }
 
 fun void setTrackVolume(int track, float vol) {
-    if(track < 0 || track >= NUM_TRACKS) return;
-    Math.max(0.0, Math.min(1.0, vol)) => float master_vol;
-
-    // Drums-only mode - adjust drum volume
-    if(has_loop[track] && drum_playback_active[track]) {
-        master_vol * 0.8 => drum_gain[track].gain;
-        <<< "Track", track, "Volume:", (master_vol * 100) $ int, "%" >>>;
-    }
+    // MIDI mode: volume control not applicable (handled by Ableton)
+    <<< "Track", track, "- Volume control not available in MIDI mode" >>>;
 }
 
 fun void setTrackAudioDrumMix(int track, float mix) {
@@ -2010,45 +1905,6 @@ fun void visualizationLoop() {
             }
         }
 
-        // === UPDATE DROP ZONE VISUALS ===
-        for(0 => int i; i < 3; i++) {
-            // Decay flash intensity (200ms flash duration)
-            zone_flash_intensity[i] * 0.85 => zone_flash_intensity[i];
-
-            // Apply flash effect to material
-            if(zone_flash_intensity[i] > 0.1) {
-                // Success flash (green)
-                drop_zone_mats[i].color(zone_colors[i]);
-                drop_zone_mats[i].emission(@(0.5, 1.5, 0.5) * zone_flash_intensity[i]);
-            }
-            else if(zone_flash_intensity[i] < -0.1) {
-                // Error flash (red)
-                drop_zone_mats[i].color(@(1.0, 0.2, 0.2));
-                drop_zone_mats[i].emission(@(2.0, 0.3, 0.3) * Math.fabs(zone_flash_intensity[i]));
-            }
-            else {
-                // Normal state (dim, no emission)
-                drop_zone_mats[i].color(zone_colors[i] * 0.6);
-                drop_zone_mats[i].emission(@(0.0, 0.0, 0.0));
-            }
-        }
-
-        // === DRAG-AND-DROP DETECTION ===
-        if(GWindow.files() != files) {
-            GWindow.files() @=> files;
-
-            if(files.size() > 0) {
-                // Detect drop zone from mouse position
-                UI.getMousePos() => vec2 mousePos;
-                detectZoneFromMouse(mousePos) => int target_zone;
-
-                <<< "" >>>;
-                <<< ">>> FILE DROPPED into", zone_drum_names[target_zone], "zone <<<" >>>;
-
-                // Load sample (hot-swap)
-                loadDrumSample(target_zone, files[0]);
-            }
-        }
     }
 }
 
@@ -2061,19 +1917,46 @@ MidiMsg midi_msg;
 <<< "      CHULOOPA v4 - Audio-Driven Variation System" >>>;
 <<< "=====================================================" >>>;
 
+// Print all available MIDI input ports for diagnostics
+<<< "Available MIDI input ports:" >>>;
+for (0 => int p; p < min.num(); p++) {
+    MidiIn tmp_diag;
+    if (tmp_diag.open(p)) {
+        <<< "  port", p, "->", tmp_diag.name() >>>;
+    }
+}
+
+// Open MIDI input by name "LPD8", fallback to port 1 (skip IAC at port 0)
+0 => int midi_in_opened;
 if(min.num() == 0) {
     <<< "WARNING: No MIDI devices found!" >>>;
 } else {
-    if(min.open(MIDI_DEVICE)) {
-        <<< "MIDI Device:", min.name() >>>;
+    // Try opening by name directly
+    if (min.open("LPD8")) {
+        1 => midi_in_opened;
+        <<< "MIDI Device (input):", min.name() >>>;
+    }
+    // Fallback: port 1 (port 0 is IAC Driver)
+    if (!midi_in_opened && min.num() > 1) {
+        if (min.open(1)) {
+            1 => midi_in_opened;
+            <<< "MIDI Device (input, port 1):", min.name() >>>;
+        }
+    }
+    // Final fallback
+    if (!midi_in_opened) {
+        if (min.open(MIDI_DEVICE)) {
+            <<< "MIDI Device (input, fallback port 0):", min.name() >>>;
+        }
     }
 }
 
 <<< "" >>>;
-<<< "Drum Samples Loaded:" >>>;
-<<< "  Kick:", kick_sample[0].samples(), "samples" >>>;
-<<< "  Snare:", snare_sample[0].samples(), "samples" >>>;
-<<< "  Hat:", hat_sample[0].samples(), "samples" >>>;
+<<< "MIDI Output:" >>>;
+<<< "  Drum notes sent via IAC Driver to Ableton" >>>;
+<<< "  Kick  -> Note 36 (C1)  on Channel 1" >>>;
+<<< "  Snare -> Note 38 (D1)  on Channel 1" >>>;
+<<< "  Hi-hat -> Note 42 (F#1) on Channel 1" >>>;
 <<< "" >>>;
 <<< "MIDI Controls (Single Track):" >>>;
 <<< "  C1  (36): Record track (press & hold)" >>>;
@@ -2092,7 +1975,7 @@ if(min.num() == 0) {
 <<< "  - Silence → drums mute automatically" >>>;
 <<< "  - CC 74 = spice ceiling (not absolute level)" >>>;
 <<< "" >>>;
-<<< "MODE: DRUMS ONLY + AUDIO-DRIVEN AUTO-SWITCHING" >>>;
+<<< "MODE: MIDI DRUMS via IAC Driver + AUDIO-DRIVEN AUTO-SWITCHING" >>>;
 <<< "=====================================================" >>>;
 
 int ignore_cc[128];
@@ -2166,108 +2049,6 @@ fun void midiListener() {
             }
         }
     }
-}
-
-// === DROP ZONE HELPER FUNCTIONS ===
-
-fun int detectZoneFromMouse(vec2 mousePos) {
-    // Divide screen into thirds based on mouse X position
-    GG.windowWidth() => float windowWidth;
-    mousePos.x => float mouseX;
-    windowWidth / 3.0 => float zoneWidth;
-
-    if(mouseX < zoneWidth) return 0;        // KICK (left third)
-    else if(mouseX < zoneWidth * 2.0) return 1;  // SNARE (middle third)
-    else return 2;                          // HAT (right third)
-}
-
-fun string getFilename(string filepath) {
-    // Extract just filename from full path
-    -1 => int last_slash;
-    for(0 => int i; i < filepath.length(); i++) {
-        if(filepath.substring(i, 1) == "/") {
-            i => last_slash;
-        }
-    }
-    if(last_slash >= 0 && last_slash < filepath.length() - 1) {
-        return filepath.substring(last_slash + 1, filepath.length() - last_slash - 1);
-    }
-    return filepath;
-}
-
-fun void triggerZoneFlash(int zone, int success) {
-    // success: 1=green flash, 0=red error flash
-    now => zone_flash_start[zone];
-
-    if(success) {
-        3.0 => zone_flash_intensity[zone];  // Bright green emission
-    } else {
-        -1.0 => zone_flash_intensity[zone];  // Negative = red error flag
-    }
-}
-
-fun int loadDrumSample(int zone, string filepath) {
-    // Validate zone parameter
-    if(zone < 0 || zone >= 3) {
-        <<< "ERROR: Invalid zone", zone, "(must be 0-2)" >>>;
-        return 0;
-    }
-
-    // Validate filepath
-    if(filepath == "") {
-        <<< "ERROR: Empty filepath" >>>;
-        return 0;
-    }
-
-    // zone: 0=kick, 1=snare, 2=hat
-    <<< "" >>>;
-    <<< ">>> LOADING SAMPLE:", zone_drum_names[zone], "<<<" >>>;
-    <<< "File:", filepath >>>;
-
-    // Test load to validate file
-    SndBuf test;
-    filepath => test.read;
-
-    if(test.samples() == 0) {
-        <<< "ERROR: Invalid audio file or file not found" >>>;
-        triggerZoneFlash(zone, 0);  // Red error flash
-        "INVALID FILE" => zone_labels[zone].text;
-        "INVALID" => current_sample_names[zone];
-        return 0;
-    }
-
-    <<< "Valid file, loading into all tracks..." >>>;
-
-    // Hot-swap: reload all track SndBufs for this drum type
-    for(0 => int i; i < NUM_TRACKS; i++) {
-        if(zone == 0) {
-            // KICK
-            filepath => kick_sample[i].read;
-            kick_sample[i].samples() => kick_sample[i].pos;  // Reset to end (silent)
-        }
-        else if(zone == 1) {
-            // SNARE
-            filepath => snare_sample[i].read;
-            snare_sample[i].samples() => snare_sample[i].pos;
-        }
-        else if(zone == 2) {
-            // HAT
-            filepath => hat_sample[i].read;
-            hat_sample[i].samples() => hat_sample[i].pos;
-        }
-    }
-
-    // Success feedback
-    triggerZoneFlash(zone, 1);  // Green success flash
-    getFilename(filepath) => string fname;
-    fname => current_sample_names[zone];
-    fname => zone_labels[zone].text;  // Just filename, no suffix
-
-    <<< "[OK] Sample loaded successfully!" >>>;
-    <<< "  Duration:", (test.length() / second) $ float, "sec" >>>;
-    <<< "" >>>;
-
-    return 1;
 }
 
 // === MAIN PROGRAM ===
