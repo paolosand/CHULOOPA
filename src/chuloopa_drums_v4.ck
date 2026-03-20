@@ -37,6 +37,13 @@
 0.5 => float DEFAULT_SPICE_LEVEL;    // Default spice level (0.0-1.0)
 1.0 => float DEFAULT_SPICE_CEILING;  // Default ceiling (1.0 = no cap)
 
+// === WEIGHTED VARIATION SELECTION ===
+4 => int ROLLING_WINDOW_BARS;      // Loop cycles to average spice over (configurable)
+2 => int MAX_SAME_VAR_REPEATS;     // Max consecutive repeats before forced re-roll
+
+// === SILENCE DEBOUNCE ===
+4 => int SILENCE_FRAMES_THRESHOLD; // Consecutive zero-spice reads before muting (4 x 500ms = 2s)
+
 // === MIDI CONFIGURATION (SINGLE TRACK FOCUS) ===
 36 => int NOTE_RECORD_TRACK;     // C1 - Record track (press & hold)
 37 => int NOTE_CLEAR_TRACK;      // C#1 - Clear track
@@ -327,6 +334,42 @@ int is_muted;                        // 1 = drums silenced by silence gate
 int variation_available[6];          // index 0 unused, 1-5 for var files
 int spice_stable_count;              // Consecutive windows at same target (hysteresis)
 int spice_stable_target;             // Target variation index being confirmed
+
+// === WEIGHTED VARIATION SELECTION STATE ===
+// Weight table: 5 tiers x 6 vars = 30 values, indexed as [tier * 6 + var_idx]
+// Tier spice anchors: 0.0, 0.25, 0.50, 0.75, 1.00
+float WEIGHT_TABLE[30];
+
+// Rolling spice average
+float rolling_spice_history[4];   // size must be a literal in ChucK (= ROLLING_WINDOW_BARS)
+0 => int rolling_spice_idx;       // circular buffer write position
+0 => int rolling_spice_filled;    // 1 once buffer has wrapped at least once
+0.0 => float rolling_avg_spice;   // computed each loop boundary
+
+// Last-played tracking (repeat prevention)
+0 => int last_played_var_idx;
+0 => int last_played_count;
+
+// Silence debounce
+0 => int silence_frame_count;     // consecutive zero-spice OSC reads
+0 => int queued_unmute;           // 1 = unmute drums at next loop boundary
+
+// Initialize WEIGHT_TABLE (5 tiers x 6 vars)
+// Tier 0 (spice=0.00): echo-dominant
+0.50 => WEIGHT_TABLE[0];  0.40 => WEIGHT_TABLE[1];  0.10 => WEIGHT_TABLE[2];
+0.00 => WEIGHT_TABLE[3];  0.00 => WEIGHT_TABLE[4];  0.00 => WEIGHT_TABLE[5];
+// Tier 1 (spice=0.25): echo fades, var1/var2 rise
+0.20 => WEIGHT_TABLE[6];  0.40 => WEIGHT_TABLE[7];  0.30 => WEIGHT_TABLE[8];
+0.10 => WEIGHT_TABLE[9];  0.00 => WEIGHT_TABLE[10]; 0.00 => WEIGHT_TABLE[11];
+// Tier 2 (spice=0.50): center mass at var2/var3
+0.05 => WEIGHT_TABLE[12]; 0.20 => WEIGHT_TABLE[13]; 0.40 => WEIGHT_TABLE[14];
+0.30 => WEIGHT_TABLE[15]; 0.05 => WEIGHT_TABLE[16]; 0.00 => WEIGHT_TABLE[17];
+// Tier 3 (spice=0.75): center mass at var3, floor shifts to var1
+0.00 => WEIGHT_TABLE[18]; 0.10 => WEIGHT_TABLE[19]; 0.30 => WEIGHT_TABLE[20];
+0.40 => WEIGHT_TABLE[21]; 0.20 => WEIGHT_TABLE[22]; 0.00 => WEIGHT_TABLE[23];
+// Tier 4 (spice=1.00): high-energy, floor is var2
+0.00 => WEIGHT_TABLE[24]; 0.00 => WEIGHT_TABLE[25]; 0.20 => WEIGHT_TABLE[26];
+0.40 => WEIGHT_TABLE[27]; 0.30 => WEIGHT_TABLE[28]; 0.10 => WEIGHT_TABLE[29];
 
 // Initialize variation mode state
 0 => variation_mode_active;
