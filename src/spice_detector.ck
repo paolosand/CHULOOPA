@@ -117,6 +117,18 @@ fun void sendSpice(float spice) {
     oout_chuck.send();
 }
 
+fun void sendPerformanceMode() {
+    oout_chuck.start("/chuloopa/performance_mode");
+    performance_mode => oout_chuck.add;
+    oout_chuck.send();
+}
+
+fun void sendGuitarMix(float mix) {
+    oout_chuck.start("/chuloopa/guitar_mix");
+    mix => oout_chuck.add;
+    oout_chuck.send();
+}
+
 // === MIDI SETUP ===
 MidiIn min;
 MidiMsg midi_msg;
@@ -143,6 +155,7 @@ fun void midiListener() {
                     guitar_mix => guitar_gain.gain;
                     (1.0 - guitar_mix) => vocal_gain.gain;
                     <<< "Guitar mix:", (guitar_mix * 100) $ int, "% guitar /" , ((1.0 - guitar_mix) * 100) $ int, "% vocal" >>>;
+                    sendGuitarMix(guitar_mix);
                 }
             }
         }
@@ -408,5 +421,7 @@ spork ~ spiceCalculationLoop();
 if(min.num() > 0) spork ~ midiListener();
 
 while(true) {
-    1::second => now;
+    sendPerformanceMode();
+    if(performance_mode) sendGuitarMix(guitar_mix);
+    30::second => now;
 }
