@@ -79,6 +79,8 @@ HOP_SIZE::samp => dur HOP;
 
 // === FEATURE CONFIGURATION ===
 // Uses 5 features: flux, energy, band1, band2, band5
+0.55 => float CONFIDENCE_THRESHOLD; // Min KNN probability to accept classification
+                                     // 0.50 = any majority, 0.55 = default, 0.67 = strict
 
 // === QUANTIZATION REMOVED ===
 // Quantization system removed in v3 (was disabled in v2)
@@ -364,7 +366,7 @@ Gain output_gains[NUM_TRACKS];
 
 // === ANALYSIS CHAINS (per track, active only during recording) ===
 FFT track_fft[NUM_TRACKS];
-RMS track_rms[NUM_TRACKS];
+MFCC track_mfcc[NUM_TRACKS];
 
 // Configure each track
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -381,11 +383,12 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0.0 => output_gains[i].gain;  // Zero gain
 
     // Setup analysis chains (connected to adc, but only upchucked during recording)
-    adc => track_fft[i] => blackhole;
-    adc => track_rms[i] => blackhole;
+    // =^ is the UAna upchuck-chain operator: mfcc.upchuck() propagates upstream through fft
+    adc => track_fft[i] =^ track_mfcc[i] => blackhole;
 
     FRAME_SIZE => track_fft[i].size;
     Windowing.hann(FRAME_SIZE) => track_fft[i].window;
+    13 => track_mfcc[i].numCoeffs;
 }
 
 // === STATE VARIABLES (per track) ===
@@ -493,6 +496,7 @@ for(0 => int i; i < 6; i++) 0 => variation_available[i];
 
 // Drum hit impulses for visual feedback
 0.0 => float kick_impulse => float snare_impulse => float hat_impulse;
+0.0 => float low_confidence_flash;  // Flashes white when onset is dropped by confidence gate
 
 // Animation time
 now => time start_time;
