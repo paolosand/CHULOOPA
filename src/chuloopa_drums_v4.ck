@@ -39,6 +39,7 @@
 
 // === WEIGHTED VARIATION SELECTION ===
 4 => int ROLLING_WINDOW_BARS;      // Loop cycles to average spice over (configurable)
+                                   // NOTE: rolling_spice_history[] literal size must match this value!
 2 => int MAX_SAME_VAR_REPEATS;     // Max consecutive repeats before forced re-roll
 
 // === SILENCE DEBOUNCE ===
@@ -211,7 +212,9 @@ fun int pickVariationByWeight(float spice) {
             break;
         }
     }
-    // Edge case: floating-point rounding pushed roll past last weight
+    // Edge case: floating-point rounding pushed roll past last weight.
+    // Safe: Step 6's sum check guarantees at least one nonzero weight exists,
+    // so the break will always fire before i underflows.
     if(roll > cumulative) {
         for(5 => int i; i >= 0; i - 1 => i) {
             if(raw_weights[i] > 0.0) {
@@ -222,6 +225,7 @@ fun int pickVariationByWeight(float spice) {
     }
 
     // Step 9: Update repeat-prevention state
+    last_played_var_idx => int prev_var_idx;  // capture before state update for log accuracy
     if(selected == last_played_var_idx) {
         last_played_count + 1 => last_played_count;
     } else {
@@ -230,7 +234,7 @@ fun int pickVariationByWeight(float spice) {
     }
 
     <<< ">>> WEIGHTED PICK: spice=" + (spice * 100) $ int + "% → var" + selected +
-        " (last=" + last_played_var_idx + " x" + last_played_count + ")" >>>;
+        " (prev=" + prev_var_idx + " x" + last_played_count + ")" >>>;
 
     return selected;
 }
