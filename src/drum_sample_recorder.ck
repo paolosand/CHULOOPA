@@ -314,116 +314,27 @@ fun int detectOnset(float flux, float threshold) {
 
 // === FEATURE EXTRACTION ===
 
-// Extract enhanced features for better drum classification
-fun float[] extractOnsetFeatures(float flux) {
-    float features[25];  // 12 spectral + 13 MFCC = 25 features
-
-    // Get current FFT frame
-    fft.upchuck() @=> UAnaBlob @ blob;
-
-    // Calculate RMS energy from FFT magnitudes (ChucK's RMS unit doesn't work as expected)
-    0.0 => float energy_from_fft;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        mag * mag +=> energy_from_fft;  // Sum of squares
-    }
-    Math.sqrt(energy_from_fft / (FRAME_SIZE/2.0)) => float energy;
-
-    // Frequency band energies (more granular than before)
-    0.0 => float band1;  // 0-64 Hz (sub bass - kick fundamental)
-    0.0 => float band2;  // 64-256 Hz (low - kick body)
-    0.0 => float band3;  // 256-1024 Hz (low-mid - snare fundamental)
-    0.0 => float band4;  // 1024-4096 Hz (mid-high - snare harmonics)
-    0.0 => float band5;  // 4096+ Hz (high - hat/cymbal)
-
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-
-        if(i < FRAME_SIZE/32) mag +=> band1;
-        else if(i < FRAME_SIZE/8) mag +=> band2;
-        else if(i < FRAME_SIZE/4) mag +=> band3;
-        else if(i < FRAME_SIZE/2.5) mag +=> band4;
-        else mag +=> band5;
-    }
-
-    // Spectral centroid (brightness/center of mass)
-    0.0 => float centroid_num;
-    0.0 => float centroid_den;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        i * mag +=> centroid_num;
-        mag +=> centroid_den;
-    }
-    centroid_num / (centroid_den + 0.0001) => float centroid;
-
-    // Spectral rolloff (90% energy point - useful for brightness)
-    0.0 => float total_energy;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) +=> total_energy;
-    }
-    total_energy * 0.9 => float rolloff_threshold;
-    0.0 => float running_sum;
-    0 => int rolloff;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) +=> running_sum;
-        if(running_sum >= rolloff_threshold && rolloff == 0) {
-            i => rolloff;
-        }
-    }
-
-    // Spectral flatness (noisiness - high for hats, low for tonal kicks)
-    0.0 => float geometric_mean;
-    0.0 => float arithmetic_mean;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        Math.log(mag + 0.0001) +=> geometric_mean;
-        mag +=> arithmetic_mean;
-    }
-    geometric_mean / (FRAME_SIZE/2.0) => geometric_mean;
-    Math.exp(geometric_mean) => geometric_mean;
-    arithmetic_mean / (FRAME_SIZE/2.0) => arithmetic_mean;
-    geometric_mean / (arithmetic_mean + 0.0001) => float flatness;
-
-    // Energy ratios (discriminative!)
-    band1 / (energy + 0.0001) => float low_ratio;
-    band5 / (energy + 0.0001) => float high_ratio;
-    (band3 + band4) / (energy + 0.0001) => float mid_ratio;
-
-    // MFCC (Mel-Frequency Cepstral Coefficients - excellent for timbre!)
+// Extract MFCC features for drum classification (MFCC-13 only)
+// Note: mfcc.upchuck() propagates upstream and also upchucks fft
+fun float[] extractOnsetFeatures() {
+    float features[13];
     mfcc.upchuck() @=> UAnaBlob @ mfcc_blob;
-
-    // Store all features
-    flux => features[0];
-    energy => features[1];
-    band1 => features[2];
-    band2 => features[3];
-    band3 => features[4];
-    band4 => features[5];
-    band5 => features[6];
-    centroid => features[7];
-    rolloff => features[8];
-    flatness => features[9];
-    low_ratio => features[10];
-    high_ratio => features[11];
-
-    // Add 13 MFCC coefficients (features 12-24)
     for(0 => int i; i < 13; i++) {
-        mfcc_blob.fval(i) => features[12 + i];
+        mfcc_blob.fval(i) => features[i];
     }
-
     return features;
 }
 
 // === SAMPLE RECORDING ===
 
-fun void recordSample(string label, time onset_time, float flux) {
+fun void recordSample(string label, time onset_time) {
     if(label == "none") {
         <<< "⚠️  No label set! Press K/S/H before beatboxing" >>>;
         return;
     }
 
     // Extract features
-    extractOnsetFeatures(flux) @=> float features[];
+    extractOnsetFeatures() @=> float features[];
 
     // Convert label to int
     0 => int label_idx;
@@ -444,8 +355,8 @@ fun void recordSample(string label, time onset_time, float flux) {
     // Visual feedback with feature values
     <<< "✓ Recorded:", label.upper(), "| Total - K:",
         label_counts[0], "S:", label_counts[1], "H:", label_counts[2] >>>;
-    <<< "  Features: flux=" + features[0] + " energy=" + features[1] +
-        " band1=" + features[2] + " band5=" + features[6] + " centroid=" + features[7] >>>;
+    <<< "  Features: mfcc0=" + features[0] + " mfcc1=" + features[1] +
+        " mfcc2=" + features[2] + " mfcc3=" + features[3] + " mfcc4=" + features[4] >>>;
 
     // Trigger visual pulse
     if(label == "kick") 1.0 => kick_impulse;
@@ -472,7 +383,7 @@ fun void exportTrainingData() {
     }
 
     // Write header (CSV format with commas)
-    fout.write("label,timestamp,flux,energy,band1,band2,band3,band4,band5,centroid,rolloff,flatness,low_ratio,high_ratio,mfcc0,mfcc1,mfcc2,mfcc3,mfcc4,mfcc5,mfcc6,mfcc7,mfcc8,mfcc9,mfcc10,mfcc11,mfcc12\n");
+    fout.write("label,timestamp,mfcc0,mfcc1,mfcc2,mfcc3,mfcc4,mfcc5,mfcc6,mfcc7,mfcc8,mfcc9,mfcc10,mfcc11,mfcc12\n");
 
     // Write each sample
     for(0 => int i; i < sample_labels.size(); i++) {
@@ -482,8 +393,8 @@ fun void exportTrainingData() {
         // Write label and timestamp
         fout.write(label + "," + timestamp);
 
-        // Write all 25 features (comma-separated)
-        for(0 => int j; j < 25; j++) {
+        // Write all 13 MFCC features (comma-separated)
+        for(0 => int j; j < 13; j++) {
             fout.write("," + sample_features[i][j]);
         }
 
@@ -520,7 +431,7 @@ fun void onsetDetectionLoop() {
 
         if(detectOnset(flux, threshold)) {
             // Record sample with current label
-            recordSample(current_label, now, flux);
+            recordSample(current_label, now);
             spork ~ playLabeledClick(current_label);
         }
 
