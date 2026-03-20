@@ -1315,6 +1315,28 @@ fun void masterSyncCoordinator() {
                 <<< "" >>>;
                 <<< "=== LOOP BOUNDARY: Processing queued actions ===" >>>;
 
+                // === ROLLING SPICE AVERAGE ===
+                effective_spice => rolling_spice_history[rolling_spice_idx];
+                (rolling_spice_idx + 1) % ROLLING_WINDOW_BARS => rolling_spice_idx;
+                if(!rolling_spice_filled && rolling_spice_idx == 0) {
+                    1 => rolling_spice_filled;
+                }
+                // Compute average over filled portion
+                0.0 => float spice_sum;
+                ROLLING_WINDOW_BARS => int spice_count;
+                if(!rolling_spice_filled) rolling_spice_idx => spice_count;
+                for(0 => int i; i < spice_count; i++) {
+                    spice_sum + rolling_spice_history[i] => spice_sum;
+                }
+                if(spice_count > 0) spice_sum / spice_count => rolling_avg_spice;
+
+                // === QUEUED UNMUTE (silence recovery at loop boundary) ===
+                if(queued_unmute && is_muted) {
+                    0 => is_muted;
+                    0 => queued_unmute;
+                    <<< ">>> UNMUTED at loop boundary <<<" >>>;
+                }
+
                 // Process queued variation toggle
                 if(queued_toggle_variation) {
                     <<< "Executing queued variation toggle" >>>;
@@ -1340,37 +1362,18 @@ fun void masterSyncCoordinator() {
                     }
                 }
 
-                // === V4: AUDIO-DRIVEN AUTO-SWITCHING (hysteresis) ===
-                // Only switches if no manual toggle is queued and bank is available
-                if(!queued_toggle_variation && bank_ready && has_loop[0] && !is_muted) {
-                    spiceToVariationIndex(effective_spice) => int target_idx;
-
-                    // Hysteresis: confirm target for 2+ consecutive windows (~1 second)
-                    if(target_idx == spice_stable_target) {
-                        spice_stable_count++;
-                    } else {
-                        target_idx => spice_stable_target;
-                        1 => spice_stable_count;
-                    }
-
-                    // Switch only after target is stable for 2+ windows
-                    if(spice_stable_count >= 2 && target_idx != current_variation_index) {
-                        // Check that the target variation is available
-                        if(target_idx == 0 || variation_available[target_idx]) {
-                            <<< "" >>>;
-                            <<< ">>> AUTO-SWITCH: spice=" + (effective_spice * 100) $ int + "% → var" + target_idx + " <<<" >>>;
-
-                            target_idx => current_variation_index;
-
-                            if(target_idx == 0) {
-                                // Load original
-                                loadDrumDataFromFile(0);
-                                0 => variation_mode_active;
-                            } else {
-                                // Load variation
-                                loadVariationFile(0, target_idx);
-                                1 => variation_mode_active;
-                            }
+                // === V4: WEIGHTED PROBABILISTIC AUTO-SWITCHING ===
+                // Only fires after rolling buffer is fully filled (cold-start guard)
+                if(!queued_toggle_variation && bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
+                    pickVariationByWeight(rolling_avg_spice) => int target_idx;
+                    if(target_idx != current_variation_index) {
+                        target_idx => current_variation_index;
+                        if(target_idx == 0) {
+                            loadDrumDataFromFile(0);
+                            0 => variation_mode_active;
+                        } else {
+                            loadVariationFile(0, target_idx);
+                            1 => variation_mode_active;
                         }
                     }
                 }
