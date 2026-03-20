@@ -121,16 +121,6 @@ if (!midiout.open("IAC Driver Bus 1")) {
 // MIDI channel for drums (0 = channel 1)
 0 => int DRUM_MIDI_CHANNEL;
 
-// === V4: SPICE TO VARIATION INDEX MAPPING ===
-// Maps effective_spice (0.0-1.0) to variation index (0=original, 1-5)
-fun int spiceToVariationIndex(float spice) {
-    if(spice < 0.1) return 0;       // Original (silence/very low)
-    else if(spice < 0.3) return 1;  // var1 (spice=0.2)
-    else if(spice < 0.5) return 2;  // var2 (spice=0.4)
-    else if(spice < 0.7) return 3;  // var3 (spice=0.6)
-    else if(spice < 0.9) return 4;  // var4 (spice=0.8)
-    else return 5;                  // var5 (spice=1.0)
-}
 
 // Weighted probabilistic variation selection driven by rolling-average spice.
 // The probability window slides up the variation ladder as spice increases.
@@ -440,8 +430,6 @@ int bank_progress;                   // 0-5: how many variations are ready
 int current_variation_index;         // 0=original, 1-5=variation files
 int is_muted;                        // 1 = drums silenced by silence gate
 int variation_available[6];          // index 0 unused, 1-5 for var files
-int spice_stable_count;              // Consecutive windows at same target (hysteresis)
-int spice_stable_target;             // Target variation index being confirmed
 
 // === WEIGHTED VARIATION SELECTION STATE ===
 // Weight table: 5 tiers x 6 vars = 30 values, indexed as [tier * 6 + var_idx]
@@ -496,8 +484,6 @@ DEFAULT_SPICE_CEILING => spice_ceiling;
 0 => bank_progress;
 0 => current_variation_index;
 0 => is_muted;
-0 => spice_stable_count;
-0 => spice_stable_target;
 for(0 => int i; i < 6; i++) 0 => variation_available[i];
 
 // === DEFORMATION & ANIMATION STATE ===
@@ -1704,9 +1690,16 @@ fun void clearTrack(int track) {
         0 => bank_progress;
         0 => current_variation_index;
         0 => is_muted;
-        0 => spice_stable_count;
-        0 => spice_stable_target;
         for(0 => int i; i < 6; i++) 0 => variation_available[i];
+        // Weighted selection state
+        0 => rolling_spice_idx;
+        0 => rolling_spice_filled;
+        0.0 => rolling_avg_spice;
+        0 => last_played_var_idx;
+        0 => last_played_count;
+        // Silence debounce state
+        0 => silence_frame_count;
+        0 => queued_unmute;
     }
 }
 
