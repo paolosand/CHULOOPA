@@ -341,7 +341,7 @@ int spice_stable_target;             // Target variation index being confirmed
 float WEIGHT_TABLE[30];
 
 // Rolling spice average
-float rolling_spice_history[4];   // size must be a literal in ChucK (= ROLLING_WINDOW_BARS)
+float rolling_spice_history[4];   // MUST match ROLLING_WINDOW_BARS (ChucK requires literal size — update both if changing!)
 0 => int rolling_spice_idx;       // circular buffer write position
 0 => int rolling_spice_filled;    // 1 once buffer has wrapped at least once
 0.0 => float rolling_avg_spice;   // computed each loop boundary
