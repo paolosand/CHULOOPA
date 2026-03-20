@@ -1695,6 +1695,7 @@ fun void clearTrack(int track) {
         0 => rolling_spice_idx;
         0 => rolling_spice_filled;
         0.0 => rolling_avg_spice;
+        for(0 => int i; i < 4; i++) 0.0 => rolling_spice_history[i];
         0 => last_played_var_idx;
         0 => last_played_count;
         // Silence debounce state
