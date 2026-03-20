@@ -78,7 +78,7 @@ HOP_SIZE::samp => dur HOP;
 150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
 
 // === FEATURE CONFIGURATION ===
-// Uses 5 features: flux, energy, band1, band2, band5
+// Classification: MFCC-13 features via KNN2 (13 coefficients)
 0.55 => float CONFIDENCE_THRESHOLD; // Min KNN probability to accept classification
                                      // 0.50 = any majority, 0.55 = default, 0.67 = strict
 
