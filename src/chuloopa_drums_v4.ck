@@ -1328,6 +1328,7 @@ fun void masterSyncCoordinator() {
                 for(0 => int i; i < spice_count; i++) {
                     spice_sum + rolling_spice_history[i] => spice_sum;
                 }
+                // spice_count is always >= 1 here (at least one boundary has elapsed)
                 if(spice_count > 0) spice_sum / spice_count => rolling_avg_spice;
 
                 // === QUEUED UNMUTE (silence recovery at loop boundary) ===
@@ -1336,6 +1337,9 @@ fun void masterSyncCoordinator() {
                     0 => queued_unmute;
                     <<< ">>> UNMUTED at loop boundary <<<" >>>;
                 }
+
+                // Snapshot manual toggle flag before handlers consume it
+                queued_toggle_variation => int had_manual_toggle;
 
                 // Process queued variation toggle
                 if(queued_toggle_variation) {
@@ -1364,7 +1368,7 @@ fun void masterSyncCoordinator() {
 
                 // === V4: WEIGHTED PROBABILISTIC AUTO-SWITCHING ===
                 // Only fires after rolling buffer is fully filled (cold-start guard)
-                if(!queued_toggle_variation && bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
+                if(!had_manual_toggle && bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
                     pickVariationByWeight(rolling_avg_spice) => int target_idx;
                     if(target_idx != current_variation_index) {
                         target_idx => current_variation_index;
