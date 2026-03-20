@@ -131,6 +131,110 @@ fun int spiceToVariationIndex(float spice) {
     else return 5;                  // var5 (spice=1.0)
 }
 
+// Weighted probabilistic variation selection driven by rolling-average spice.
+// The probability window slides up the variation ladder as spice increases.
+// Called at every loop boundary once rolling_spice_filled == 1.
+fun int pickVariationByWeight(float spice) {
+    // Step 1: Clamp spice
+    Math.max(0.0, Math.min(1.0, spice)) => spice;
+
+    // Step 2: Find lower tier index (0-4) and lerp factor t
+    0 => int lower_tier;
+    0.0 => float t;
+    if(spice >= 1.0) {
+        4 => lower_tier;
+        1.0 => t;
+    } else {
+        (spice / 0.25) $ int => lower_tier;
+        if(lower_tier > 3) 3 => lower_tier;
+        (spice - lower_tier * 0.25) / 0.25 => t;
+    }
+
+    // Step 3: Interpolate between lower and upper tier weight rows
+    float raw_weights[6];
+    if(lower_tier >= 4) {
+        // At spice=1.0, use tier 4 directly
+        for(0 => int i; i < 6; i++) {
+            WEIGHT_TABLE[4 * 6 + i] => raw_weights[i];
+        }
+    } else {
+        lower_tier + 1 => int upper_tier;
+        for(0 => int i; i < 6; i++) {
+            WEIGHT_TABLE[lower_tier * 6 + i] => float w_lo;
+            WEIGHT_TABLE[upper_tier * 6 + i] => float w_hi;
+            w_lo + t * (w_hi - w_lo) => raw_weights[i];
+        }
+    }
+
+    // Step 4: Zero out unavailable variations (var0/echo is always available)
+    for(1 => int i; i <= 5; i++) {
+        if(!variation_available[i]) {
+            0.0 => raw_weights[i];
+        }
+    }
+
+    // Step 5: Repeat prevention — if same var played MAX_SAME_VAR_REPEATS times,
+    // tentatively zero it; restore if it's the only option
+    if(last_played_count >= MAX_SAME_VAR_REPEATS) {
+        raw_weights[last_played_var_idx] => float saved_weight;
+        0.0 => raw_weights[last_played_var_idx];
+
+        0.0 => float tentative_sum;
+        for(0 => int i; i < 6; i++) {
+            tentative_sum + raw_weights[i] => tentative_sum;
+        }
+        if(tentative_sum <= 0.0) {
+            saved_weight => raw_weights[last_played_var_idx];  // accept repeat
+        }
+    }
+
+    // Step 6: Sum check — return unchanged if nothing to select
+    0.0 => float weight_sum;
+    for(0 => int i; i < 6; i++) {
+        weight_sum + raw_weights[i] => weight_sum;
+    }
+    if(weight_sum <= 0.0) return current_variation_index;
+
+    // Step 7: Normalize
+    for(0 => int i; i < 6; i++) {
+        raw_weights[i] / weight_sum => raw_weights[i];
+    }
+
+    // Step 8: Weighted random walk
+    Math.random2f(0.0, 1.0) => float roll;
+    0.0 => float cumulative;
+    0 => int selected;
+    for(0 => int i; i < 6; i++) {
+        cumulative + raw_weights[i] => cumulative;
+        if(roll <= cumulative) {
+            i => selected;
+            break;
+        }
+    }
+    // Edge case: floating-point rounding pushed roll past last weight
+    if(roll > cumulative) {
+        for(5 => int i; i >= 0; i - 1 => i) {
+            if(raw_weights[i] > 0.0) {
+                i => selected;
+                break;
+            }
+        }
+    }
+
+    // Step 9: Update repeat-prevention state
+    if(selected == last_played_var_idx) {
+        last_played_count + 1 => last_played_count;
+    } else {
+        selected => last_played_var_idx;
+        1 => last_played_count;
+    }
+
+    <<< ">>> WEIGHTED PICK: spice=" + (spice * 100) $ int + "% → var" + selected +
+        " (last=" + last_played_var_idx + " x" + last_played_count + ")" >>>;
+
+    return selected;
+}
+
 // OSC sender functions - spice level (kept for backwards compat), regenerate, track cleared
 fun void sendSpiceLevel(float spice) {
     oout.start("/chuloopa/spice");
