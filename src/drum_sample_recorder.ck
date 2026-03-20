@@ -414,7 +414,7 @@ fun void exportTrainingData() {
     <<< "  - Hats:", label_counts[2] >>>;
     <<< "" >>>;
     <<< "Next steps:" >>>;
-    <<< "  1. Run: python train_classifier.py" >>>;
+    <<< "  1. Run: chuck chuloopa_drums_v4.ck (trains KNN automatically)" >>>;
     <<< "  2. Or: chuck src/drum_classifier_realtime.ck (SVM)" >>>;
     <<< "" >>>;
 }
