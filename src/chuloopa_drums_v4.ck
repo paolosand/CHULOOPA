@@ -1464,13 +1464,21 @@ fun void oscListener() {
                 // Apply ceiling
                 Math.min(detected_spice_level, spice_ceiling) => effective_spice;
 
-                // Silence gate → mute/unmute drums (playDrumHit checks is_muted flag)
-                if(effective_spice <= 0.0 && !is_muted && has_loop[0]) {
-                    1 => is_muted;
-                    <<< "Silence detected → drums muted" >>>;
-                } else if(effective_spice > 0.0 && is_muted) {
-                    0 => is_muted;
-                    <<< "Energy resumed → drums unmuted" >>>;
+                // Silence gate — requires N consecutive zero reads before muting;
+                // unmute is queued to next loop boundary for clean re-entry
+                if(effective_spice <= 0.0) {
+                    silence_frame_count++;
+                    if(silence_frame_count >= SILENCE_FRAMES_THRESHOLD && !is_muted && has_loop[0]) {
+                        1 => is_muted;
+                        0 => queued_unmute;  // cancel any pending unmute
+                        <<< "Silence detected (" + silence_frame_count + " frames) → drums muted" >>>;
+                    }
+                } else {
+                    0 => silence_frame_count;  // reset counter on any nonzero read
+                    if(is_muted && !queued_unmute) {
+                        1 => queued_unmute;
+                        <<< "Energy resumed → drums will unmute at next loop boundary" >>>;
+                    }
                 }
             }
             else if(msg.address == "/chuloopa/error") {
