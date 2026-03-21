@@ -1783,6 +1783,10 @@ fun void updateShapeDeformations(float time_sec) {
 
     hat_impulse * 0.9 => hat_impulse;
     if(hat_impulse < 0.01) 0.0 => hat_impulse;
+
+    // Decay low_confidence_flash
+    low_confidence_flash * 0.85 => low_confidence_flash;
+    if(low_confidence_flash < 0.01) 0.0 => low_confidence_flash;
 }
 
 // === VISUALIZATION ===
@@ -1845,6 +1849,12 @@ fun void visualizationLoop() {
             // Idle: Dim gray
             @(0.3, 0.3, 0.3) => target_color;
             0.2 => target_bloom;
+        }
+
+        // White flash on low-confidence drop (debug aid)
+        if(low_confidence_flash > 0.1) {
+            low_confidence_flash => float wf;
+            @(0.5 + wf * 0.5, 0.5 + wf * 0.5, 0.5 + wf * 0.5) => target_color;
         }
 
         // Add hit shine to bloom
