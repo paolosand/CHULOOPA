@@ -626,6 +626,14 @@ fun int trainKNNFromCSV(string filename) {
     // Skip header line
     fin.readLine() => string header;
 
+    // Detect legacy 5-feature format (pre-MFCC)
+    if(header.find("flux") != -1) {
+        <<< "ERROR: Legacy training_samples.csv detected (old 5-feature/25-feature format)." >>>;
+        <<< "Delete training_samples.csv and re-record with the updated drum_sample_recorder.ck" >>>;
+        fin.close();
+        return 0;
+    }
+
     // Count samples first
     0 => int num_samples;
     while(fin.more()) {
@@ -647,8 +655,8 @@ fun int trainKNNFromCSV(string filename) {
     fin.readLine();  // Skip header again
 
     // Allocate arrays for training data
-    // Using 5 features: flux, energy, band1, band2, band5
-    float training_features[num_samples][5];
+    // Using 13 MFCC coefficients
+    float training_features[num_samples][13];
     int training_labels[num_samples];
 
     // Read data
@@ -664,7 +672,7 @@ fun int trainKNNFromCSV(string filename) {
         tok.set(line);
         tok.delims(",");  // CRITICAL: CSV uses comma delimiters!
 
-        // Parse CSV: label,timestamp,flux,energy,band1,band2,band3,band4,band5,...
+        // Parse CSV: label,timestamp,mfcc0,mfcc1,...,mfcc12
         tok.next() => string label;
 
         // Convert label to int (0=kick, 1=snare, 2=hat)
@@ -687,16 +695,10 @@ fun int trainKNNFromCSV(string filename) {
         // Skip timestamp
         tok.next();
 
-        // Read 5 features from CSV: flux, energy, band1, band2, band5
-        Std.atof(tok.next()) => training_features[sample_idx][0];  // flux
-        Std.atof(tok.next()) => training_features[sample_idx][1];  // energy
-        Std.atof(tok.next()) => training_features[sample_idx][2];  // band1
-        Std.atof(tok.next()) => training_features[sample_idx][3];  // band2
-        tok.next(); // skip band3
-        tok.next(); // skip band4
-        Std.atof(tok.next()) => training_features[sample_idx][4];  // band5
-        // Skip rest
-        for(0 => int i; i < 18; i++) tok.next();
+        // Read 13 MFCC features
+        for(0 => int j; j < 13; j++) {
+            Std.atof(tok.next()) => training_features[sample_idx][j];
+        }
 
         sample_idx++;
     }
@@ -713,12 +715,13 @@ fun int trainKNNFromCSV(string filename) {
     <<< "Training KNN classifier..." >>>;
     knn.train(training_features, training_labels);
 
-    // Optional: Set feature weights (can be tuned based on importance)
-    // MODE 1: 5 weights for 5 features (flux, energy, band1, band2, band5)
-    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 5 weights
+    // Set equal feature weights for all 13 MFCC coefficients
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 13 weights
     knn.weigh(weights);
 
-    <<< "✓ KNN training complete!" >>>;
+    <<< "Feature dimensions:", training_features[0].size() >>>;  // Should print 13
+
+    <<< "KNN training complete!" >>>;
     <<< "Using k =", K_NEIGHBORS, "neighbors" >>>;
     <<< "" >>>;
 
