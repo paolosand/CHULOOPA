@@ -1852,7 +1852,8 @@ fun void visualizationLoop() {
         }
 
         // White flash on low-confidence drop (debug aid)
-        if(low_confidence_flash > 0.1) {
+        // Guard: don't override variation-ready state (performer needs to see it)
+        if(low_confidence_flash > 0.1 && !variations_ready) {
             low_confidence_flash => float wf;
             @(0.5 + wf * 0.5, 0.5 + wf * 0.5, 0.5 + wf * 0.5) => target_color;
         }
