@@ -730,38 +730,21 @@ fun int trainKNNFromCSV(string filename) {
 
 // === FEATURE EXTRACTION & CLASSIFICATION ===
 
-// FIXED: Accept pre-computed blobs to ensure features from same frame as onset detection
-// Uses 5 features for KNN classification: flux, energy, band1, band2, band5
-fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms_blob) {
-    // Extract energy from pre-computed RMS blob
-    rms_blob.fval(0) => float energy;
-
-    // Frequency band energies from pre-computed FFT blob (matching training data format)
-    0.0 => float band1 => float band2 => float band3 => float band4 => float band5;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        fft_blob.fval(i) => float mag;
-        if(i < FRAME_SIZE/32) mag +=> band1;           // 0-344 Hz
-        else if(i < FRAME_SIZE/8) mag +=> band2;       // 344-1378 Hz
-        else if(i < FRAME_SIZE/4) mag +=> band3;       // 1378-2756 Hz
-        else if(i < FRAME_SIZE/2.5) mag +=> band4;     // 2756-4410 Hz
-        else mag +=> band5;                            // 4410+ Hz
-    }
-
+// MFCC-13 classification with confidence gate
+// Returns: drum class (0=kick, 1=snare, 2=hat), or -1 if confidence too low
+fun int classifyOnset(int track, UAnaBlob @ mfcc_blob) {
     if(knn_trained) {
-        // Use trained KNN classifier with 5 features
-        // Feature order: flux, energy, band1, band2, band5
-        float query[5];
-        flux => query[0];
-        energy => query[1];
-        band1 => query[2];
-        band2 => query[3];
-        band5 => query[4];
+        // Build 13-feature MFCC query vector
+        float query[13];
+        for(0 => int i; i < 13; i++) {
+            mfcc_blob.fval(i) => query[i];
+        }
 
-        // Get probabilities for each class
+        // Get class probabilities from KNN
         float probs[3];
         knn.predict(query, K_NEIGHBORS, probs);
 
-        // Find class with highest probability
+        // Find winning class and its confidence
         0 => int best_class;
         probs[0] => float best_prob;
         for(1 => int i; i < 3; i++) {
@@ -771,16 +754,20 @@ fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms
             }
         }
 
+        // Confidence gate: drop uncertain classifications
+        if(best_prob < CONFIDENCE_THRESHOLD) return -1;
+
         return best_class;
     }
     else {
-        // Fallback: Simple heuristic classifier
-        band1 / (energy + 0.0001) => float low_ratio;
-        band5 / (energy + 0.0001) => float high_ratio;
-
-        if(low_ratio > 0.5) return 0;      // Kick
-        else if(high_ratio > 0.3) return 2; // Hat
-        else return 1;                      // Snare
+        // Fallback heuristic (no KNN trained) — uses raw MFCC energy proxy
+        // mfcc_blob.fval(0) is the 0th coefficient (related to overall energy)
+        // mfcc_blob.fval(1..2) carry low-freq info (kick vs. hat proxy)
+        mfcc_blob.fval(0) => float c0;
+        mfcc_blob.fval(1) => float c1;
+        if(c0 > 50.0) return 0;       // High energy → kick
+        else if(c1 < -10.0) return 2; // Negative low-freq coefficient → hat
+        else return 1;                 // Default → snare
     }
 }
 
@@ -1556,27 +1543,30 @@ fun void mainOnsetDetectionLoop() {
 
         // If a track is recording, perform onset detection
         if(active_track >= 0) {
-            // FIXED: Extract features ONCE per iteration (prevents timing mismatch bug)
-            // All subsequent operations use these cached blobs from the same audio frame
+            // Upchuck MFCC first — this propagates upstream and computes FFT in the same call
+            track_mfcc[active_track].upchuck() @=> UAnaBlob @ mfcc_blob;
+            // Upchuck FFT second — returns the cached blob from the MFCC chain (same frame)
             track_fft[active_track].upchuck() @=> UAnaBlob @ fft_blob;
-            track_rms[active_track].upchuck() @=> UAnaBlob @ rms_blob;
 
-            // Calculate flux from cached FFT blob
+            // Calculate flux from cached FFT blob (onset detection unchanged)
             spectralFlux(active_track, fft_blob) => float flux;
             updateFluxHistory(active_track, flux);
             getAdaptiveThreshold(active_track) => float threshold;
 
             if(detectOnset(active_track, flux, threshold)) {
-                // Classify using SAME cached blobs (no additional upchucks!)
-                // This ensures training and inference use identical timing
-                classifyOnset(active_track, flux, fft_blob, rms_blob) => int drum_class;
+                // Classify using MFCC blob (same frame as FFT blob)
+                classifyOnset(active_track, mfcc_blob) => int drum_class;
 
-                // Calculate velocity from flux and normalize to 0.7-0.9 range
+                // Calculate velocity from flux
                 Math.min(1.0, flux / 0.1) => float raw_velocity;
-                0.7 + (raw_velocity * 0.2) => float velocity;  // Maps 0-1 to 0.7-0.9
+                0.7 + (raw_velocity * 0.2) => float velocity;
 
-                // Save to symbolic data
-                saveDrumHit(active_track, drum_class, velocity);
+                if(drum_class == -1) {
+                    // Low confidence — flash white, do NOT record hit
+                    1.0 => low_confidence_flash;
+                } else {
+                    saveDrumHit(active_track, drum_class, velocity);
+                }
             }
         }
 
