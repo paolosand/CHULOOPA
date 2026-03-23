@@ -354,6 +354,15 @@ state_text.posZ(0.0);
 state_text.sca(0.22);
 state_text.color(@(0.8, 0.8, 0.8));
 
+GText mix_text --> scene;
+mix_text.text("");
+mix_text.posX(0.0);
+mix_text.posY(1.2);
+mix_text.posZ(0.0);
+mix_text.sca(0.20);
+mix_text.color(@(0.6, 0.8, 0.6));
+mix_text.posY(-100);  // Hidden until performance mode detected
+
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
 1.0 => input_gain.gain;
@@ -466,6 +475,10 @@ float rolling_spice_history[4];   // MUST match ROLLING_WINDOW_BARS (ChucK requi
 // Tier 4 (spice=1.00): high-energy, floor is var2
 0.00 => WEIGHT_TABLE[24]; 0.00 => WEIGHT_TABLE[25]; 0.20 => WEIGHT_TABLE[26];
 0.40 => WEIGHT_TABLE[27]; 0.30 => WEIGHT_TABLE[28]; 0.10 => WEIGHT_TABLE[29];
+
+// === GUITAR/VOCAL MIX STATE (from spice_detector) ===
+0 => int spice_detector_performance_mode;
+0.5 => float guitar_vocal_mix;
 
 // Initialize variation mode state
 0 => variation_mode_active;
@@ -1471,6 +1484,13 @@ fun void oscListener() {
                 msg.getString(0) => string error;
                 <<< "ERROR from Python:", error >>>;
             }
+            else if(msg.address == "/chuloopa/performance_mode") {
+                msg.getInt(0) => spice_detector_performance_mode;
+                if(!spice_detector_performance_mode) mix_text.posY(-100);
+            }
+            else if(msg.address == "/chuloopa/guitar_mix") {
+                msg.getFloat(0) => guitar_vocal_mix;
+            }
             else {
                 <<< "Unknown OSC message:", msg.address >>>;
             }
@@ -1968,6 +1988,33 @@ fun void visualizationLoop() {
         else {
             state_label + "Idle" => state_text.text;
             @(0.7, 0.7, 0.7) => state_text.color;
+        }
+
+        // === GUITAR/VOCAL MIX BAR ===
+        if(spice_detector_performance_mode) {
+            mix_text.posY(1.2);
+
+            // Build slider: "GTR ─────|───── VOX"
+            // guitar_vocal_mix: 0.0 = all vocal, 1.0 = all guitar
+            // Marker position: 10 segments, | sits at the mix point
+            "GTR " => string mix_bar;
+            (guitar_vocal_mix * 10.0) $ int => int marker_pos;
+            if(marker_pos > 9) 9 => marker_pos;
+            for(0 => int seg; seg < 10; seg++) {
+                if(seg == marker_pos) {
+                    mix_bar + "|" => mix_bar;
+                } else {
+                    mix_bar + "─" => mix_bar;
+                }
+            }
+            mix_bar + " VOX" => mix_bar;
+            mix_bar => mix_text.text;
+
+            // Color: orange (guitar-heavy) to cyan (vocal-heavy)
+            guitar_vocal_mix => float g;
+            mix_text.color(@(0.3 + g * 0.7, 0.6 + g * 0.2, 1.0 - g * 0.7));
+        } else {
+            mix_text.posY(-100);
         }
 
         // Bank progress: show in bottle opacity region
