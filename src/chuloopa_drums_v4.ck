@@ -760,14 +760,9 @@ fun int classifyOnset(int track, UAnaBlob @ mfcc_blob) {
         return best_class;
     }
     else {
-        // Fallback heuristic (no KNN trained) — uses raw MFCC energy proxy
-        // mfcc_blob.fval(0) is the 0th coefficient (related to overall energy)
-        // mfcc_blob.fval(1..2) carry low-freq info (kick vs. hat proxy)
-        mfcc_blob.fval(0) => float c0;
-        mfcc_blob.fval(1) => float c1;
-        if(c0 > 50.0) return 0;       // High energy → kick
-        else if(c1 < -10.0) return 2; // Negative low-freq coefficient → hat
-        else return 1;                 // Default → snare
+        // No KNN model trained — drop all onsets with white flash rather than guessing
+        // User needs to record training samples with drum_sample_recorder.ck first
+        return -1;
     }
 }
 

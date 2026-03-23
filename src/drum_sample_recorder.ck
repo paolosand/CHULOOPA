@@ -415,7 +415,7 @@ fun void exportTrainingData() {
     <<< "" >>>;
     <<< "Next steps:" >>>;
     <<< "  1. Run: chuck chuloopa_drums_v4.ck (trains KNN automatically)" >>>;
-    <<< "  2. Or: chuck src/drum_classifier_realtime.ck (SVM)" >>>;
+    <<< "  2. Training loads automatically when you run chuloopa_drums_v4.ck" >>>;
     <<< "" >>>;
 }
 
