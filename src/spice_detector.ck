@@ -133,9 +133,25 @@ fun void sendGuitarMix(float mix) {
 MidiIn min;
 MidiMsg midi_msg;
 
-if(min.num() > 0) {
-    if(min.open(MIDI_DEVICE)) {
-        <<< "MIDI Device:", min.name() >>>;
+// Open by name "LPD8" first; fallback to port 1 (port 0 is IAC Driver)
+0 => int midi_in_opened;
+if(min.num() == 0) {
+    <<< "WARNING: No MIDI devices found!" >>>;
+} else {
+    if(min.open("LPD8")) {
+        1 => midi_in_opened;
+        <<< "MIDI Device (input):", min.name() >>>;
+    }
+    if(!midi_in_opened && min.num() > 1) {
+        if(min.open(1)) {
+            1 => midi_in_opened;
+            <<< "MIDI Device (input, port 1):", min.name() >>>;
+        }
+    }
+    if(!midi_in_opened) {
+        if(min.open(MIDI_DEVICE)) {
+            <<< "MIDI Device (input, fallback port 0):", min.name() >>>;
+        }
     }
 }
 
@@ -418,7 +434,7 @@ if(performance_mode) {
 
 spork ~ frameAnalysisLoop();
 spork ~ spiceCalculationLoop();
-if(min.num() > 0) spork ~ midiListener();
+if(midi_in_opened) spork ~ midiListener();
 
 while(true) {
     sendPerformanceMode();
