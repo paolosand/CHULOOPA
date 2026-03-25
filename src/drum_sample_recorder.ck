@@ -12,7 +12,7 @@
 // Usage:
 //   chuck src/drum_sample_recorder.ck
 //   Press K, S, or H to set label, then beatbox
-//   Press E to export all data, Q to quit
+//   Press E to export training data, ESC to close window
 //---------------------------------------------------------------------
 
 // === CONFIGURATION ===
@@ -121,6 +121,39 @@ instruction_text.posX(0.0);
 instruction_text.posY(2.5);
 instruction_text.sca(0.22);
 instruction_text.color(@(1.0, 1.0, 1.0));
+
+// === CONTROLS OVERLAY (Upper-right corner, small) ===
+GText ctrl_title --> scene;
+ctrl_title.text("CONTROLS");
+ctrl_title.posX(3.8);
+ctrl_title.posY(3.2);
+ctrl_title.posZ(0.1);
+ctrl_title.sca(0.12);
+ctrl_title.color(@(0.9, 0.9, 0.9));
+
+GText ctrl_keys --> scene;
+ctrl_keys.text("K / S / H  =  label drum type");
+ctrl_keys.posX(3.8);
+ctrl_keys.posY(2.95);
+ctrl_keys.posZ(0.1);
+ctrl_keys.sca(0.10);
+ctrl_keys.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_export --> scene;
+ctrl_export.text("E  =  export training data");
+ctrl_export.posX(3.8);
+ctrl_export.posY(2.72);
+ctrl_export.posZ(0.1);
+ctrl_export.sca(0.10);
+ctrl_export.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_close --> scene;
+ctrl_close.text("ESC  =  close window");
+ctrl_close.posX(3.8);
+ctrl_close.posY(2.49);
+ctrl_close.posZ(0.1);
+ctrl_close.sca(0.10);
+ctrl_close.color(@(0.7, 0.7, 0.7));
 
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
@@ -510,13 +543,11 @@ fun void keyboardListener() {
                     exportTrainingData();
                 }
 
-                // Q = Quit
+                // Q = Export (same as E — use ESC to close window)
                 else if(key == 113 || key == 81) {
                     <<< "" >>>;
-                    <<< "Exiting..." >>>;
+                    <<< "Exporting training data... (use ESC to close window)" >>>;
                     exportTrainingData();
-                    <<< "Goodbye!" >>>;
-                    me.exit();
                 }
 
                 // R = Reset counts (debugging)
@@ -630,7 +661,7 @@ fun void visualizationLoop() {
             // State 4: All complete
             if(instruction_state != 4) {
                 4 => instruction_state;
-                instruction_text.text("TRAINING COMPLETE! PRESS Q TO EXPORT (TOTAL: " + getTotalSamples() + ")");
+                instruction_text.text("TRAINING COMPLETE! PRESS E TO EXPORT (TOTAL: " + getTotalSamples() + ")");
                 instruction_text.color(@(0.5, 1.5, 0.5));
             }
             // Large pulsing scale
@@ -654,7 +685,7 @@ fun void visualizationLoop() {
                     } else if(label_counts[2] < 10) {
                         instruction_text.text("PERFECT! PRESS H FOR HI-HATS");
                     } else {
-                        instruction_text.text("PERFECT! PRESS Q TO EXPORT");
+                        instruction_text.text("PERFECT! PRESS E TO EXPORT");
                     }
 
                     instruction_text.color(@(0.3, 1.0, 0.3));
@@ -720,7 +751,8 @@ fun void visualizationLoop() {
 <<< "  N = Disable recording (none)" >>>;
 <<< "  E = Export training data" >>>;
 <<< "  R = Reset all samples" >>>;
-<<< "  Q = Quit and export" >>>;
+<<< "  Q = Export (same as E)" >>>;
+<<< "  ESC = Close window" >>>;
 <<< "" >>>;
 <<< "WORKFLOW:" >>>;
 <<< "  1. Press K (for kick)" >>>;
