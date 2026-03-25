@@ -139,10 +139,18 @@ ctrl_keys.posZ(0.1);
 ctrl_keys.sca(0.10);
 ctrl_keys.color(@(0.7, 0.7, 0.7));
 
+GText ctrl_pause --> scene;
+ctrl_pause.text("N  =  pause recording");
+ctrl_pause.posX(3.8);
+ctrl_pause.posY(2.72);
+ctrl_pause.posZ(0.1);
+ctrl_pause.sca(0.10);
+ctrl_pause.color(@(0.7, 0.7, 0.7));
+
 GText ctrl_export --> scene;
 ctrl_export.text("E  =  export training data");
 ctrl_export.posX(3.8);
-ctrl_export.posY(2.72);
+ctrl_export.posY(2.49);
 ctrl_export.posZ(0.1);
 ctrl_export.sca(0.10);
 ctrl_export.color(@(0.7, 0.7, 0.7));
@@ -150,7 +158,7 @@ ctrl_export.color(@(0.7, 0.7, 0.7));
 GText ctrl_close --> scene;
 ctrl_close.text("ESC  =  close window");
 ctrl_close.posX(3.8);
-ctrl_close.posY(2.49);
+ctrl_close.posY(2.26);
 ctrl_close.posZ(0.1);
 ctrl_close.sca(0.10);
 ctrl_close.color(@(0.7, 0.7, 0.7));
