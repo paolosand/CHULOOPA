@@ -163,9 +163,42 @@ ctrl_close.posZ(0.1);
 ctrl_close.sca(0.10);
 ctrl_close.color(@(0.7, 0.7, 0.7));
 
+GText ctrl_test --> scene;
+ctrl_test.text("P  =  test mode (live)");
+ctrl_test.posX(3.8);
+ctrl_test.posY(2.03);
+ctrl_test.posZ(0.1);
+ctrl_test.sca(0.10);
+ctrl_test.color(@(0.7, 0.7, 0.7));
+
+// === TEST MODE INDICATOR (center bottom) ===
+GText test_mode_text --> scene;
+test_mode_text.text("");
+test_mode_text.posX(0.0);
+test_mode_text.posY(-2.5);
+test_mode_text.posZ(0.1);
+test_mode_text.sca(0.20);
+test_mode_text.color(@(0.2, 1.0, 0.5));
+
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
 1.0 => input_gain.gain;
+
+// === DRUM SAMPLE PLAYBACK (for test mode) ===
+SndBuf kick_snd => dac;
+SndBuf snare_snd => dac;
+SndBuf hat_snd => dac;
+
+me.dir() + "/../samples/kick.wav" => kick_snd.read;
+me.dir() + "/../samples/snare.wav" => snare_snd.read;
+me.dir() + "/../samples/hat.WAV" => hat_snd.read;
+
+0 => kick_snd.loop => snare_snd.loop => hat_snd.loop;
+// Park at end so they don't auto-play
+kick_snd.samples() => kick_snd.pos;
+snare_snd.samples() => snare_snd.pos;
+hat_snd.samples() => hat_snd.pos;
+0.8 => kick_snd.gain => snare_snd.gain => hat_snd.gain;
 
 // Recording buffer (circular buffer for pre-onset capture)
 adc => LiSa recorder => blackhole;
@@ -191,6 +224,7 @@ now => last_onset_time;
 
 // === LABELING STATE ===
 "none" => string current_label;  // "kick", "snare", "hat", or "none"
+0 => int test_mode;  // 1 = test mode (plays drum samples on onset, does not record)
 
 // === VISUALIZATION STATE ===
 // Impulse variables for pulse animations
@@ -262,6 +296,12 @@ fun void playLabeledClick(string label) {
     env.keyOn();
     1::ms => now;
     env.keyOff();
+}
+
+fun void playDrumSample(string label) {
+    if(label == "kick") { 0 => kick_snd.pos; }
+    else if(label == "snare") { 0 => snare_snd.pos; }
+    else if(label == "hat") { 0 => hat_snd.pos; }
 }
 
 // === VISUALIZATION HELPER FUNCTIONS ===
@@ -471,9 +511,17 @@ fun void onsetDetectionLoop() {
         getAdaptiveThreshold() => float threshold;
 
         if(detectOnset(flux, threshold)) {
-            // Record sample with current label
-            recordSample(current_label, now);
-            spork ~ playLabeledClick(current_label);
+            if(test_mode) {
+                // Test mode: play drum sound + visual pulse, no recording
+                spork ~ playDrumSample(current_label);
+                if(current_label == "kick") 1.0 => kick_impulse;
+                else if(current_label == "snare") 1.0 => snare_impulse;
+                else if(current_label == "hat") 1.0 => hat_impulse;
+            } else {
+                // Normal mode: record sample
+                recordSample(current_label, now);
+                spork ~ playLabeledClick(current_label);
+            }
         }
 
         HOP => now;
@@ -556,6 +604,16 @@ fun void keyboardListener() {
                     <<< "" >>>;
                     <<< "Exporting training data... (use ESC to close window)" >>>;
                     exportTrainingData();
+                }
+
+                // P = Toggle test mode
+                else if(key == 112 || key == 80) {
+                    !test_mode => test_mode;
+                    if(test_mode) {
+                        <<< "🎧 TEST MODE ON — beatbox to hear drum sounds (not recording)" >>>;
+                    } else {
+                        <<< "⏺️  TEST MODE OFF — back to recording" >>>;
+                    }
                 }
 
                 // R = Reset counts (debugging)
@@ -738,6 +796,15 @@ fun void visualizationLoop() {
             }
         }
 
+        // === TEST MODE INDICATOR ===
+        if(test_mode) {
+            0.18 + 0.03 * Math.sin((now / second) * Math.PI * 3.0) => float tm_pulse;
+            test_mode_text.sca(tm_pulse);
+            test_mode_text.text("TEST MODE  —  K / S / H to select drum");
+        } else {
+            test_mode_text.text("");
+        }
+
         // Slow rotation for visual interest (optional)
         kick_geo.rotY((now / second) * 0.3);
         snare_geo.rotY((now / second) * 0.3);
@@ -757,6 +824,7 @@ fun void visualizationLoop() {
 <<< "  S = Set label to SNARE" >>>;
 <<< "  H = Set label to HI-HAT" >>>;
 <<< "  N = Disable recording (none)" >>>;
+<<< "  P = Toggle test mode (hear drum sounds without recording)" >>>;
 <<< "  E = Export training data" >>>;
 <<< "  R = Reset all samples" >>>;
 <<< "  Q = Export (same as E)" >>>;
