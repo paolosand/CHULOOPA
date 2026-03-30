@@ -164,7 +164,7 @@ ctrl_close.sca(0.10);
 ctrl_close.color(@(0.7, 0.7, 0.7));
 
 GText ctrl_test --> scene;
-ctrl_test.text("P  =  test mode (live)");
+ctrl_test.text("P  =  live playback test");
 ctrl_test.posX(3.8);
 ctrl_test.posY(2.03);
 ctrl_test.posZ(0.1);
@@ -224,7 +224,12 @@ now => last_onset_time;
 
 // === LABELING STATE ===
 "none" => string current_label;  // "kick", "snare", "hat", or "none"
-0 => int test_mode;  // 1 = test mode (plays drum samples on onset, does not record)
+0 => int recording_complete;     // 1 after E/Q export — no more recording
+0 => int playback_mode;          // 1 after P — onset → KNN classify → play drum sound
+
+// === KNN CLASSIFIER (trained in-memory before playback) ===
+KNN2 knn;
+3 => int K_NEIGHBORS;
 
 // === VISUALIZATION STATE ===
 // Impulse variables for pulse animations
@@ -302,6 +307,51 @@ fun void playDrumSample(string label) {
     if(label == "kick") { 0 => kick_snd.pos; }
     else if(label == "snare") { 0 => snare_snd.pos; }
     else if(label == "hat") { 0 => hat_snd.pos; }
+}
+
+fun int trainKNN() {
+    sample_labels.size() => int n;
+    if(n == 0) {
+        <<< "No samples to train on!" >>>;
+        return 0;
+    }
+
+    float features[n][13];
+    int labels[n];
+    for(0 => int i; i < n; i++) {
+        sample_labels[i] => labels[i];
+        for(0 => int j; j < 13; j++) {
+            sample_features[i][j] => features[i][j];
+        }
+    }
+
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];
+    knn.train(features, labels);
+    knn.weigh(weights);
+
+    <<< "KNN trained: K=" + K_NEIGHBORS + " samples=" + n +
+        " (K=" + label_counts[0] + " S=" + label_counts[1] + " H=" + label_counts[2] + ")" >>>;
+    return 1;
+}
+
+fun void classifyAndPlay(UAnaBlob @ mfcc_blob) {
+    float query[13];
+    for(0 => int i; i < 13; i++) {
+        mfcc_blob.fval(i) => query[i];
+    }
+
+    float probs[3];
+    knn.predict(query, K_NEIGHBORS, probs);
+
+    0 => int best_class;
+    probs[0] => float best_prob;
+    for(1 => int i; i < 3; i++) {
+        if(probs[i] > best_prob) { i => best_class; probs[i] => best_prob; }
+    }
+
+    if(best_class == 0) { playDrumSample("kick"); 1.0 => kick_impulse; }
+    else if(best_class == 1) { playDrumSample("snare"); 1.0 => snare_impulse; }
+    else { playDrumSample("hat"); 1.0 => hat_impulse; }
 }
 
 // === VISUALIZATION HELPER FUNCTIONS ===
@@ -506,19 +556,22 @@ fun void onsetDetectionLoop() {
     FRAME_SIZE::samp => now;
 
     while(true) {
-        spectralFlux() => float flux;
+        // In playback mode: upchuck MFCC first (propagates to FFT for flux caching)
+        UAnaBlob @ mfcc_blob;
+        if(playback_mode) {
+            mfcc.upchuck() @=> mfcc_blob;
+        }
+
+        spectralFlux() => float flux;  // calls fft.upchuck() — returns cached if already upchucked
         updateFluxHistory(flux);
         getAdaptiveThreshold() => float threshold;
 
         if(detectOnset(flux, threshold)) {
-            if(test_mode) {
-                // Test mode: play drum sound + visual pulse, no recording
-                spork ~ playDrumSample(current_label);
-                if(current_label == "kick") 1.0 => kick_impulse;
-                else if(current_label == "snare") 1.0 => snare_impulse;
-                else if(current_label == "hat") 1.0 => hat_impulse;
-            } else {
-                // Normal mode: record sample
+            if(playback_mode) {
+                // Live test: classify via KNN, play matching drum sound
+                classifyAndPlay(mfcc_blob);
+            } else if(!recording_complete && current_label != "none") {
+                // Recording: store sample + click feedback
                 recordSample(current_label, now);
                 spork ~ playLabeledClick(current_label);
             }
@@ -592,27 +645,35 @@ fun void keyboardListener() {
                     <<< "⏸️  RECORDING DISABLED" >>>;
                 }
 
-                // E = Export
+                // E = Export + end recording
                 else if(key == 101 || key == 69) {
-                    <<< "" >>>;
-                    <<< "Exporting training data..." >>>;
                     exportTrainingData();
+                    1 => recording_complete;
+                    "none" => current_label;
+                    <<< "Recording complete. Press P to start live playback test." >>>;
                 }
 
-                // Q = Export (same as E — use ESC to close window)
+                // Q = Export + end recording (same as E)
                 else if(key == 113 || key == 81) {
-                    <<< "" >>>;
-                    <<< "Exporting training data... (use ESC to close window)" >>>;
                     exportTrainingData();
+                    1 => recording_complete;
+                    "none" => current_label;
+                    <<< "Recording complete. Press P to start live playback test." >>>;
                 }
 
-                // P = Toggle test mode
+                // P = Start live playback (KNN classify + play drum sounds)
                 else if(key == 112 || key == 80) {
-                    !test_mode => test_mode;
-                    if(test_mode) {
-                        <<< "🎧 TEST MODE ON — beatbox to hear drum sounds (not recording)" >>>;
+                    if(sample_labels.size() == 0) {
+                        <<< "No samples recorded yet — record K/S/H first." >>>;
+                    } else if(!playback_mode) {
+                        if(trainKNN()) {
+                            1 => playback_mode;
+                            1 => recording_complete;
+                            <<< "▶  LIVE PLAYBACK — beatbox freely, drums play automatically" >>>;
+                        }
                     } else {
-                        <<< "⏺️  TEST MODE OFF — back to recording" >>>;
+                        0 => playback_mode;
+                        <<< "⏹  PLAYBACK STOPPED" >>>;
                     }
                 }
 
@@ -722,8 +783,18 @@ fun void visualizationLoop() {
 
         // === UPDATE INSTRUCTION TEXT (State Machine) ===
 
+        // Playback/recording-complete states override the normal state machine
+        if(playback_mode) {
+            instruction_text.text("LIVE PLAYBACK — beatbox freely, drums play automatically");
+            instruction_text.color(@(0.2, 1.0, 0.5));
+            0.20 + 0.02 * Math.sin((now / second) * Math.PI * 2.0) => instruction_text.sca;
+        } else if(recording_complete) {
+            instruction_text.text("RECORDING COMPLETE — press P to test live playback");
+            instruction_text.color(@(1.0, 0.8, 0.2));
+            instruction_text.sca(0.20);
+
         // Determine current state
-        if(label_counts[0] >= 10 && label_counts[1] >= 10 && label_counts[2] >= 10) {
+        } else if(label_counts[0] >= 10 && label_counts[1] >= 10 && label_counts[2] >= 10) {
             // State 4: All complete
             if(instruction_state != 4) {
                 4 => instruction_state;
@@ -796,11 +867,16 @@ fun void visualizationLoop() {
             }
         }
 
-        // === TEST MODE INDICATOR ===
-        if(test_mode) {
-            0.18 + 0.03 * Math.sin((now / second) * Math.PI * 3.0) => float tm_pulse;
-            test_mode_text.sca(tm_pulse);
-            test_mode_text.text("TEST MODE  —  K / S / H to select drum");
+        // === PLAYBACK MODE INDICATOR ===
+        if(playback_mode) {
+            0.18 + 0.03 * Math.sin((now / second) * Math.PI * 3.0) => float pb_pulse;
+            test_mode_text.sca(pb_pulse);
+            test_mode_text.text("LIVE PLAYBACK  —  beatbox freely");
+            test_mode_text.color(@(0.2, 1.0, 0.5));
+        } else if(recording_complete) {
+            test_mode_text.sca(0.16);
+            test_mode_text.text("RECORDING DONE  —  press P to test live");
+            test_mode_text.color(@(1.0, 0.8, 0.2));
         } else {
             test_mode_text.text("");
         }
@@ -824,8 +900,8 @@ fun void visualizationLoop() {
 <<< "  S = Set label to SNARE" >>>;
 <<< "  H = Set label to HI-HAT" >>>;
 <<< "  N = Disable recording (none)" >>>;
-<<< "  P = Toggle test mode (hear drum sounds without recording)" >>>;
-<<< "  E = Export training data" >>>;
+<<< "  E / Q = Export training data (ends recording)" >>>;
+<<< "  P = Live playback test (KNN classify → play drum sounds)" >>>;
 <<< "  R = Reset all samples" >>>;
 <<< "  Q = Export (same as E)" >>>;
 <<< "  ESC = Close window" >>>;
