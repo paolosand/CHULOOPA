@@ -189,9 +189,9 @@ SndBuf kick_snd => dac;
 SndBuf snare_snd => dac;
 SndBuf hat_snd => dac;
 
-me.dir() + "/../samples/kick.wav" => kick_snd.read;
-me.dir() + "/../samples/snare.wav" => snare_snd.read;
-me.dir() + "/../samples/hat.WAV" => hat_snd.read;
+me.dir() + "/samples/kick.wav" => kick_snd.read;
+me.dir() + "/samples/snare.wav" => snare_snd.read;
+me.dir() + "/samples/hat.WAV" => hat_snd.read;
 
 0 => kick_snd.loop => snare_snd.loop => hat_snd.loop;
 // Park at end so they don't auto-play
@@ -677,13 +677,18 @@ fun void keyboardListener() {
                     }
                 }
 
-                // R = Reset counts (debugging)
+                // R = Full reset — erase all samples, re-enable recording
                 else if(key == 114 || key == 82) {
                     0 => label_counts[0] => label_counts[1] => label_counts[2];
                     sample_labels.clear();
                     sample_times.clear();
                     sample_features.clear();
-                    <<< "🔄 RESET - All samples cleared" >>>;
+                    0 => recording_complete;
+                    0 => playback_mode;
+                    "none" => current_label;
+                    0 => instruction_state;
+                    <<< "🔄 RESET — all samples cleared, recording re-enabled" >>>;
+                    <<< "Press K / S / H to start recording again." >>>;
                 }
             }
         }
