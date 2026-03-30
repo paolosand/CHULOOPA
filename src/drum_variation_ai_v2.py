@@ -850,9 +850,11 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         if t_prep > 0.05:  # DIAGNOSTIC
             print(f"  ⏱️  Context prep: {t_prep:.3f}s")  # DIAGNOSTIC
 
-        # Spice controls token count: ×0.7 (low) → ×3 (high)
-        # Interpolate linearly: spice 0.0 → 0.7×, spice 0.5 → 1.85×, spice 1.0 → 3.0×
-        token_multiplier = 0.7 + (spice_level * 2.3)
+        # Spice controls token count: ×0.85 (low) → ×1.5 (high)
+        # Interpolate linearly: spice 0.0 → 0.85×, spice 0.5 → 1.175×, spice 1.0 → 1.5×
+        # Low spice generates fewer tokens than input → sparse/selective variations
+        # High spice adds fills without straying too far from original groove
+        token_multiplier = 0.85 + (spice_level * 0.65)
         num_tokens = int(len(context_tokens) * token_multiplier)
 
         BATCH_SIZE = 3  # Generate N variations in parallel, pick best
@@ -896,7 +898,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
         def score_candidate(cand):
             drum_types = len(set(h.midi_note for h in cand.hits))
             variety = min(1.0, drum_types / 5.0)
-            target_count = len(pattern.hits) * (0.7 + spice_level * 2.3)  # 0.7× at low spice → 3.0× at high (matches token multiplier)
+            target_count = len(pattern.hits) * (0.85 + spice_level * 0.65)  # 0.85× at low spice → 1.5× at high (matches token multiplier)
             density_err = abs(len(cand.hits) - target_count) / max(target_count, 1)
             density = max(0.0, 1.0 - density_err)
             return 0.4 * variety + 0.6 * density

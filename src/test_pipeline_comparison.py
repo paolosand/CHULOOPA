@@ -40,7 +40,7 @@ import pretty_midi
 sys.path.insert(0, str(Path(__file__).parent))
 
 from drum_variation_ai import DrumPattern, DrumHit
-from format_converters import chuloopa_to_rhythmic_creator, CHULOOPA_TO_MIDI
+from format_converters import chuloopa_to_rhythmic_creator
 from rhythmic_creator_model import RhythmicCreatorModel
 from preprocess.preprocessing import MIDIProcessor
 from models.rhythmic_creator.lstm_integration import LSTMDecoderModel
@@ -54,9 +54,14 @@ SRC_DIR = Path(__file__).parent
 MODEL_PATH = SRC_DIR / "models" / "transformer_LSTM_FNN_hybrid.pt"
 VOCAB_PATH = SRC_DIR / "models" / "training_1.txt"
 
-# Spice levels: (name, token_multiplier)
+# Spice presets: (name, token_multiplier)
 # num_tokens = len(context_tokens) * multiplier
-SPICE_LEVELS = [("low", 1), ("medium", 3), ("high", 6)]
+SPICE_PRESETS = {
+    "tight":        [("low", 1.0),  ("medium", 1.2),   ("high", 1.5)],
+    "production":   [("low", 0.7),  ("medium", 1.85),  ("high", 3.0)],
+    "suggested":    [("low", 0.85), ("medium", 1.1),   ("high", 1.3)],
+    "suggested_v2": [("low", 0.85), ("medium", 1.175), ("high", 1.5)],
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,10 +118,9 @@ def pattern_to_midi_bytes(pattern: DrumPattern) -> bytes:
     instrument = pretty_midi.Instrument(program=program)
 
     for hit in pattern.hits:
-        midi_note = CHULOOPA_TO_MIDI.get(hit.drum_class, 36)
         start = hit.timestamp
         end = start + 0.1  # short duration, same as chuloopa_to_rhythmic_creator
-        note = pretty_midi.Note(velocity=100, pitch=midi_note, start=start, end=end)
+        note = pretty_midi.Note(velocity=100, pitch=hit.midi_note, start=start, end=end)
         instrument.notes.append(note)
 
     pm.instruments.append(instrument)
@@ -142,10 +146,9 @@ def extract_jake_context(pattern: DrumPattern, processor: MIDIProcessor, device:
     instrument = pretty_midi.Instrument(program=program)
 
     for hit in pattern.hits:
-        midi_note = CHULOOPA_TO_MIDI.get(hit.drum_class, 36)
         start = hit.timestamp
         end = start + 0.1
-        note = pretty_midi.Note(velocity=100, pitch=midi_note, start=start, end=end)
+        note = pretty_midi.Note(velocity=100, pitch=hit.midi_note, start=start, end=end)
         instrument.notes.append(note)
 
     pm_out.instruments.append(instrument)
@@ -324,6 +327,8 @@ def main():
                         help="Directory for output MIDI files")
     parser.add_argument("--num-generations", type=int, default=5,
                         help="Number of generations per pipeline")
+    parser.add_argument("--preset", default="tight", choices=list(SPICE_PRESETS.keys()),
+                        help="Spice multiplier preset: tight (1.0/1.2/1.5), production (0.7/1.85/3.0), suggested (0.85/1.1/1.3), suggested_v2 (0.85/1.175/1.5)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for deterministic comparison")
     parser.add_argument("--model", default=str(MODEL_PATH),
@@ -331,6 +336,7 @@ def main():
     parser.add_argument("--vocab", default=str(VOCAB_PATH),
                         help="Path to vocab file (training_1.txt)")
     args = parser.parse_args()
+    SPICE_LEVELS = SPICE_PRESETS[args.preset]
 
     input_path = Path(args.input)
     output_dir = Path(args.output_dir)
@@ -342,6 +348,7 @@ def main():
     print(f"  Input:           {input_path}")
     print(f"  Output dir:      {output_dir}")
     print(f"  Num generations: {args.num_generations}")
+    print(f"  Spice preset:    {args.preset} {[(n, f'×{m}') for n, m in SPICE_LEVELS]}")
     print(f"  Seed:            {args.seed if args.seed is not None else 'random'}")
     print()
 
@@ -354,7 +361,7 @@ def main():
     pattern = DrumPattern.from_file(str(input_path))
     print(f"  Hits: {len(pattern.hits)}, Duration: {pattern.loop_duration:.3f}s")
     for hit in pattern.hits:
-        drum_name = {0: 'kick', 1: 'snare', 2: 'hat'}.get(hit.drum_class, '?')
+        drum_name = {36: 'kick', 38: 'snare', 42: 'hat'}.get(hit.midi_note, str(hit.midi_note))
         print(f"    [{drum_name}] t={hit.timestamp:.6f}s")
 
     # ── Save input as MIDI ─────────────────────────────────────────────────
@@ -363,8 +370,7 @@ def main():
     prog = pretty_midi.instrument_name_to_program('cello')
     instr_in = pretty_midi.Instrument(program=prog)
     for hit in pattern.hits:
-        midi_note = CHULOOPA_TO_MIDI.get(hit.drum_class, 36)
-        note = pretty_midi.Note(velocity=100, pitch=midi_note,
+        note = pretty_midi.Note(velocity=100, pitch=hit.midi_note,
                                 start=hit.timestamp, end=hit.timestamp + 0.1)
         instr_in.notes.append(note)
     pm_in.instruments.append(instr_in)
@@ -457,7 +463,7 @@ def main():
     }
 
     for spice_name, multiplier in SPICE_LEVELS:
-        num_tokens = n_context_tokens * multiplier
+        num_tokens = int(n_context_tokens * multiplier)
         print(f"\n{'─' * 70}")
         print(f"SPICE LEVEL: {spice_name.upper()}  ({num_tokens} tokens, ×{multiplier})")
         print(f"{'─' * 70}")
