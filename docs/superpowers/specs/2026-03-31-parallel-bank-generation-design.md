@@ -40,7 +40,7 @@ Total time ≈ time for slowest slot (spice=1.0, most tokens).
 
 ### Thread Safety
 
-Each thread constructs its own `idx` and `hidden` tensors locally. PyTorch inference with `torch.no_grad()` and independent input tensors is thread-safe. No shared mutable state between threads during generation.
+Each thread constructs its own `idx` and `hidden` tensors locally inside `generate_variation_batch()`. PyTorch inference with `torch.no_grad()` and independent input tensors is thread-safe. No shared mutable state is written during generation.
 
 ---
 
@@ -65,21 +65,140 @@ if not candidate.hits or len(candidate.hits) < 2:
     return generate_musical_variation(pattern, spice_level), False
 ```
 
-### 2. `_generation_worker()` — parallel threads
+### 2. New `_run_slot_thread(slot, pattern)` — per-slot worker
 
-Replace the serial queue loop with a thread-per-slot approach. When a full bank is requested:
+Extract slot generation logic into a standalone function (not a method) suitable for threading:
 
-1. Compute reachable slots from `current_ceiling`
-2. Spawn one thread per slot — each thread:
-   - Calls `generate_variation(pattern, type, temperature=spice)` (which calls the updated `rhythmic_creator_variation`)
-   - Saves result to `track_0_drums_var{slot}.txt`
-   - Sends `/chuloopa/bank_progress slot` OSC message
-3. `bank_ready` fires as soon as the **first slot completes** (slot 1, lowest spice = fewest tokens = first to finish)
-4. Worker waits for all threads to finish before updating `bank_generation_ceiling`
+```python
+def _run_slot_thread(slot: int, pattern: DrumPattern):
+    if stop_event.is_set():
+        return  # cancelled before we started — do not write any file
 
-### 3. `start_full_bank_generation()` — simplify
+    spice = [0.2, 0.4, 0.6, 0.8, 1.0][slot - 1]
+    try:
+        varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
+        output_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        varied.to_file(str(output_file))
+        if osc_client:
+            osc_client.send_message("/chuloopa/bank_progress", slot)
+    except Exception as e:
+        # Spice-scaled fallback (preserves feel at each spice level)
+        fallback = humanize_pattern(
+            pattern,
+            timing_variance=0.005 + 0.02 * spice,
+            velocity_variance=0.05 + 0.1 * spice
+        )
+        output_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        fallback.to_file(str(output_file))
+        if osc_client:
+            osc_client.send_message("/chuloopa/bank_progress", slot)
+```
 
-Remove Stage 1 / Stage 2 split and sentinel (-1) from the queue. The parallel approach makes staged generation unnecessary — `bank_ready` is sent as soon as any slot is ready.
+Note: `stop_event` is checked **before** generation begins. Mid-generation cancellation is not possible (PyTorch ops are not interruptible), but new requests arriving during generation are queued until the current batch of threads finishes.
+
+### 3. `_generation_worker()` — parallel coordinator
+
+Replace the serial queue loop with a parallel thread coordinator:
+
+```python
+def _generation_worker():
+    variations_dir = DEFAULT_VARIATIONS_DIR
+    variations_dir.mkdir(parents=True, exist_ok=True)
+
+    track_file = DEFAULT_TRACK_DIR / "track_0_drums.txt"
+    if not track_file.exists():
+        return
+
+    pattern = DrumPattern.from_file(str(track_file))
+    if not pattern.hits:
+        return
+
+    slots = list(generation_queue)  # snapshot before clearing
+
+    # Spawn one thread per slot
+    threads = {slot: threading.Thread(target=_run_slot_thread, args=(slot, pattern), daemon=True)
+               for slot in slots}
+    for t in threads.values():
+        t.start()
+
+    completed_slots = set()
+    bank_ready_sent = False
+
+    # Wait for each thread and send bank_ready when slot 1 specifically is done
+    for slot in slots:
+        threads[slot].join()  # no timeout — generation is not interruptible
+        completed_slots.add(slot)
+
+        if slot == 1 and not bank_ready_sent and osc_client:
+            osc_client.send_message("/chuloopa/bank_ready", 0)
+            osc_client.send_message("/chuloopa/generation_progress", "var1 ready — auto-switching enabled")
+            bank_ready_sent = True
+
+    # Handle case where slot 1 was not reachable (ceiling too low to include slot 1)
+    # bank_ready fires on the lowest available slot instead
+    if not bank_ready_sent and completed_slots and osc_client:
+        lowest = min(completed_slots)
+        osc_client.send_message("/chuloopa/bank_ready", 0)
+        osc_client.send_message("/chuloopa/generation_progress",
+                                f"var{lowest} ready — auto-switching enabled (slot 1 not in bank)")
+        bank_ready_sent = True
+
+    # All-fail case: if no files were written, notify ChucK
+    if not bank_ready_sent and osc_client:
+        osc_client.send_message("/chuloopa/generation_progress",
+                                "All slots failed — press D#1 to retry")
+
+    global bank_generation_ceiling
+    bank_generation_ceiling = current_ceiling
+```
+
+**`bank_ready` is gated on slot 1 completion specifically**, not whichever thread finishes first. The `join()` loop iterates over slots in order, so even if slot 1's thread finishes after another thread, we detect its completion and send `bank_ready` at that point.
+
+### 4. `start_full_bank_generation()` — atomically clear queue and start coordinator
+
+Both the queue clear and thread spawn happen under a single lock acquisition to prevent interleaving with concurrent OSC messages:
+
+```python
+def start_full_bank_generation():
+    global bank_generation_ceiling, generation_thread
+
+    slots = reachable_slots(current_ceiling)
+    if not slots:
+        if osc_client:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"Ceiling {current_ceiling:.2f} too low — no variations")
+        return
+
+    ordered = spread_priority(slots)
+    bank_generation_ceiling = current_ceiling
+
+    with generation_lock:
+        generation_queue.clear()
+        generation_queue.extend(ordered)
+        # Spawn coordinator only if not already running
+        if generation_thread is None or not generation_thread.is_alive():
+            generation_thread = threading.Thread(target=_generation_worker, daemon=True)
+            generation_thread.start()
+```
+
+Queue clear + coordinator spawn are now atomic under `generation_lock`, eliminating the window between the two separate lock blocks in the current code.
+
+### 5. `cancel_generation()` — no timeout join
+
+Remove the 2-second join timeout. Because threads check `stop_event` only at the start (before generation begins), `cancel_generation()` signals intent and waits for any in-progress generation to finish naturally:
+
+```python
+def cancel_generation():
+    global generation_thread, generation_queue
+    stop_event.set()
+    if generation_thread and generation_thread.is_alive():
+        generation_thread.join()  # no timeout — wait for clean finish
+    stop_event.clear()
+    with generation_lock:
+        generation_queue.clear()
+```
+
+`stop_event.clear()` is called **after** `join()` completes, ensuring no thread is still running when the flag is reset.
 
 ---
 
@@ -90,17 +209,26 @@ on_file_change / handle_regenerate
         |
         v
 cancel_generation()
+  - stop_event.set()
+  - join coordinator (waits for clean finish)
+  - stop_event.clear()
         |
         v
 start_full_bank_generation()
   - compute slots from ceiling
+  - [generation_lock] clear queue, extend, spawn coordinator
+        |
+        v
+_generation_worker() (coordinator thread)
+  - snapshot slots from queue
   - spawn thread per slot
         |
    [threads run in parallel]
         |
-  thread(slot=1) finishes first
+  thread(slot=1) finishes (fewest tokens, usually first)
         ├── save var1.txt
         ├── send /chuloopa/bank_progress 1
+        [coordinator join loop detects slot 1 done]
         └── send /chuloopa/bank_ready 0   ← ChucK enables auto-switching
         |
   thread(slot=2) finishes
@@ -120,16 +248,7 @@ start_full_bank_generation()
 | Scenario | Old | New |
 |---|---|---|
 | Full bank (ceiling=1.0, 5 slots) | ~75s (15 serial calls) | ~15-20s (parallel) |
-| Time to first `bank_ready` | ~45s (Stage 1: 3 slots) | ~8-12s (first slot done) |
-| Stage 2 overhead | ~30s (2 more serial calls) | 0 (all parallel) |
-
----
-
-## Error Handling
-
-- If a thread's generation fails, fall back to `humanize_pattern()` for that slot (same as current fallback in `_generation_worker`)
-- If all slots fail, no `bank_ready` is sent; ChucK remains in its current state
-- `cancel_generation()` sets `stop_event` — threads should check this flag before starting (not mid-generation, as PyTorch ops are not interruptible)
+| Time to first `bank_ready` | ~45s (Stage 1: 3 serial slots) | ~8-12s (slot 1 done) |
 
 ---
 
