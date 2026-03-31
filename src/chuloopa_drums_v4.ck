@@ -78,7 +78,9 @@ HOP_SIZE::samp => dur HOP;
 150::ms => dur MIN_ONSET_INTERVAL;  // Debounce time between onsets
 
 // === FEATURE CONFIGURATION ===
-// Uses 5 features: flux, energy, band1, band2, band5
+// Classification: MFCC-13 features via KNN2 (13 coefficients)
+0.55 => float CONFIDENCE_THRESHOLD; // Min KNN probability to accept classification
+                                     // 0.50 = any majority, 0.55 = default, 0.67 = strict
 
 // === QUANTIZATION REMOVED ===
 // Quantization system removed in v3 (was disabled in v2)
@@ -373,7 +375,7 @@ Gain output_gains[NUM_TRACKS];
 
 // === ANALYSIS CHAINS (per track, active only during recording) ===
 FFT track_fft[NUM_TRACKS];
-RMS track_rms[NUM_TRACKS];
+MFCC track_mfcc[NUM_TRACKS];
 
 // Configure each track
 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -390,11 +392,12 @@ for(0 => int i; i < NUM_TRACKS; i++) {
     0.0 => output_gains[i].gain;  // Zero gain
 
     // Setup analysis chains (connected to adc, but only upchucked during recording)
-    adc => track_fft[i] => blackhole;
-    adc => track_rms[i] => blackhole;
+    // =^ is the UAna upchuck-chain operator: mfcc.upchuck() propagates upstream through fft
+    adc => track_fft[i] =^ track_mfcc[i] => blackhole;
 
     FRAME_SIZE => track_fft[i].size;
     Windowing.hann(FRAME_SIZE) => track_fft[i].window;
+    13 => track_mfcc[i].numCoeffs;
 }
 
 // === STATE VARIABLES (per track) ===
@@ -506,6 +509,7 @@ for(0 => int i; i < 6; i++) 0 => variation_available[i];
 
 // Drum hit impulses for visual feedback
 0.0 => float kick_impulse => float snare_impulse => float hat_impulse;
+0.0 => float low_confidence_flash;  // Flashes white when onset is dropped by confidence gate
 
 // Animation time
 now => time start_time;
@@ -635,6 +639,14 @@ fun int trainKNNFromCSV(string filename) {
     // Skip header line
     fin.readLine() => string header;
 
+    // Detect legacy 5-feature format (pre-MFCC)
+    if(header.find("flux") != -1) {
+        <<< "ERROR: Legacy training_samples.csv detected (old 5-feature/25-feature format)." >>>;
+        <<< "Delete training_samples.csv and re-record with the updated drum_sample_recorder.ck" >>>;
+        fin.close();
+        return 0;
+    }
+
     // Count samples first
     0 => int num_samples;
     while(fin.more()) {
@@ -656,8 +668,8 @@ fun int trainKNNFromCSV(string filename) {
     fin.readLine();  // Skip header again
 
     // Allocate arrays for training data
-    // Using 5 features: flux, energy, band1, band2, band5
-    float training_features[num_samples][5];
+    // Using 13 MFCC coefficients
+    float training_features[num_samples][13];
     int training_labels[num_samples];
 
     // Read data
@@ -673,7 +685,7 @@ fun int trainKNNFromCSV(string filename) {
         tok.set(line);
         tok.delims(",");  // CRITICAL: CSV uses comma delimiters!
 
-        // Parse CSV: label,timestamp,flux,energy,band1,band2,band3,band4,band5,...
+        // Parse CSV: label,timestamp,mfcc0,mfcc1,...,mfcc12
         tok.next() => string label;
 
         // Convert label to int (0=kick, 1=snare, 2=hat)
@@ -696,16 +708,10 @@ fun int trainKNNFromCSV(string filename) {
         // Skip timestamp
         tok.next();
 
-        // Read 5 features from CSV: flux, energy, band1, band2, band5
-        Std.atof(tok.next()) => training_features[sample_idx][0];  // flux
-        Std.atof(tok.next()) => training_features[sample_idx][1];  // energy
-        Std.atof(tok.next()) => training_features[sample_idx][2];  // band1
-        Std.atof(tok.next()) => training_features[sample_idx][3];  // band2
-        tok.next(); // skip band3
-        tok.next(); // skip band4
-        Std.atof(tok.next()) => training_features[sample_idx][4];  // band5
-        // Skip rest
-        for(0 => int i; i < 18; i++) tok.next();
+        // Read 13 MFCC features
+        for(0 => int j; j < 13; j++) {
+            Std.atof(tok.next()) => training_features[sample_idx][j];
+        }
 
         sample_idx++;
     }
@@ -722,12 +728,13 @@ fun int trainKNNFromCSV(string filename) {
     <<< "Training KNN classifier..." >>>;
     knn.train(training_features, training_labels);
 
-    // Optional: Set feature weights (can be tuned based on importance)
-    // MODE 1: 5 weights for 5 features (flux, energy, band1, band2, band5)
-    [1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 5 weights
+    // Set equal feature weights for all 13 MFCC coefficients
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];  // 13 weights
     knn.weigh(weights);
 
-    <<< "✓ KNN training complete!" >>>;
+    <<< "Feature dimensions:", training_features[0].size() >>>;  // Should print 13
+
+    <<< "KNN training complete!" >>>;
     <<< "Using k =", K_NEIGHBORS, "neighbors" >>>;
     <<< "" >>>;
 
@@ -736,38 +743,21 @@ fun int trainKNNFromCSV(string filename) {
 
 // === FEATURE EXTRACTION & CLASSIFICATION ===
 
-// FIXED: Accept pre-computed blobs to ensure features from same frame as onset detection
-// Uses 5 features for KNN classification: flux, energy, band1, band2, band5
-fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms_blob) {
-    // Extract energy from pre-computed RMS blob
-    rms_blob.fval(0) => float energy;
-
-    // Frequency band energies from pre-computed FFT blob (matching training data format)
-    0.0 => float band1 => float band2 => float band3 => float band4 => float band5;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        fft_blob.fval(i) => float mag;
-        if(i < FRAME_SIZE/32) mag +=> band1;           // 0-344 Hz
-        else if(i < FRAME_SIZE/8) mag +=> band2;       // 344-1378 Hz
-        else if(i < FRAME_SIZE/4) mag +=> band3;       // 1378-2756 Hz
-        else if(i < FRAME_SIZE/2.5) mag +=> band4;     // 2756-4410 Hz
-        else mag +=> band5;                            // 4410+ Hz
-    }
-
+// MFCC-13 classification with confidence gate
+// Returns: drum class (0=kick, 1=snare, 2=hat), or -1 if confidence too low
+fun int classifyOnset(int track, UAnaBlob @ mfcc_blob) {
     if(knn_trained) {
-        // Use trained KNN classifier with 5 features
-        // Feature order: flux, energy, band1, band2, band5
-        float query[5];
-        flux => query[0];
-        energy => query[1];
-        band1 => query[2];
-        band2 => query[3];
-        band5 => query[4];
+        // Build 13-feature MFCC query vector
+        float query[13];
+        for(0 => int i; i < 13; i++) {
+            mfcc_blob.fval(i) => query[i];
+        }
 
-        // Get probabilities for each class
+        // Get class probabilities from KNN
         float probs[3];
         knn.predict(query, K_NEIGHBORS, probs);
 
-        // Find class with highest probability
+        // Find winning class and its confidence
         0 => int best_class;
         probs[0] => float best_prob;
         for(1 => int i; i < 3; i++) {
@@ -777,16 +767,15 @@ fun int classifyOnset(int track, float flux, UAnaBlob @ fft_blob, UAnaBlob @ rms
             }
         }
 
+        // Confidence gate: drop uncertain classifications
+        if(best_prob < CONFIDENCE_THRESHOLD) return -1;
+
         return best_class;
     }
     else {
-        // Fallback: Simple heuristic classifier
-        band1 / (energy + 0.0001) => float low_ratio;
-        band5 / (energy + 0.0001) => float high_ratio;
-
-        if(low_ratio > 0.5) return 0;      // Kick
-        else if(high_ratio > 0.3) return 2; // Hat
-        else return 1;                      // Snare
+        // No KNN model trained — drop all onsets with white flash rather than guessing
+        // User needs to record training samples with drum_sample_recorder.ck first
+        return -1;
     }
 }
 
@@ -1569,27 +1558,30 @@ fun void mainOnsetDetectionLoop() {
 
         // If a track is recording, perform onset detection
         if(active_track >= 0) {
-            // FIXED: Extract features ONCE per iteration (prevents timing mismatch bug)
-            // All subsequent operations use these cached blobs from the same audio frame
+            // Upchuck MFCC first — this propagates upstream and computes FFT in the same call
+            track_mfcc[active_track].upchuck() @=> UAnaBlob @ mfcc_blob;
+            // Upchuck FFT second — returns the cached blob from the MFCC chain (same frame)
             track_fft[active_track].upchuck() @=> UAnaBlob @ fft_blob;
-            track_rms[active_track].upchuck() @=> UAnaBlob @ rms_blob;
 
-            // Calculate flux from cached FFT blob
+            // Calculate flux from cached FFT blob (onset detection unchanged)
             spectralFlux(active_track, fft_blob) => float flux;
             updateFluxHistory(active_track, flux);
             getAdaptiveThreshold(active_track) => float threshold;
 
             if(detectOnset(active_track, flux, threshold)) {
-                // Classify using SAME cached blobs (no additional upchucks!)
-                // This ensures training and inference use identical timing
-                classifyOnset(active_track, flux, fft_blob, rms_blob) => int drum_class;
+                // Classify using MFCC blob (same frame as FFT blob)
+                classifyOnset(active_track, mfcc_blob) => int drum_class;
 
-                // Calculate velocity from flux and normalize to 0.7-0.9 range
+                // Calculate velocity from flux
                 Math.min(1.0, flux / 0.1) => float raw_velocity;
-                0.7 + (raw_velocity * 0.2) => float velocity;  // Maps 0-1 to 0.7-0.9
+                0.7 + (raw_velocity * 0.2) => float velocity;
 
-                // Save to symbolic data
-                saveDrumHit(active_track, drum_class, velocity);
+                if(drum_class == -1) {
+                    // Low confidence — flash white, do NOT record hit
+                    1.0 => low_confidence_flash;
+                } else {
+                    saveDrumHit(active_track, drum_class, velocity);
+                }
             }
         }
 
@@ -1806,6 +1798,10 @@ fun void updateShapeDeformations(float time_sec) {
 
     hat_impulse * 0.9 => hat_impulse;
     if(hat_impulse < 0.01) 0.0 => hat_impulse;
+
+    // Decay low_confidence_flash
+    low_confidence_flash * 0.85 => low_confidence_flash;
+    if(low_confidence_flash < 0.01) 0.0 => low_confidence_flash;
 }
 
 // === VISUALIZATION ===
@@ -1868,6 +1864,13 @@ fun void visualizationLoop() {
             // Idle: Dim gray
             @(0.3, 0.3, 0.3) => target_color;
             0.2 => target_bloom;
+        }
+
+        // White flash on low-confidence drop (debug aid)
+        // Guard: don't override variation-ready state (performer needs to see it)
+        if(low_confidence_flash > 0.1 && !variations_ready) {
+            low_confidence_flash => float wf;
+            @(0.5 + wf * 0.5, 0.5 + wf * 0.5, 0.5 + wf * 0.5) => target_color;
         }
 
         // Add hit shine to bloom

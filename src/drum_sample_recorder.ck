@@ -12,7 +12,7 @@
 // Usage:
 //   chuck src/drum_sample_recorder.ck
 //   Press K, S, or H to set label, then beatbox
-//   Press E to export all data, Q to quit
+//   Press E to export training data, ESC to close window
 //---------------------------------------------------------------------
 
 // === CONFIGURATION ===
@@ -122,9 +122,83 @@ instruction_text.posY(2.5);
 instruction_text.sca(0.22);
 instruction_text.color(@(1.0, 1.0, 1.0));
 
+// === CONTROLS OVERLAY (Upper-right corner, small) ===
+GText ctrl_title --> scene;
+ctrl_title.text("CONTROLS");
+ctrl_title.posX(3.8);
+ctrl_title.posY(3.2);
+ctrl_title.posZ(0.1);
+ctrl_title.sca(0.12);
+ctrl_title.color(@(0.9, 0.9, 0.9));
+
+GText ctrl_keys --> scene;
+ctrl_keys.text("K / S / H  =  label drum type");
+ctrl_keys.posX(3.8);
+ctrl_keys.posY(2.95);
+ctrl_keys.posZ(0.1);
+ctrl_keys.sca(0.10);
+ctrl_keys.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_pause --> scene;
+ctrl_pause.text("N  =  pause recording");
+ctrl_pause.posX(3.8);
+ctrl_pause.posY(2.72);
+ctrl_pause.posZ(0.1);
+ctrl_pause.sca(0.10);
+ctrl_pause.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_export --> scene;
+ctrl_export.text("E  =  export training data");
+ctrl_export.posX(3.8);
+ctrl_export.posY(2.49);
+ctrl_export.posZ(0.1);
+ctrl_export.sca(0.10);
+ctrl_export.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_close --> scene;
+ctrl_close.text("ESC  =  close window");
+ctrl_close.posX(3.8);
+ctrl_close.posY(2.26);
+ctrl_close.posZ(0.1);
+ctrl_close.sca(0.10);
+ctrl_close.color(@(0.7, 0.7, 0.7));
+
+GText ctrl_test --> scene;
+ctrl_test.text("P  =  live playback test");
+ctrl_test.posX(3.8);
+ctrl_test.posY(2.03);
+ctrl_test.posZ(0.1);
+ctrl_test.sca(0.10);
+ctrl_test.color(@(0.7, 0.7, 0.7));
+
+// === TEST MODE INDICATOR (center bottom) ===
+GText test_mode_text --> scene;
+test_mode_text.text("");
+test_mode_text.posX(0.0);
+test_mode_text.posY(-2.5);
+test_mode_text.posZ(0.1);
+test_mode_text.sca(0.20);
+test_mode_text.color(@(0.2, 1.0, 0.5));
+
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
 1.0 => input_gain.gain;
+
+// === DRUM SAMPLE PLAYBACK (for test mode) ===
+SndBuf kick_snd => dac;
+SndBuf snare_snd => dac;
+SndBuf hat_snd => dac;
+
+me.dir() + "/samples/kick.wav" => kick_snd.read;
+me.dir() + "/samples/snare.wav" => snare_snd.read;
+me.dir() + "/samples/hat.WAV" => hat_snd.read;
+
+0 => kick_snd.loop => snare_snd.loop => hat_snd.loop;
+// Park at end so they don't auto-play
+kick_snd.samples() => kick_snd.pos;
+snare_snd.samples() => snare_snd.pos;
+hat_snd.samples() => hat_snd.pos;
+0.8 => kick_snd.gain => snare_snd.gain => hat_snd.gain;
 
 // Recording buffer (circular buffer for pre-onset capture)
 adc => LiSa recorder => blackhole;
@@ -150,6 +224,12 @@ now => last_onset_time;
 
 // === LABELING STATE ===
 "none" => string current_label;  // "kick", "snare", "hat", or "none"
+0 => int recording_complete;     // 1 after E/Q export — no more recording
+0 => int playback_mode;          // 1 after P — onset → KNN classify → play drum sound
+
+// === KNN CLASSIFIER (trained in-memory before playback) ===
+KNN2 knn;
+3 => int K_NEIGHBORS;
 
 // === VISUALIZATION STATE ===
 // Impulse variables for pulse animations
@@ -221,6 +301,57 @@ fun void playLabeledClick(string label) {
     env.keyOn();
     1::ms => now;
     env.keyOff();
+}
+
+fun void playDrumSample(string label) {
+    if(label == "kick") { 0 => kick_snd.pos; }
+    else if(label == "snare") { 0 => snare_snd.pos; }
+    else if(label == "hat") { 0 => hat_snd.pos; }
+}
+
+fun int trainKNN() {
+    sample_labels.size() => int n;
+    if(n == 0) {
+        <<< "No samples to train on!" >>>;
+        return 0;
+    }
+
+    float features[n][13];
+    int labels[n];
+    for(0 => int i; i < n; i++) {
+        sample_labels[i] => labels[i];
+        for(0 => int j; j < 13; j++) {
+            sample_features[i][j] => features[i][j];
+        }
+    }
+
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] @=> float weights[];
+    knn.train(features, labels);
+    knn.weigh(weights);
+
+    <<< "KNN trained: K=" + K_NEIGHBORS + " samples=" + n +
+        " (K=" + label_counts[0] + " S=" + label_counts[1] + " H=" + label_counts[2] + ")" >>>;
+    return 1;
+}
+
+fun void classifyAndPlay(UAnaBlob @ mfcc_blob) {
+    float query[13];
+    for(0 => int i; i < 13; i++) {
+        mfcc_blob.fval(i) => query[i];
+    }
+
+    float probs[3];
+    knn.predict(query, K_NEIGHBORS, probs);
+
+    0 => int best_class;
+    probs[0] => float best_prob;
+    for(1 => int i; i < 3; i++) {
+        if(probs[i] > best_prob) { i => best_class; probs[i] => best_prob; }
+    }
+
+    if(best_class == 0) { playDrumSample("kick"); 1.0 => kick_impulse; }
+    else if(best_class == 1) { playDrumSample("snare"); 1.0 => snare_impulse; }
+    else { playDrumSample("hat"); 1.0 => hat_impulse; }
 }
 
 // === VISUALIZATION HELPER FUNCTIONS ===
@@ -314,116 +445,27 @@ fun int detectOnset(float flux, float threshold) {
 
 // === FEATURE EXTRACTION ===
 
-// Extract enhanced features for better drum classification
-fun float[] extractOnsetFeatures(float flux) {
-    float features[25];  // 12 spectral + 13 MFCC = 25 features
-
-    // Get current FFT frame
-    fft.upchuck() @=> UAnaBlob @ blob;
-
-    // Calculate RMS energy from FFT magnitudes (ChucK's RMS unit doesn't work as expected)
-    0.0 => float energy_from_fft;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        mag * mag +=> energy_from_fft;  // Sum of squares
-    }
-    Math.sqrt(energy_from_fft / (FRAME_SIZE/2.0)) => float energy;
-
-    // Frequency band energies (more granular than before)
-    0.0 => float band1;  // 0-64 Hz (sub bass - kick fundamental)
-    0.0 => float band2;  // 64-256 Hz (low - kick body)
-    0.0 => float band3;  // 256-1024 Hz (low-mid - snare fundamental)
-    0.0 => float band4;  // 1024-4096 Hz (mid-high - snare harmonics)
-    0.0 => float band5;  // 4096+ Hz (high - hat/cymbal)
-
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-
-        if(i < FRAME_SIZE/32) mag +=> band1;
-        else if(i < FRAME_SIZE/8) mag +=> band2;
-        else if(i < FRAME_SIZE/4) mag +=> band3;
-        else if(i < FRAME_SIZE/2.5) mag +=> band4;
-        else mag +=> band5;
-    }
-
-    // Spectral centroid (brightness/center of mass)
-    0.0 => float centroid_num;
-    0.0 => float centroid_den;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        i * mag +=> centroid_num;
-        mag +=> centroid_den;
-    }
-    centroid_num / (centroid_den + 0.0001) => float centroid;
-
-    // Spectral rolloff (90% energy point - useful for brightness)
-    0.0 => float total_energy;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) +=> total_energy;
-    }
-    total_energy * 0.9 => float rolloff_threshold;
-    0.0 => float running_sum;
-    0 => int rolloff;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) +=> running_sum;
-        if(running_sum >= rolloff_threshold && rolloff == 0) {
-            i => rolloff;
-        }
-    }
-
-    // Spectral flatness (noisiness - high for hats, low for tonal kicks)
-    0.0 => float geometric_mean;
-    0.0 => float arithmetic_mean;
-    for(0 => int i; i < FRAME_SIZE/2; i++) {
-        blob.fval(i) => float mag;
-        Math.log(mag + 0.0001) +=> geometric_mean;
-        mag +=> arithmetic_mean;
-    }
-    geometric_mean / (FRAME_SIZE/2.0) => geometric_mean;
-    Math.exp(geometric_mean) => geometric_mean;
-    arithmetic_mean / (FRAME_SIZE/2.0) => arithmetic_mean;
-    geometric_mean / (arithmetic_mean + 0.0001) => float flatness;
-
-    // Energy ratios (discriminative!)
-    band1 / (energy + 0.0001) => float low_ratio;
-    band5 / (energy + 0.0001) => float high_ratio;
-    (band3 + band4) / (energy + 0.0001) => float mid_ratio;
-
-    // MFCC (Mel-Frequency Cepstral Coefficients - excellent for timbre!)
+// Extract MFCC features for drum classification (MFCC-13 only)
+// Note: mfcc.upchuck() propagates upstream and also upchucks fft
+fun float[] extractOnsetFeatures() {
+    float features[13];
     mfcc.upchuck() @=> UAnaBlob @ mfcc_blob;
-
-    // Store all features
-    flux => features[0];
-    energy => features[1];
-    band1 => features[2];
-    band2 => features[3];
-    band3 => features[4];
-    band4 => features[5];
-    band5 => features[6];
-    centroid => features[7];
-    rolloff => features[8];
-    flatness => features[9];
-    low_ratio => features[10];
-    high_ratio => features[11];
-
-    // Add 13 MFCC coefficients (features 12-24)
     for(0 => int i; i < 13; i++) {
-        mfcc_blob.fval(i) => features[12 + i];
+        mfcc_blob.fval(i) => features[i];
     }
-
     return features;
 }
 
 // === SAMPLE RECORDING ===
 
-fun void recordSample(string label, time onset_time, float flux) {
+fun void recordSample(string label, time onset_time) {
     if(label == "none") {
         <<< "⚠️  No label set! Press K/S/H before beatboxing" >>>;
         return;
     }
 
     // Extract features
-    extractOnsetFeatures(flux) @=> float features[];
+    extractOnsetFeatures() @=> float features[];
 
     // Convert label to int
     0 => int label_idx;
@@ -444,8 +486,8 @@ fun void recordSample(string label, time onset_time, float flux) {
     // Visual feedback with feature values
     <<< "✓ Recorded:", label.upper(), "| Total - K:",
         label_counts[0], "S:", label_counts[1], "H:", label_counts[2] >>>;
-    <<< "  Features: flux=" + features[0] + " energy=" + features[1] +
-        " band1=" + features[2] + " band5=" + features[6] + " centroid=" + features[7] >>>;
+    <<< "  Features: mfcc0=" + features[0] + " mfcc1=" + features[1] +
+        " mfcc2=" + features[2] + " mfcc3=" + features[3] + " mfcc4=" + features[4] >>>;
 
     // Trigger visual pulse
     if(label == "kick") 1.0 => kick_impulse;
@@ -472,7 +514,7 @@ fun void exportTrainingData() {
     }
 
     // Write header (CSV format with commas)
-    fout.write("label,timestamp,flux,energy,band1,band2,band3,band4,band5,centroid,rolloff,flatness,low_ratio,high_ratio,mfcc0,mfcc1,mfcc2,mfcc3,mfcc4,mfcc5,mfcc6,mfcc7,mfcc8,mfcc9,mfcc10,mfcc11,mfcc12\n");
+    fout.write("label,timestamp,mfcc0,mfcc1,mfcc2,mfcc3,mfcc4,mfcc5,mfcc6,mfcc7,mfcc8,mfcc9,mfcc10,mfcc11,mfcc12\n");
 
     // Write each sample
     for(0 => int i; i < sample_labels.size(); i++) {
@@ -482,8 +524,8 @@ fun void exportTrainingData() {
         // Write label and timestamp
         fout.write(label + "," + timestamp);
 
-        // Write all 25 features (comma-separated)
-        for(0 => int j; j < 25; j++) {
+        // Write all 13 MFCC features (comma-separated)
+        for(0 => int j; j < 13; j++) {
             fout.write("," + sample_features[i][j]);
         }
 
@@ -503,8 +545,8 @@ fun void exportTrainingData() {
     <<< "  - Hats:", label_counts[2] >>>;
     <<< "" >>>;
     <<< "Next steps:" >>>;
-    <<< "  1. Run: python train_classifier.py" >>>;
-    <<< "  2. Or: chuck src/drum_classifier_realtime.ck (SVM)" >>>;
+    <<< "  1. Run: chuck chuloopa_drums_v4.ck (trains KNN automatically)" >>>;
+    <<< "  2. Training loads automatically when you run chuloopa_drums_v4.ck" >>>;
     <<< "" >>>;
 }
 
@@ -514,14 +556,25 @@ fun void onsetDetectionLoop() {
     FRAME_SIZE::samp => now;
 
     while(true) {
-        spectralFlux() => float flux;
+        // In playback mode: upchuck MFCC first (propagates to FFT for flux caching)
+        UAnaBlob @ mfcc_blob;
+        if(playback_mode) {
+            mfcc.upchuck() @=> mfcc_blob;
+        }
+
+        spectralFlux() => float flux;  // calls fft.upchuck() — returns cached if already upchucked
         updateFluxHistory(flux);
         getAdaptiveThreshold() => float threshold;
 
         if(detectOnset(flux, threshold)) {
-            // Record sample with current label
-            recordSample(current_label, now, flux);
-            spork ~ playLabeledClick(current_label);
+            if(playback_mode) {
+                // Live test: classify via KNN, play matching drum sound
+                classifyAndPlay(mfcc_blob);
+            } else if(!recording_complete && current_label != "none") {
+                // Recording: store sample + click feedback
+                recordSample(current_label, now);
+                spork ~ playLabeledClick(current_label);
+            }
         }
 
         HOP => now;
@@ -592,29 +645,50 @@ fun void keyboardListener() {
                     <<< "⏸️  RECORDING DISABLED" >>>;
                 }
 
-                // E = Export
+                // E = Export + end recording
                 else if(key == 101 || key == 69) {
-                    <<< "" >>>;
-                    <<< "Exporting training data..." >>>;
                     exportTrainingData();
+                    1 => recording_complete;
+                    "none" => current_label;
+                    <<< "Recording complete. Press P to start live playback test." >>>;
                 }
 
-                // Q = Quit
+                // Q = Export + end recording (same as E)
                 else if(key == 113 || key == 81) {
-                    <<< "" >>>;
-                    <<< "Exiting..." >>>;
                     exportTrainingData();
-                    <<< "Goodbye!" >>>;
-                    me.exit();
+                    1 => recording_complete;
+                    "none" => current_label;
+                    <<< "Recording complete. Press P to start live playback test." >>>;
                 }
 
-                // R = Reset counts (debugging)
+                // P = Start live playback (KNN classify + play drum sounds)
+                else if(key == 112 || key == 80) {
+                    if(sample_labels.size() == 0) {
+                        <<< "No samples recorded yet — record K/S/H first." >>>;
+                    } else if(!playback_mode) {
+                        if(trainKNN()) {
+                            1 => playback_mode;
+                            1 => recording_complete;
+                            <<< "▶  LIVE PLAYBACK — beatbox freely, drums play automatically" >>>;
+                        }
+                    } else {
+                        0 => playback_mode;
+                        <<< "⏹  PLAYBACK STOPPED" >>>;
+                    }
+                }
+
+                // R = Full reset — erase all samples, re-enable recording
                 else if(key == 114 || key == 82) {
                     0 => label_counts[0] => label_counts[1] => label_counts[2];
                     sample_labels.clear();
                     sample_times.clear();
                     sample_features.clear();
-                    <<< "🔄 RESET - All samples cleared" >>>;
+                    0 => recording_complete;
+                    0 => playback_mode;
+                    "none" => current_label;
+                    0 => instruction_state;
+                    <<< "🔄 RESET — all samples cleared, recording re-enabled" >>>;
+                    <<< "Press K / S / H to start recording again." >>>;
                 }
             }
         }
@@ -714,12 +788,22 @@ fun void visualizationLoop() {
 
         // === UPDATE INSTRUCTION TEXT (State Machine) ===
 
+        // Playback/recording-complete states override the normal state machine
+        if(playback_mode) {
+            instruction_text.text("LIVE PLAYBACK — beatbox freely, drums play automatically");
+            instruction_text.color(@(0.2, 1.0, 0.5));
+            0.20 + 0.02 * Math.sin((now / second) * Math.PI * 2.0) => instruction_text.sca;
+        } else if(recording_complete) {
+            instruction_text.text("RECORDING COMPLETE — press P to test live playback");
+            instruction_text.color(@(1.0, 0.8, 0.2));
+            instruction_text.sca(0.20);
+
         // Determine current state
-        if(label_counts[0] >= 10 && label_counts[1] >= 10 && label_counts[2] >= 10) {
+        } else if(label_counts[0] >= 10 && label_counts[1] >= 10 && label_counts[2] >= 10) {
             // State 4: All complete
             if(instruction_state != 4) {
                 4 => instruction_state;
-                instruction_text.text("TRAINING COMPLETE! PRESS Q TO EXPORT (TOTAL: " + getTotalSamples() + ")");
+                instruction_text.text("TRAINING COMPLETE! PRESS E TO EXPORT (TOTAL: " + getTotalSamples() + ")");
                 instruction_text.color(@(0.5, 1.5, 0.5));
             }
             // Large pulsing scale
@@ -743,7 +827,7 @@ fun void visualizationLoop() {
                     } else if(label_counts[2] < 10) {
                         instruction_text.text("PERFECT! PRESS H FOR HI-HATS");
                     } else {
-                        instruction_text.text("PERFECT! PRESS Q TO EXPORT");
+                        instruction_text.text("PERFECT! PRESS E TO EXPORT");
                     }
 
                     instruction_text.color(@(0.3, 1.0, 0.3));
@@ -788,6 +872,20 @@ fun void visualizationLoop() {
             }
         }
 
+        // === PLAYBACK MODE INDICATOR ===
+        if(playback_mode) {
+            0.18 + 0.03 * Math.sin((now / second) * Math.PI * 3.0) => float pb_pulse;
+            test_mode_text.sca(pb_pulse);
+            test_mode_text.text("LIVE PLAYBACK  —  beatbox freely");
+            test_mode_text.color(@(0.2, 1.0, 0.5));
+        } else if(recording_complete) {
+            test_mode_text.sca(0.16);
+            test_mode_text.text("RECORDING DONE  —  press P to test live");
+            test_mode_text.color(@(1.0, 0.8, 0.2));
+        } else {
+            test_mode_text.text("");
+        }
+
         // Slow rotation for visual interest (optional)
         kick_geo.rotY((now / second) * 0.3);
         snare_geo.rotY((now / second) * 0.3);
@@ -807,20 +905,20 @@ fun void visualizationLoop() {
 <<< "  S = Set label to SNARE" >>>;
 <<< "  H = Set label to HI-HAT" >>>;
 <<< "  N = Disable recording (none)" >>>;
-<<< "  E = Export training data" >>>;
-<<< "  R = Reset all samples" >>>;
-<<< "  Q = Quit and export" >>>;
+<<< "  E / Q = Export training data (ends recording)" >>>;
+<<< "  P = Live playback test (KNN classify → play drum sounds)" >>>;
+<<< "  R = Full reset (erase samples, re-enable recording)" >>>;
+<<< "  ESC = Close window" >>>;
 <<< "" >>>;
 <<< "WORKFLOW:" >>>;
-<<< "  1. Press K (for kick)" >>>;
-<<< "  2. Beatbox kick sounds - each onset auto-records" >>>;
-<<< "  3. Press S (for snare)" >>>;
-<<< "  4. Beatbox snare sounds" >>>;
-<<< "  5. Press H (for hi-hat)" >>>;
-<<< "  6. Beatbox hat sounds" >>>;
-<<< "  7. Press E to export CSV" >>>;
+<<< "  1. Press K — beatbox kicks (10+ samples)" >>>;
+<<< "  2. Press S — beatbox snares (10+ samples)" >>>;
+<<< "  3. Press H — beatbox hi-hats (10+ samples)" >>>;
+<<< "  4. Press E to export, then P to test live playback" >>>;
+<<< "  5. Press R to re-record if results are unsatisfactory" >>>;
 <<< "" >>>;
-<<< "TARGET: 20+ samples per drum type (60+ total)" >>>;
+<<< "TARGET: 10+ per drum type minimum (30+ total)" >>>;
+<<< "         20+ per drum type recommended for best accuracy" >>>;
 <<< "" >>>;
 <<< "Starting in 3 seconds..." >>>;
 <<< "" >>>;
