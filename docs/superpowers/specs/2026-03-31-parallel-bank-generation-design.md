@@ -94,7 +94,51 @@ def _run_slot_thread(slot: int, pattern: DrumPattern):
             osc_client.send_message("/chuloopa/bank_progress", slot)
 ```
 
-Note: `stop_event` is checked **before** generation begins. Mid-generation cancellation is not possible (PyTorch ops are not interruptible), but new requests arriving during generation are queued until the current batch of threads finishes.
+### Mid-generation cancellation via `stop_event`
+
+`_generate_with_temperature` runs a Python for-loop over tokens. Each iteration is interruptible between tokens (~50-150ms per token on MPS). `stop_event` is passed through `generate_variation_batch` → `_generate_with_temperature` and checked at the **top of each token iteration**:
+
+```python
+for i in range(max_new_tokens):
+    if stop_event is not None and stop_event.is_set():
+        break  # exit early — generation incomplete
+    logits, loss, h = self.model(...)
+    ...
+```
+
+This requires adding an optional `stop_event` parameter to both `generate_variation_batch` and `_generate_with_temperature` in `rhythmic_creator_model.py`.
+
+In `_run_slot_thread`, if generation is cancelled mid-loop the returned pattern will have fewer hits than intended. **Discard it — do not write the file for that slot.** The incomplete pattern is not musically useful.
+
+Updated `_run_slot_thread` cancellation guard:
+
+```python
+def _run_slot_thread(slot: int, pattern: DrumPattern):
+    if stop_event.is_set():
+        return  # cancelled before starting
+
+    spice = [0.2, 0.4, 0.6, 0.8, 1.0][slot - 1]
+    try:
+        varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
+        if stop_event.is_set():
+            return  # cancelled during generation — discard result, do not write file
+        output_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        varied.to_file(str(output_file))
+        if osc_client:
+            osc_client.send_message("/chuloopa/bank_progress", slot)
+    except Exception as e:
+        if stop_event.is_set():
+            return  # cancelled — skip fallback too
+        fallback = humanize_pattern(
+            pattern,
+            timing_variance=0.005 + 0.02 * spice,
+            velocity_variance=0.05 + 0.1 * spice
+        )
+        output_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        fallback.to_file(str(output_file))
+        if osc_client:
+            osc_client.send_message("/chuloopa/bank_progress", slot)
+```
 
 ### 3. `_generation_worker()` — parallel coordinator
 
@@ -183,9 +227,30 @@ def start_full_bank_generation():
 
 Queue clear + coordinator spawn are now atomic under `generation_lock`, eliminating the window between the two separate lock blocks in the current code.
 
-### 5. `cancel_generation()` — no timeout join
+### 5. `handle_track_cleared()` — cancel generation and delete variation files
 
-Remove the 2-second join timeout. Because threads check `stop_event` only at the start (before generation begins), `cancel_generation()` signals intent and waits for any in-progress generation to finish naturally:
+When ChucK sends `/chuloopa/track_cleared`, the source pattern no longer exists. Any in-progress or completed variations are now stale and must be discarded:
+
+```python
+def handle_track_cleared(address):
+    print("Track cleared — cancelling generation and deleting variation files")
+    cancel_generation()
+
+    # Delete all variation files so stale variations can't be loaded
+    for slot in range(1, 6):
+        var_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        if var_file.exists():
+            var_file.unlink()
+
+    if osc_client:
+        osc_client.send_message("/chuloopa/generation_progress", "Cancelled — track cleared")
+```
+
+This ensures that if the user records a new pattern immediately after clearing, ChucK cannot accidentally load variations from the previous recording.
+
+### 6. `cancel_generation()` — no timeout join
+
+Remove the 2-second join timeout. With mid-generation `stop_event` checks between token iterations, in-progress threads will exit within ~50-150ms of `stop_event` being set. `cancel_generation()` blocks until the coordinator thread and all sub-threads finish cleanly:
 
 ```python
 def cancel_generation():
@@ -202,7 +267,9 @@ def cancel_generation():
 
 ---
 
-## Sequence Diagram
+## Sequence Diagrams
+
+### Normal flow (new recording)
 
 ```
 on_file_change / handle_regenerate
@@ -210,7 +277,7 @@ on_file_change / handle_regenerate
         v
 cancel_generation()
   - stop_event.set()
-  - join coordinator (waits for clean finish)
+  - join coordinator (~50-150ms, mid-generation exit)
   - stop_event.clear()
         |
         v
@@ -241,6 +308,28 @@ _generation_worker() (coordinator thread)
   bank_generation_ceiling updated
 ```
 
+### Track cleared mid-generation
+
+```
+ChucK sends /chuloopa/track_cleared
+        |
+        v
+handle_track_cleared()
+        |
+        v
+cancel_generation()
+  - stop_event.set()
+  - threads check stop_event between token iterations → break early (~50-150ms)
+  - join coordinator (returns quickly)
+  - stop_event.clear()
+        |
+        v
+  delete var1.txt … var5.txt (stale files from previous pattern)
+        |
+        v
+  send /chuloopa/generation_progress "Cancelled — track cleared"
+```
+
 ---
 
 ## Expected Timing
@@ -251,6 +340,11 @@ _generation_worker() (coordinator thread)
 | Time to first `bank_ready` | ~45s (Stage 1: 3 serial slots) | ~8-12s (slot 1 done) |
 
 ---
+
+## Files Changed
+
+- `src/drum_variation_ai_v2.py` — main changes (worker, slot thread, cancellation, track-cleared handler)
+- `src/rhythmic_creator_model.py` — add optional `stop_event` param to `generate_variation_batch` and `_generate_with_temperature`
 
 ## Out of Scope
 
