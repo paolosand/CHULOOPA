@@ -1418,6 +1418,61 @@ def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_cr
     start_full_bank_generation()
 
 
+def _run_slot_thread(slot: int, pattern: DrumPattern):
+    """Per-slot worker: generates one variation and saves it. Respects stop_event."""
+    if stop_event.is_set():
+        return  # cancelled before starting — don't write anything
+
+    spice = [0.2, 0.4, 0.6, 0.8, 1.0][slot - 1]
+    variations_dir = DEFAULT_VARIATIONS_DIR
+    variations_dir.mkdir(parents=True, exist_ok=True)
+
+    if osc_client:
+        try:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"Generating var{slot}/5 (spice {spice:.1f})...")
+        except Exception:
+            pass
+
+    try:
+        varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
+
+        # Post-generation cancel check: discard if cancelled during generation
+        if stop_event.is_set():
+            return
+
+        output_file = variations_dir / f"track_0_drums_var{slot}.txt"
+        varied.to_file(str(output_file))
+        print(f"  [Slot {slot}] Saved: {output_file.name} ({len(varied.hits)} hits, spice={spice:.1f})")
+        if osc_client:
+            try:
+                osc_client.send_message("/chuloopa/bank_progress", slot)
+            except Exception:
+                pass
+
+    except Exception as e:
+        print(f"  [Slot {slot}] Generation failed: {e}")
+        if stop_event.is_set():
+            return  # cancelled — skip fallback too
+
+        try:
+            fallback = humanize_pattern(
+                pattern,
+                timing_variance=0.005 + 0.02 * spice,
+                velocity_variance=0.05 + 0.1 * spice
+            )
+            output_file = variations_dir / f"track_0_drums_var{slot}.txt"
+            fallback.to_file(str(output_file))
+            print(f"  [Slot {slot}] Fallback saved")
+            if osc_client:
+                try:
+                    osc_client.send_message("/chuloopa/bank_progress", slot)
+                except Exception:
+                    pass
+        except Exception as e2:
+            print(f"  [Slot {slot}] Fallback also failed: {e2}")
+
+
 # =============================================================================
 # FILE WATCHING
 # =============================================================================
