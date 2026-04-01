@@ -3,9 +3,10 @@
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 <p align="center">
-  <img src="docs/internal/paper/assets/chuloopa%20-%20empty%20state%20-%20option%202.png" alt="CHULOOPA idle state" />
+  <img src="docs/internal/paper/assets/chuloopa%20-%20active%20state.png
+  " alt="CHULOOPA active variation state" />
   <br/>
-  <em>Figure 1: CHULOOPA UI idle state</em>
+  <em>Figure 1: CHULOOPA UI active state</em>
 </p>
 
 ## Overview
@@ -48,6 +49,7 @@ chuck src/drum_sample_recorder.ck
 - Press **ESC**: Close window
 
 **Workflow:**
+
 1. Record K/S/H samples (10+ each)
 2. Press **E** to export
 3. Press **P** to test — if classification sounds wrong, press **R** and re-record
@@ -197,11 +199,11 @@ ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
 
 ### MIDI Note Mapping (GM Standard)
 
-| Drum  | MIDI Note | Pitch |
-|-------|-----------|-------|
-| Kick  | 36        | C1    |
-| Snare | 38        | D1    |
-| Hi-hat| 42        | F#1   |
+| Drum   | MIDI Note | Pitch |
+| ------ | --------- | ----- |
+| Kick   | 36        | C1    |
+| Snare  | 38        | D1    |
+| Hi-hat | 42        | F#1   |
 
 ### macOS IAC Driver Setup (one-time)
 
@@ -221,15 +223,15 @@ ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
 
 ### Differences from V3 standalone
 
-| Feature | V3 standalone (chuloopa_drums_v3.ck) | V3 Ableton (chuloopa_drums_v3_ableton.ck) |
-|---------|--------------------------------------|-------------------------------------------|
-| Audio output | ChucK SndBuf (WAV files) | Ableton Drum Rack via MIDI |
-| Sound design | Fixed WAV samples | Any samples/synths in Ableton |
-| FX | None | Full Ableton FX chain |
-| Velocity | Applied to SndBuf gain | Sent as MIDI velocity (1–127) |
-| ChuGL visuals | ✅ | ✅ (unchanged) |
-| Recording/KNN/OSC | ✅ | ✅ (unchanged) |
-| Ableton required | ❌ | ✅ |
+| Feature           | V3 standalone (chuloopa_drums_v3.ck) | V3 Ableton (chuloopa_drums_v3_ableton.ck) |
+| ----------------- | ------------------------------------ | ----------------------------------------- |
+| Audio output      | ChucK SndBuf (WAV files)             | Ableton Drum Rack via MIDI                |
+| Sound design      | Fixed WAV samples                    | Any samples/synths in Ableton             |
+| FX                | None                                 | Full Ableton FX chain                     |
+| Velocity          | Applied to SndBuf gain               | Sent as MIDI velocity (1–127)             |
+| ChuGL visuals     | ✅                                   | ✅ (unchanged)                            |
+| Recording/KNN/OSC | ✅                                   | ✅ (unchanged)                            |
+| Ableton required  | ❌                                   | ✅                                        |
 
 ---
 
@@ -238,6 +240,7 @@ ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
 ### Complete Pipeline
 
 **Current pipeline (v4 + drum_variation_generator.py + spice_detector.ck):**
+
 ```
 1. spice_detector.ck (Terminal 2) analyzes live audio → sends /chuloopa/spice via OSC
    ↓
@@ -327,14 +330,14 @@ The system uses OSC (Open Sound Control) for real-time bidirectional communicati
 
 **OSC Messages:**
 
-| Address                         | Direction               | Data Type | Purpose                                       |
-| ------------------------------- | ----------------------- | --------- | --------------------------------------------- |
-| `/chuloopa/generation_progress` | Python → ChucK          | string    | Status updates during generation              |
-| `/chuloopa/bank_ready`          | Python → ChucK          | int       | Signals all 5 variations are ready            |
-| `/chuloopa/variation_available` | Python → ChucK          | int,int   | Index + spice level of each ready variant     |
-| `/chuloopa/regenerate`          | ChucK → Python          | none      | Request full bank regeneration                |
-| `/chuloopa/spice`               | spice_detector → Python+ChucK | float | Current audio-driven spice (0.0-1.0)    |
-| `/chuloopa/clear`               | ChucK → Python          | none      | Track cleared notification                    |
+| Address                         | Direction                     | Data Type | Purpose                                   |
+| ------------------------------- | ----------------------------- | --------- | ----------------------------------------- |
+| `/chuloopa/generation_progress` | Python → ChucK                | string    | Status updates during generation          |
+| `/chuloopa/bank_ready`          | Python → ChucK                | int       | Signals all 5 variations are ready        |
+| `/chuloopa/variation_available` | Python → ChucK                | int,int   | Index + spice level of each ready variant |
+| `/chuloopa/regenerate`          | ChucK → Python                | none      | Request full bank regeneration            |
+| `/chuloopa/spice`               | spice_detector → Python+ChucK | float     | Current audio-driven spice (0.0-1.0)      |
+| `/chuloopa/clear`               | ChucK → Python                | none      | Track cleared notification                |
 
 **Workflow:**
 
