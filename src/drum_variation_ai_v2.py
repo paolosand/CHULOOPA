@@ -1316,8 +1316,6 @@ def _generation_worker():
         slots = list(generation_queue)
         generation_queue.clear()
 
-    slots = [s for s in slots if s != -1]
-
     if not slots:
         return
 
@@ -1454,6 +1452,8 @@ def _run_slot_thread(slot: int, pattern: DrumPattern):
             pass
 
     try:
+        # Cancellation is via the module-level stop_event global, which rhythmic_creator_variation
+        # reads directly when calling generate_variation_batch — no explicit parameter needed.
         varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
 
         # Post-generation cancel check: discard if cancelled during generation
