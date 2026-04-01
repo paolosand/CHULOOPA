@@ -3,7 +3,7 @@
 // desc: Audio-driven spice detector for CHULOOPA v4
 //       Computes spice from dBFS-scaled RMS — no calibration required.
 //       Just set your interface gain so loud playing peaks around PEAK_DB.
-//       Sends spice via OSC to Python (port 5000) and ChucK (port 5001) every 500ms.
+//       Sends spice via OSC to ChucK (port 5001) every 500ms.
 //
 // Startup order: Python → spice_detector → chuloopa_main
 //
@@ -17,7 +17,6 @@
 //
 // OSC Output:
 //   /chuloopa/spice <float 0.0-1.0>
-//   → Python (127.0.0.1:5000)
 //   → ChucK v4 (127.0.0.1:5001)
 //---------------------------------------------------------------------
 
@@ -45,7 +44,6 @@ HOP_SIZE::samp => dur HOP;
 100::ms => dur MIN_ONSET_INTERVAL;
 
 // OSC ports
-5000 => int OSC_PORT_PYTHON;
 5001 => int OSC_PORT_CHUCK;
 
 // MIDI
@@ -85,17 +83,10 @@ FRAME_SIZE => fft.size;
 Windowing.hann(FRAME_SIZE) => fft.window;
 
 // === OSC SETUP ===
-OscOut oout_python;
-oout_python.dest("127.0.0.1", OSC_PORT_PYTHON);
-
 OscOut oout_chuck;
 oout_chuck.dest("127.0.0.1", OSC_PORT_CHUCK);
 
 fun void sendSpice(float spice) {
-    oout_python.start("/chuloopa/spice");
-    spice => oout_python.add;
-    oout_python.send();
-
     oout_chuck.start("/chuloopa/spice");
     spice => oout_chuck.add;
     oout_chuck.send();
@@ -309,7 +300,6 @@ fun void spiceCalculationLoop() {
 <<< "  Peak level: ", PEAK_DB,        "dBFS → spice 1.0" >>>;
 <<< "" >>>;
 <<< "OSC Output:" >>>;
-<<< "  Python (port:", OSC_PORT_PYTHON, ")" >>>;
 <<< "  ChucK v4 (port:", OSC_PORT_CHUCK, ")" >>>;
 <<< "" >>>;
 if(performance_mode) {
