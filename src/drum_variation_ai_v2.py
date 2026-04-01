@@ -113,7 +113,7 @@ current_ceiling = 1.0           # Updated via /chuloopa/spice_ceiling OSC
 bank_generation_ceiling = -1.0  # -1 = no bank generated yet; updated before each generation pass
 stop_event = threading.Event()  # Set to cancel in-progress generation thread
 generation_lock = threading.Lock()  # Ensures one generation thread at a time
-generation_queue = []           # List of slot ints (1-5) or -1 (sentinel = send bank_ready)
+generation_queue = []           # List of slot ints (1-5)
 generation_thread = None        # type: Optional[threading.Thread]
 
 
@@ -1256,14 +1256,10 @@ def reachable_slots(ceiling: float) -> list:
 
 
 def spread_priority(slots: list) -> list:
-    """Reorder slots: Stage 1 (spread) first, Stage 2 (gap-fill) second.
+    """Reorder slots for join order: spread coverage across range first, fill gaps second.
 
-    Stage 1 spreads coverage across the range:
-      5 slots: first, middle, last  = [0], [2], [4]
-      4 slots: first, 2nd, last     = [0], [1], [3]
-      3 slots: all (no split)
-      <=2 slots: all (no split)
-    Stage 2 fills the gaps.
+    In the parallel model, all threads start simultaneously — this ordering controls
+    when bank_ready fires (slot 1 first) and the join sequence, not generation order.
     """
     n = len(slots)
     if n <= 3:
@@ -1320,8 +1316,6 @@ def _generation_worker():
         slots = list(generation_queue)
         generation_queue.clear()
 
-    # Filter sentinel values — Task 5 removes the sentinel from start_full_bank_generation,
-    # but guard here protects against any residual -1 in the queue until then
     slots = [s for s in slots if s != -1]
 
     if not slots:
@@ -1424,10 +1418,10 @@ def start_full_bank_generation():
 
 
 def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
-    """Generate variation bank using ceiling-aware staged generation.
+    """Generate variation bank using ceiling-aware parallel generation.
 
-    Slots are ordered: Stage 1 (spread), then Stage 2 (gap-fill).
-    /chuloopa/bank_ready 0 is sent after Stage 1 to enable auto-switching.
+    Slots are ordered by spread_priority for join order.
+    /chuloopa/bank_ready 0 is sent when slot 1 completes to enable auto-switching.
     """
     global current_variation_type
     current_variation_type = variation_type
