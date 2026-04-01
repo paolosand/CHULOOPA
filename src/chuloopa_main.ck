@@ -2129,9 +2129,6 @@ fun void midiListener() {
                         // Recalculate effective spice with new ceiling
                         Math.min(detected_spice_level, spice_ceiling) => effective_spice;
                         <<< "Spice ceiling:", (spice_ceiling * 100) $ int, "% | Effective:", (effective_spice * 100) $ int, "%" >>>;
-                        oout.start("/chuloopa/spice_ceiling");
-                        spice_ceiling => oout.add;
-                        oout.send();
                     }
                 }
             }
