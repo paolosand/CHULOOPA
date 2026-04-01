@@ -169,7 +169,8 @@ class RhythmicCreatorModel:
                                  batch_size: int = 3,
                                  input_pattern: str = None,
                                  num_tokens: int = 300,
-                                 temperature: float = 1.0) -> list:
+                                 temperature: float = 1.0,
+                                 stop_event=None) -> list:
         """
         Generate N variations in parallel from the same input context.
 
@@ -202,7 +203,7 @@ class RhythmicCreatorModel:
 
         with torch.no_grad():
             generated = self._generate_with_temperature(
-                context, hidden, num_tokens, temperature
+                context, hidden, num_tokens, temperature, stop_event=stop_event
             )
 
         # Decode each batch element separately
@@ -217,7 +218,8 @@ class RhythmicCreatorModel:
                                    idx: torch.Tensor,
                                    hidden: tuple,
                                    max_new_tokens: int,
-                                   temperature: float) -> torch.Tensor:
+                                   temperature: float,
+                                   stop_event=None) -> torch.Tensor:
         """
         Generate tokens with temperature-controlled sampling.
 
@@ -239,6 +241,10 @@ class RhythmicCreatorModel:
         token_times = []  # DIAGNOSTIC
 
         for i in range(max_new_tokens):
+            # Mid-generation cancellation: check between token iterations (~50-150ms latency)
+            if stop_event is not None and stop_event.is_set():
+                break
+
             t0 = time.time()  # DIAGNOSTIC
 
             # Crop to block_size if needed
