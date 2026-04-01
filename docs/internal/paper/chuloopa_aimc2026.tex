@@ -147,13 +147,15 @@ Our approach inverts the generic classification paradigm: instead of training on
 
 \textbf{Onset detection} for vocal percussion presents unique challenges. Spectral flux---measuring how quickly the power spectrum of a signal changes---has become the standard onset detection function for percussive sounds \citep{bello2005tutorial}. \citet{delgado2019dataset} found that spectral flux-based methods with adaptive thresholding effectively handle amateur beatbox variability. CHULOOPA uses spectral flux with adaptive thresholding and 150ms debouncing to prevent false positives.
 
-\textbf{Feature extraction} for drum classification has been extensively studied. \citet{herrera2003automatic} conducted a comprehensive comparison of feature selection methods for automatic drum sound classification. \citet{sinyor2005beatbox} classified vocal percussion sounds (bass drum, hi-hat, snare) using spectral centroid, zero-crossing rate, and MFCCs, achieving 95.55\% accuracy.
+\textbf{Feature extraction} for drum classification has been extensively studied. \citet{herrera2003automatic} conducted a comprehensive comparison of feature selection methods for automatic drum sound classification. \citet{sinyor2005beatbox} classified vocal percussion sounds (bass drum, hi-hat, snare) using spectral and temporal features (zero-crossing rate, spectral rolloff, RMS energy, compactness), achieving 95.55\% accuracy with AdaBoost+C4.5 decision trees.
 
-\textbf{Frequency-based discrimination} between kick, snare, and hi-hat is well-established. Kick drums exhibit peak energy around 64 Hz \citep{lartillot2007unified}. Snare drums show mid-frequency emphasis (200-500 Hz). Hi-hats concentrate energy in high frequencies ($>$6 kHz) \citep{sillanpaa2000classification}. This frequency-domain separation motivates our use of spectral band energies.
+\textbf{Frequency-based discrimination} between kick, snare, and hi-hat is well-established for acoustic instruments. Kick drums exhibit peak energy around 64 Hz \citep{lartillot2007unified}. Snare drums show mid-frequency emphasis (200--500 Hz). Hi-hats concentrate energy in high frequencies ($>$6 kHz) \citep{sillanpaa2000classification}. However, beatbox sounds produced by the human vocal tract do not reproduce these frequency distributions cleanly, motivating features designed for voice rather than acoustic percussion.
+
+\textbf{MFCC for voice-derived percussion:} \citet{martanto2025beatbox} systematically compared Spectral Centroid, Spectral Magnitude, Spectral Contrast, and MFCC (22 coefficients) across KNN, SVM, and AdaBoost classifiers for beatbox classification. MFCC achieved the highest performance across all KNN and non-linear SVM configurations. The authors attribute this to voice-derived beatbox sounds being ``better identified when using a feature more commonly used in identifying the human voice (MFCC)\ldots compared to features more commonly used in identifying percussion sounds.'' This directly validates choosing MFCCs over spectral band energies for amateur beatbox classification.
 
 \textbf{Recent automatic drum transcription (ADT)} research validates deep learning for drum recognition. \citet{weber2025star} introduced the STAR Drums dataset, demonstrating state-of-the-art ADT performance. \citet{cahyaningtyas2023deep} surveyed deep learning approaches for ADT, showing that LSTM models achieve 77-87\% accuracy on benchmark datasets. Our choice of KNN over deep learning reflects our constraint: 30 total training samples where instance-based learning outperforms neural networks that would overfit.
 
-CHULOOPA's 5-dimensional feature vector (spectral flux, RMS energy, three spectral band energies) reflects this established research while preventing overfitting with minimal user-specific data.
+CHULOOPA uses 13 MFCC coefficients---within the standard speech range validated by \citet{martanto2025beatbox}---as its feature representation, capturing timbral shape in a perceptually-motivated space suited to voice-derived percussion.
 
 \subsection{Personalized and User-Trainable Machine Learning for Music}
 
@@ -228,17 +230,11 @@ Minimum onset strength is configurable (default: 0.005) to balance sensitivity v
 
 \subsubsection{Feature Extraction}
 
-When an onset is detected, the system extracts a 5-dimensional acoustic feature vector grounded in drum classification research \citep{herrera2003automatic,sinyor2005beatbox}:
+When an onset is detected, the system extracts 13 Mel-Frequency Cepstral Coefficients (MFCCs). MFCCs encode timbral shape by applying a mel-scaled filterbank (perceptually weighted to match human hearing) to the power spectrum, then decorrelating via Discrete Cosine Transform. The result is a compact representation of spectral envelope shape rather than energy at specific frequencies.
 
-\begin{enumerate}
-\item \textbf{Spectral flux} (onset strength): Measures spectral change rate
-\item \textbf{RMS energy} (loudness): Temporal feature capturing amplitude
-\item \textbf{Spectral band 1 (low frequencies)}: Emphasizes kick drums (peak energy $\sim$64 Hz)
-\item \textbf{Spectral band 2 (mid frequencies)}: Emphasizes snares (200-500 Hz)
-\item \textbf{Spectral band 5 (high frequencies)}: Emphasizes hi-hats ($>$6 kHz)
-\end{enumerate}
+We chose MFCCs over spectral band energies based on direct experimental evidence from \citet{martanto2025beatbox}, who compared MFCC against Spectral Magnitude, Spectral Contrast, and Spectral Centroid for beatbox classification. MFCC achieved the highest performance across KNN and non-linear SVM models. Critically, the authors explain that voice-derived percussion is better characterized by voice-oriented features (MFCC) than by percussion-oriented spectral features---because the human vocal tract does not produce drum-like frequency content at 64~Hz (kick), 200--500~Hz (snare), or $>$6~kHz (hi-hat). Amateur beatboxers in particular show high intra-user timbral consistency in MFCC space even when their sounds lack the expected frequency-domain properties.
 
-This feature selection exploits the well-established frequency-domain separation between drum classes \citep{lartillot2007unified,sillanpaa2000classification}. The low dimensionality (5 features) prevents overfitting with our small training set (30 samples) while capturing perceptually-salient timbral characteristics.
+We use 13 coefficients, within the speech-recognition range (12--13) cited by \citet{martanto2025beatbox} as standard for voice feature extraction. With 30 training samples (10 per class), KNN's instance-based learning remains well-conditioned at 13 dimensions: the classifier makes no parametric assumptions and does not overfit, as each class is represented by 10 reference points in MFCC space.
 
 \subsubsection{KNN Classification}
 
