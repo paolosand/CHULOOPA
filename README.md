@@ -60,7 +60,7 @@ This creates `training_samples.csv` with your personalized beatbox samples.
 
 ```bash
 cd src
-python drum_variation_ai_v2.py --watch
+python drum_variation_generator.py --watch
 ```
 
 This starts the AI variation engine that pre-generates a bank of 5 variations at different spice levels using Jake Chen's rhythmic_creator model (local inference, no API required).
@@ -84,7 +84,7 @@ This analyzes live audio (guitar/vocal/room) and sends a composite spice level v
 
 ```bash
 cd src
-chuck chuloopa_drums_v4.ck
+chuck chuloopa_main.ck
 ```
 
 > **Ableton setup required:** Enable IAC Driver in macOS Audio MIDI Setup → create a MIDI track in Ableton → input: IAC Driver Bus 1, Monitor: In → load Drum Rack → assign C1(36)=Kick, D1(38)=Snare, F#1(42)=Hi-hat. See [Ableton Integration](#ableton-integration) below.
@@ -131,7 +131,7 @@ chuck chuloopa_drums_v4.ck
 
 1. **Terminal 1:** Start Python AI engine
    ```bash
-   cd src && python drum_variation_ai_v2.py --watch
+   cd src && python drum_variation_generator.py --watch
    ```
 2. **Terminal 2:** Start spice detector
    ```bash
@@ -139,7 +139,7 @@ chuck chuloopa_drums_v4.ck
    ```
 3. **Terminal 3:** Start ChucK (Ableton pipeline)
    ```bash
-   cd src && chuck chuloopa_drums_v4.ck
+   cd src && chuck chuloopa_main.ck
    ```
 4. **Verify:** All terminals show OSC connections established
 
@@ -237,14 +237,14 @@ ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
 
 ### Complete Pipeline
 
-**Current pipeline (v4 + drum_variation_ai_v2.py + spice_detector.ck):**
+**Current pipeline (v4 + drum_variation_generator.py + spice_detector.ck):**
 ```
 1. spice_detector.ck (Terminal 2) analyzes live audio → sends /chuloopa/spice via OSC
    ↓
-2. drum_variation_ai_v2.py (Terminal 1) pre-generates bank of 5 variations
+2. drum_variation_generator.py (Terminal 1) pre-generates bank of 5 variations
    (spice levels 0.2/0.4/0.6/0.8/1.0) → sends /chuloopa/bank_ready when done
    ↓
-3. chuloopa_drums_v4.ck (Terminal 3) records beatbox → MFCC-13 KNN → Ableton MIDI
+3. chuloopa_main.ck (Terminal 3) records beatbox → MFCC-13 KNN → Ableton MIDI
    ↓
 4. Loop exported → Python watchdog auto-generates variation bank
    ↓
@@ -370,13 +370,13 @@ Updates every 500ms from `spice_detector.ck`.
 
 ### AI Variation Generation
 
-**Tool:** `src/drum_variation_ai_v2.py`
+**Tool:** `src/drum_variation_generator.py`
 
 **Watch Mode (Primary Usage):**
 
 ```bash
 cd src
-python drum_variation_ai_v2.py --watch
+python drum_variation_generator.py --watch
 ```
 
 Automatically generates a bank of 5 variations when you record loops using Jake Chen's rhythmic_creator model. Keep this running in a separate terminal.
@@ -432,8 +432,8 @@ Adjust with CC 74 knob, then press D#1 to regenerate.
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v4.ck         # MAIN: Audio-driven spice + variation bank (Ableton via IAC)
-│   ├── drum_variation_ai_v2.py      # MAIN: Variation bank engine (5 variants, bank_ready OSC)
+│   ├── chuloopa_main.ck         # MAIN: Audio-driven spice + variation bank (Ableton via IAC)
+│   ├── drum_variation_generator.py      # MAIN: Variation bank engine (5 variants, bank_ready OSC)
 │   ├── spice_detector.ck            # MAIN: Audio-driven spice → OSC (500ms updates)
 │   │
 │   ├── drum_sample_recorder.ck      # Training data collector (run once before main system)
@@ -587,7 +587,7 @@ pip install -r requirements.txt
 
 **Python watch mode not starting:**
 
-- Must run from `src` directory: `cd src && python drum_variation_ai_v2.py --watch`
+- Must run from `src` directory: `cd src && python drum_variation_generator.py --watch`
 - Check dependencies: `pip install -r requirements.txt`
 - Verify port 5000 is available: `lsof -i :5000`
 - Kill conflicting processes: `kill <PID>`

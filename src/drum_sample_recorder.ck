@@ -545,8 +545,8 @@ fun void exportTrainingData() {
     <<< "  - Hats:", label_counts[2] >>>;
     <<< "" >>>;
     <<< "Next steps:" >>>;
-    <<< "  1. Run: chuck chuloopa_drums_v4.ck (trains KNN automatically)" >>>;
-    <<< "  2. Training loads automatically when you run chuloopa_drums_v4.ck" >>>;
+    <<< "  1. Run: chuck chuloopa_main.ck (trains KNN automatically)" >>>;
+    <<< "  2. Training loads automatically when you run chuloopa_main.ck" >>>;
     <<< "" >>>;
 }
 

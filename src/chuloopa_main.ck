@@ -1,14 +1,14 @@
 //---------------------------------------------------------------------
-// name: chuloopa_drums_v4.ck
-// desc: CHULOOPA v4 - Audio-driven spice + variation bank
-//       V4: spice_detector.ck drives variation selection automatically
+// name: chuloopa_main.ck
+// desc: CHULOOPA - Audio-driven spice + variation bank
+//       spice_detector.ck drives variation selection automatically
 //           Pre-generated bank of 5 variations at different spice levels
 //           Silence detection mutes drums
 //
 // Architecture:
 //   3-process system:
 //     spice_detector.ck → OSC /chuloopa/spice → this file + Python
-//     drum_variation_ai.py → OSC /chuloopa/bank_ready → this file
+//     drum_variation_generator.py → OSC /chuloopa/bank_ready → this file
 //     this file: recording, KNN classification, playback, visuals
 //
 // MIDI Mapping (Single Track):
@@ -27,9 +27,9 @@
 //                             Caps how high audio-driven spice can go
 //
 // Usage:
-//   # Terminal 1: cd src && python drum_variation_ai.py --watch
+//   # Terminal 1: cd src && python drum_variation_generator.py --watch
 //   # Terminal 2: cd src && chuck spice_detector.ck
-//   # Terminal 3: cd src && chuck chuloopa_drums_v4.ck
+//   # Terminal 3: cd src && chuck chuloopa_main.ck
 //---------------------------------------------------------------------
 
 // === VARIATION MODE CONFIGURATION ===
@@ -56,8 +56,8 @@
 0 => int MIDI_DEVICE; // always take first available midi device (can be changed to specific device index if needed)
 
 // === OSC CONFIGURATION ===
-5000 => int OSC_SEND_PORT;       // Send to Python drum_variation_ai.py on port 5000
-5001 => int OSC_RECEIVE_PORT;    // Receive from Python drum_variation_ai.py on port 5001
+5000 => int OSC_SEND_PORT;       // Send to Python drum_variation_generator.py on port 5000
+5001 => int OSC_RECEIVE_PORT;    // Receive from Python drum_variation_generator.py on port 5001
 
 // === CONFIGURATION ===
 1 => int NUM_TRACKS;  // Single track focus for now
@@ -2217,9 +2217,9 @@ spork ~ oscListener();  // NEW: Listen for OSC messages from Python
 <<< "✓ CHULOOPA v4 ready!" >>>;
 <<< "" >>>;
 <<< "Quick Start (3-process system):" >>>;
-<<< "  Terminal 1: cd src && python drum_variation_ai.py --watch" >>>;
+<<< "  Terminal 1: cd src && python drum_variation_generator.py --watch" >>>;
 <<< "  Terminal 2: cd src && chuck spice_detector.ck" >>>;
-<<< "  Terminal 3: (this window - chuloopa_drums_v4.ck)" >>>;
+<<< "  Terminal 3: (this window - chuloopa_main.ck)" >>>;
 <<< "" >>>;
 <<< "Workflow:" >>>;
 <<< "  1. Press C1 to record a beatbox loop" >>>;

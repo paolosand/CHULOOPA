@@ -1,31 +1,19 @@
 #!/usr/bin/env python3
 """
-drum_variation_ai.py - AI-powered drum pattern variation generator for CHULOOPA
+drum_variation_generator.py - AI-powered drum pattern variation generator for CHULOOPA
 
-This script generates variations of drum patterns using Gemini AI or algorithmic
-methods. It overwrites the original files so that chuloopa_drums_v2.ck can load
-the variations via MIDI triggers.
-
-Architecture:
-    1. Load drum pattern from track_N_drums.txt
-    2. Generate variation using Gemini AI (or fallback algorithm)
-    3. Convert back to CHULOOPA format with delta_times
-    4. Overwrite original file
+Generates a bank of 5 variations at different spice levels from a recorded drum pattern.
+Communicates with chuloopa_main.ck via OSC to signal when the bank is ready.
 
 Usage:
-    # Generate variation for a specific track (uses gemini by default)
-    python drum_variation_ai.py --track 0
+    # Watch for file changes and auto-generate variation bank
+    python drum_variation_generator.py --watch
 
-    # Watch for file changes and auto-generate variations
-    python drum_variation_ai.py --watch
-
-    # Use specific variation type
-    python drum_variation_ai.py --track 0 --type humanize
-    python drum_variation_ai.py --track 0 --type gemini
-    python drum_variation_ai.py --track 0 --type mutate
+    # Generate variation bank for a specific track
+    python drum_variation_generator.py --track 0
 
 Requirements:
-    pip install numpy watchdog google-genai
+    pip install numpy watchdog google-genai python-osc
 """
 
 import os
@@ -1807,10 +1795,10 @@ Examples:
     #   - Send OSC notifications back to ChucK when ready
 
     # Manual generation for track 0
-    python drum_variation_ai.py --track 0
+    python drum_variation_generator.py --track 0
 
     # Generate variations for specific file
-    python drum_variation_ai.py --file src/tracks/track_0/track_0_drums.txt
+    python drum_variation_generator.py --file src/tracks/track_0/track_0_drums.txt
 
 Variation Types:
     gemini           (default) Uses Gemini AI for intelligent cohesive variations

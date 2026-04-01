@@ -33,7 +33,7 @@ Creates: `training_samples.csv`
 
 ```bash
 cd src
-python drum_variation_ai_v2.py --watch
+python drum_variation_generator.py --watch
 ```
 
 Starts the OSC server and watches for newly recorded loops. Pre-generates a bank of 5 variations at spice levels 0.2/0.4/0.6/0.8/1.0 using `rhythmic_creator` (local, offline).
@@ -57,7 +57,7 @@ Analyzes live audio (guitar/vocal/room) and sends composite spice level via OSC 
 
 ```bash
 cd src
-chuck chuloopa_drums_v4.ck
+chuck chuloopa_main.ck
 ```
 
 KNN classifier trains automatically on startup from `training_samples.csv`. OSC connections to Python and spice_detector established automatically.
@@ -91,8 +91,8 @@ Spice maps to a **token count ceiling** (max 3×) for the rhythmic_creator model
 ### Main System (v4 pipeline)
 | File | Description |
 |------|-------------|
-| `chuloopa_drums_v4.ck` | **Main ChucK** — beatbox input, MFCC-13 KNN classification, loop recording, MIDI→Ableton via IAC, weighted variation selection, silence debounce, ChuGL visuals |
-| `drum_variation_ai_v2.py` | **Main Python** — generates bank of 5 variations (spice 0.2/0.4/0.6/0.8/1.0), sends `bank_ready` + `variation_available` OSC |
+| `chuloopa_main.ck` | **Main ChucK** — beatbox input, MFCC-13 KNN classification, loop recording, MIDI→Ableton via IAC, weighted variation selection, silence debounce, ChuGL visuals |
+| `drum_variation_generator.py` | **Main Python** — generates bank of 5 variations (spice 0.2/0.4/0.6/0.8/1.0), sends `bank_ready` + `variation_available` OSC |
 | `spice_detector.ck` | **Spice source** — analyzes live audio → composite spice → OSC to Python + ChucK every 500ms |
 | `drum_sample_recorder.ck` | Training data collector (run once before using main system) |
 
@@ -119,8 +119,8 @@ Spice maps to a **token count ceiling** (max 3×) for the rhythmic_creator model
 
 ```
 src/
-├── chuloopa_drums_v4.ck       # MAIN: Audio-driven spice + variation bank
-├── drum_variation_ai_v2.py    # MAIN: Variation bank engine (5 variants)
+├── chuloopa_main.ck       # MAIN: Audio-driven spice + variation bank
+├── drum_variation_generator.py    # MAIN: Variation bank engine (5 variants)
 ├── spice_detector.ck          # MAIN: Audio-driven spice detector
 ├── drum_sample_recorder.ck    # Training recorder
 │
@@ -145,11 +145,11 @@ src/
 ```
 spice_detector.ck analyzes live audio → /chuloopa/spice OSC every 500ms → Python + ChucK
   ↓
-drum_variation_ai_v2.py pre-generates bank of 5 variations (spice 0.2→1.0)
+drum_variation_generator.py pre-generates bank of 5 variations (spice 0.2→1.0)
   sends /chuloopa/variation_available as each completes
   sends /chuloopa/bank_ready when all 5 done
   ↓
-chuloopa_drums_v4.ck records beatbox input:
+chuloopa_main.ck records beatbox input:
   Onset detection (spectral flux, 512-sample frames)
   ↓
   MFCC-13 KNN classification (k=3, confidence threshold 0.55)

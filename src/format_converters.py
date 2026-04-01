@@ -114,7 +114,7 @@ def rhythmic_creator_to_chuloopa(text: str, loop_duration: float):
         DrumPattern object with hits and delta_times calculated
     """
     # Import here to avoid circular dependency
-    from drum_variation_ai import DrumPattern, DrumHit
+    from drum_variation_generator import DrumPattern, DrumHit
 
     if not text or not text.strip():
         return DrumPattern(hits=[], loop_duration=loop_duration)

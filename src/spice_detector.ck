@@ -6,7 +6,7 @@
 //       and delta RMS. Sends spice via OSC to both Python (port 5000)
 //       and ChucK v4 (port 5001) every 500ms.
 //
-// Startup order: Python → spice_detector → chuloopa_drums_v4
+// Startup order: Python → spice_detector → chuloopa_main
 //
 // Usage:
 //   chuck src/spice_detector.ck              (BASIC mono mode)
@@ -53,8 +53,8 @@ HOP_SIZE::samp => dur HOP;
 30 => int WARMUP_FRAMES;  // Number of windows before full calibration active
 
 // OSC ports
-5000 => int OSC_PORT_PYTHON;   // Python drum_variation_ai.py
-5001 => int OSC_PORT_CHUCK;    // chuloopa_drums_v4.ck
+5000 => int OSC_PORT_PYTHON;   // Python drum_variation_generator.py
+5001 => int OSC_PORT_CHUCK;    // chuloopa_main.ck
 
 // MIDI device for guitar_mix control
 0 => int MIDI_DEVICE;

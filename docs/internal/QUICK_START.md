@@ -90,7 +90,7 @@ chuck src/drum_sample_recorder.ck
 
 ```bash
 cd src
-python drum_variation_ai_v2.py --watch
+python drum_variation_generator.py --watch
 ```
 
 You'll see:
@@ -133,7 +133,7 @@ This analyzes live audio and streams a composite spice level (0.0–1.0) via OSC
 
 ```bash
 cd src
-chuck chuloopa_drums_v4.ck
+chuck chuloopa_main.ck
 ```
 
 > **Ableton required:** IAC Driver must be enabled and an Ableton MIDI track set up
@@ -248,7 +248,7 @@ src/
 ## Troubleshooting
 
 ### "Python watch mode won't start"
-- Run from `src` directory: `cd src && python drum_variation_ai_v2.py --watch`
+- Run from `src` directory: `cd src && python drum_variation_generator.py --watch`
 - Install dependencies: `pip install -r requirements.txt`
 - Check port 5000 is free: `lsof -i :5000`
 
@@ -261,7 +261,7 @@ src/
 ### "No MIDI devices found"
 - Check MIDI controller is connected
 - Run `chuck src/midi_monitor.ck` to see available ports
-- Change `MIDI_DEVICE` constant in `chuloopa_drums_v4.ck` if needed
+- Change `MIDI_DEVICE` constant in `chuloopa_main.ck` if needed
 
 ### "Spice level stuck at 0 / no variation switching"
 - Ensure `spice_detector.ck` is running (Terminal 2)
@@ -270,7 +270,7 @@ src/
 
 ### "No drum hits detected during recording"
 - **Beatbox LOUDER** — system needs strong signal
-- Lower threshold in `chuloopa_drums_v4.ck`: `0.005 => float MIN_ONSET_STRENGTH`
+- Lower threshold in `chuloopa_main.ck`: `0.005 => float MIN_ONSET_STRENGTH`
 
 ### "Classifier accuracy too low"
 - Record more samples (20+ per class) with `drum_sample_recorder.ck`
@@ -289,7 +289,7 @@ chuck drum_sample_recorder.ck
 
 # Step 2: Start Python AI engine (Terminal 1)
 cd src
-python drum_variation_ai_v2.py --watch
+python drum_variation_generator.py --watch
 
 # Step 3: Start spice detector (Terminal 2)
 cd src
@@ -297,7 +297,7 @@ chuck spice_detector.ck
 
 # Step 4: Start ChucK (Terminal 3)
 cd src
-chuck chuloopa_drums_v4.ck
+chuck chuloopa_main.ck
 
 # On your MIDI controller:
 # 1. Press & hold Note 36 (C1), beatbox "BOOM tss BOOM tss", release
