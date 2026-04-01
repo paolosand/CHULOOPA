@@ -247,9 +247,9 @@ The system uses K-Nearest Neighbors (k=3) for classification, trained on the use
 \item \textbf{No overfitting:} With 30 total training samples, complex models would overfit
 \end{itemize}
 
-During inference, the system computes Euclidean distance between the current feature vector and all 30 training samples, classifying the onset as the majority class among the 3 nearest neighbors.
+During inference, the system computes Euclidean distance in 13-dimensional MFCC space between the current feature vector and all 30 training samples, classifying the onset as the majority class among the 3 nearest neighbors.
 
-\textbf{Fallback Heuristic Classifier:} If the KNN model fails to load, CHULOOPA falls back to a rule-based heuristic classifier using spectral band energy ratios. While less accurate ($\sim$70\%), this ensures the system remains functional.
+\textbf{Fallback Heuristic Classifier:} If the KNN model fails to load, CHULOOPA falls back to a rule-based heuristic classifier using basic spectral energy ratios. While less accurate ($\sim$70\%), this ensures the system remains functional.
 
 \subsubsection{Real-Time Drum Playback}
 
@@ -319,14 +319,18 @@ CHULOOPA generates drum pattern variations using a local transformer-LSTM neural
 A Python script (drum\_variation\_ai.py) runs in background watch mode, monitoring for newly exported drum pattern files. When ChucK exports track\_0\_drums.txt, the Python process:
 
 \textbf{Using rhythmic\_creator (Default - Offline):}
+
+When a pattern is recorded, the Python engine generates a \textbf{5-variant bank} (var1.txt--var5.txt) in parallel---one thread per reachable slot, all launched simultaneously. This bank enables weighted probabilistic variation selection during performance:
+
 \begin{enumerate}
 \item Loads the drum pattern (drum class, timestamp, velocity, delta\_time)
 \item Converts to rhythmic\_creator format (MIDI triplets: [drum\_class, start\_time, end\_time])
-\item Generates continuation using transformer-LSTM at \textbf{fixed temperature (0.9)}
-\item Uses \textbf{full model output} (including context echo) as complete variation
-\item Applies \textbf{timing anchoring} to snap AI hits to original pattern's timing grid
+\item Spawns one generation thread per reachable slot (1--5, determined by spice ceiling)
+\item Each thread independently generates a continuation at \textbf{fixed temperature (0.9)} with a per-slot internal spice value (slot 1: 0.2, slot 2: 0.4 \ldots slot 5: 1.0)
+\item Per-slot spice controls \textbf{token count multiplier} (0.85$\times$--1.5$\times$ context length): higher slots generate more tokens, producing denser fills
 \item Scales timestamps proportionally to match original loop duration
-\item Saves variation to track\_0\_drums\_var1.txt
+\item Saves to track\_0\_drums\_var\textit{N}.txt as each thread completes
+\item Sends \texttt{/chuloopa/bank\_ready} OSC to ChucK when slot 1 completes---enabling auto-switching before the full bank finishes
 \end{enumerate}
 
 \textbf{Using Gemini API (Optional - Cloud-based):}
@@ -355,36 +359,35 @@ CHULOOPA uses rhythmic\_creator's natural sequence generation capabilities with 
 \item \textbf{Feed original pattern as context} - Model receives full drum pattern
 \item \textbf{Generate continuation} - Model outputs extended sequence (context + new material)
 \item \textbf{Use full output} - All generated hits become the variation (no context stripping)
-\item \textbf{Timing anchoring (spice-controlled)} - Snap AI hits to original pattern's timing grid:
-  \begin{itemize}
-  \item Low spice (0.0-0.3): Tight anchoring (20-50ms drift), rare fills
-  \item Medium spice (0.4-0.6): Moderate drift (60-100ms), some fills
-  \item High spice (0.7-1.0): Loose anchoring (110-150ms), many fills
-  \end{itemize}
 \item \textbf{Proportional time-warp} - Scale timestamps to match original loop duration exactly
 \end{enumerate}
 
-\textbf{Note:} rhythmic\_creator uses \textbf{fixed temperature (0.9)} for stable generation. The ``spice level'' parameter controls \emph{post-processing} (timing drift tolerance and fill probability), not model temperature. For Gemini, spice maps directly to sampling temperature.
+\textbf{Note:} rhythmic\_creator uses \textbf{fixed temperature (0.9)} for stable generation across all slots. The ``spice level'' (CC 74) controls \emph{which slots are reachable} (see below), not model temperature. For Gemini, spice maps directly to sampling temperature.
 
-\textbf{Performance:} 3-5 seconds per variation on consumer CPU (rhythmic\_creator), no GPU required. Entirely offline (no API calls). Gemini requires internet connection and API key.
+\textbf{Performance:} 3--5 seconds per variation on consumer CPU (rhythmic\_creator), no GPU required. Entirely offline (no API calls). Gemini requires internet connection and API key.
 
 \subsubsection{Spice Control for Variation Intensity}
 
-Users control variation intensity in real-time via MIDI CC 74 (``spice level'', 0.0-1.0):
+Users control variation intensity in real-time via MIDI CC 74 (``spice level'', 0.0--1.0). For rhythmic\_creator, spice acts as a \textbf{ceiling} that gates how many variation slots are reachable---determining the size and diversity of the generated bank:
 
 \textbf{For rhythmic\_creator (default):}
 \begin{itemize}
-\item \textbf{0.0-0.3:} Conservative - tight timing anchoring, minimal fills
-\item \textbf{0.4-0.6:} Balanced - moderate drift, some fills
-\item \textbf{0.7-1.0:} Experimental - loose anchoring, many off-grid fills
+\item \textbf{0.0--0.1:} No variations generated
+\item \textbf{0.1--0.3:} Slot 1 only (internal spice 0.2, token multiplier $\sim$0.98$\times$)
+\item \textbf{0.3--0.5:} Slots 1--2 (up to spice 0.4, multiplier $\sim$1.11$\times$)
+\item \textbf{0.5--0.7:} Slots 1--3 (up to spice 0.6, multiplier $\sim$1.24$\times$)
+\item \textbf{0.7--0.9:} Slots 1--4 (up to spice 0.8, multiplier $\sim$1.37$\times$)
+\item \textbf{0.9--1.0:} All 5 slots (up to spice 1.0, multiplier $\sim$1.50$\times$)
 \end{itemize}
+
+Each slot's internal spice controls its \textbf{token count multiplier} (0.85$\times$--1.5$\times$ context length). More tokens means more potential fills above the original pattern density. Lowering spice mid-performance trims the active bank without restarting generation. This design gives performers control over \emph{how much} creative departure is available, rather than a single scalar creativity dial.
 
 \textbf{For Gemini (optional):}
 \begin{itemize}
 \item Spice maps directly to model temperature (0.0 = deterministic, 1.0 = maximum randomness)
 \end{itemize}
 
-Visual feedback displays spice level in ChuGL interface (color-coded: blue $<$ 0.3, orange 0.4-0.6, red $>$ 0.7).
+Visual feedback displays spice level in ChuGL interface (color-coded: blue $<$ 0.3, orange 0.4--0.6, red $>$ 0.7).
 
 
 \section{IMPLEMENTATION}
@@ -559,7 +562,7 @@ Extend to 3-track looping with master sync system to prevent drift across tracks
 
 \subsection{Enhanced Variation Generation}
 
-Generate multiple variants (3-5) per loop with random selection. Improve variation density consistency to better match original pattern hit counts.
+The current system generates a 5-variant bank per loop with weighted probabilistic selection. Future work includes improving variation density consistency (currently 3--13 hits from a 4-hit input) and developing smarter selection strategies---for example, selecting variations whose density and rhythmic character best match the performer's live input energy.
 
 \subsection{Additional Variation Algorithms}
 
