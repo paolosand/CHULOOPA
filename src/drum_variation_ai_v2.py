@@ -1270,13 +1270,14 @@ def compute_new_slots(new_ceiling: float, old_ceiling: float) -> list:
 
 
 def cancel_generation():
-    """Signal the running generation thread to stop and wait for it."""
+    """Signal running generation to stop and wait for clean exit."""
     global generation_thread, generation_queue
     stop_event.set()
     if generation_thread and generation_thread.is_alive():
-        generation_thread.join(timeout=2.0)
-    stop_event.clear()
-    generation_queue.clear()
+        generation_thread.join()  # no timeout — threads exit within ~150ms via stop_event
+    stop_event.clear()  # cleared AFTER join — no race window
+    with generation_lock:
+        generation_queue.clear()
 
 
 def _generation_worker():
@@ -1379,37 +1380,29 @@ def queue_generation(slots: list):
 
 
 def start_full_bank_generation():
-    """Cancel any in-progress generation and start fresh full bank at current_ceiling."""
-    global bank_generation_ceiling
+    """Start a fresh full bank at current_ceiling. Caller must call cancel_generation() first."""
+    global bank_generation_ceiling, generation_thread
+
     slots = reachable_slots(current_ceiling)
     if not slots:
-        print(f"Warning: No slots reachable at ceiling={current_ceiling:.2f} — skipping generation")
+        print(f"Warning: No slots reachable at ceiling={current_ceiling:.2f} — skipping")
         if osc_client:
             osc_client.send_message("/chuloopa/generation_progress",
                                     f"Ceiling {current_ceiling:.2f} too low — no variations")
         return
 
     ordered = spread_priority(slots)
-    # Stage boundary: Stage 1 = first min(3, n) slots, then sentinel, then Stage 2
-    stage1_end = min(3, len(ordered))
-    stage1 = ordered[:stage1_end]
-    stage2 = ordered[stage1_end:]
-
     bank_generation_ceiling = current_ceiling
-    print(f"\n  Starting full bank: ceiling={current_ceiling:.2f}, slots={ordered}")
-    print(f"  Stage 1: {stage1}  Stage 2: {stage2}")
+    print(f"\n  Starting bank: ceiling={current_ceiling:.2f}, slots={ordered}")
 
+    # Atomic: queue update + coordinator spawn under single lock
     with generation_lock:
         generation_queue.clear()
-        generation_queue.extend(stage1)
-        generation_queue.append(-1)   # Sentinel: send bank_ready after Stage 1
-        generation_queue.extend(stage2)
-
-    global generation_thread
-    with generation_lock:
+        generation_queue.extend(ordered)
         if generation_thread is None or not generation_thread.is_alive():
             generation_thread = threading.Thread(target=_generation_worker, daemon=True)
             generation_thread.start()
+            print(f"  Coordinator thread started")
 
 
 def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
