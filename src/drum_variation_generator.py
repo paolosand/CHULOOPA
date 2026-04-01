@@ -1291,17 +1291,6 @@ def _generation_worker():
     print(f"  [Worker] Done.")
 
 
-def queue_generation(slots: list):
-    """Append slots to generation_queue; start worker thread if not running."""
-    global generation_thread
-    with generation_lock:
-        generation_queue.extend(slots)
-        if generation_thread is None or not generation_thread.is_alive():
-            generation_thread = threading.Thread(target=_generation_worker, daemon=True)
-            generation_thread.start()
-            print(f"  Started generation worker (queued: {generation_queue})")
-
-
 def start_full_bank_generation():
     """Start a fresh full bank (all 5 slots). Caller must call cancel_generation() first."""
     global generation_thread
