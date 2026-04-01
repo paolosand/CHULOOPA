@@ -42,7 +42,7 @@
 2 => int MAX_SAME_VAR_REPEATS;     // Max consecutive repeats before forced re-roll
 
 // === SILENCE DEBOUNCE ===
-4 => int SILENCE_FRAMES_THRESHOLD; // Consecutive zero-spice reads before muting (4 x 500ms = 2s)
+2 => int SILENCE_FRAMES_THRESHOLD; // Consecutive zero-spice reads before muting (2 x 500ms = 1s)
 
 // === MIDI CONFIGURATION (SINGLE TRACK FOCUS) ===
 36 => int NOTE_RECORD_TRACK;     // C1 - Record track (press & hold)
@@ -457,7 +457,6 @@ float rolling_spice_history[4];   // MUST match ROLLING_WINDOW_BARS (ChucK requi
 
 // Silence debounce
 0 => int silence_frame_count;     // consecutive zero-spice OSC reads
-0 => int queued_unmute;           // 1 = unmute drums at next loop boundary
 
 // Initialize WEIGHT_TABLE (5 tiers x 6 vars)
 // Tier 0 (spice=0.00): echo-dominant
@@ -1315,13 +1314,6 @@ fun void masterSyncCoordinator() {
                 // spice_count is always >= 1 here (at least one boundary has elapsed)
                 if(spice_count > 0) spice_sum / spice_count => rolling_avg_spice;
 
-                // === QUEUED UNMUTE (silence recovery at loop boundary) ===
-                if(queued_unmute && is_muted) {
-                    0 => is_muted;
-                    0 => queued_unmute;
-                    <<< ">>> UNMUTED at loop boundary <<<" >>>;
-                }
-
 
                 // Process all queued loads
                 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -1440,19 +1432,18 @@ fun void oscListener() {
                 Math.min(detected_spice_level, spice_ceiling) => effective_spice;
 
                 // Silence gate — requires N consecutive zero reads before muting;
-                // unmute is queued to next loop boundary for clean re-entry
+                // unmute fires immediately on first nonzero read
                 if(effective_spice <= 0.0) {
                     silence_frame_count++;
                     if(silence_frame_count >= SILENCE_FRAMES_THRESHOLD && !is_muted && has_loop[0]) {
                         1 => is_muted;
-                        0 => queued_unmute;  // cancel any pending unmute
                         <<< "Silence detected (" + silence_frame_count + " frames) → drums muted" >>>;
                     }
                 } else {
                     0 => silence_frame_count;  // reset counter on any nonzero read
-                    if(is_muted && !queued_unmute) {
-                        1 => queued_unmute;
-                        <<< "Energy resumed → drums will unmute at next loop boundary" >>>;
+                    if(is_muted) {
+                        0 => is_muted;
+                        <<< "Energy resumed → drums unmuted immediately" >>>;
                     }
                 }
             }
@@ -1647,7 +1638,6 @@ fun void clearTrack(int track) {
         0 => last_played_count;
         // Silence debounce state
         0 => silence_frame_count;
-        0 => queued_unmute;
     }
 }
 
