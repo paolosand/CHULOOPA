@@ -1301,6 +1301,10 @@ def _generation_worker():
         slots = list(generation_queue)
         generation_queue.clear()
 
+    # Filter sentinel values — Task 5 removes the sentinel from start_full_bank_generation,
+    # but guard here protects against any residual -1 in the queue until then
+    slots = [s for s in slots if s != -1]
+
     if not slots:
         return
 
