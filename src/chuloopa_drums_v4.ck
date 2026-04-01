@@ -20,8 +20,7 @@
 //     C#1 (37):               Clear track and reset variation state
 //
 //   VARIATION CONTROL:
-//     D1 (38):                Manual variation override toggle
-//     D#1 (39):               Regenerate full variation bank
+//     D1 (38):                Regenerate full variation bank
 //
 //   SPICE CEILING:
 //     CC 74:                  Spice ceiling knob (0-127 -> 0.0-1.0)
@@ -48,8 +47,7 @@
 // === MIDI CONFIGURATION (SINGLE TRACK FOCUS) ===
 36 => int NOTE_RECORD_TRACK;     // C1 - Record track (press & hold)
 37 => int NOTE_CLEAR_TRACK;      // C#1 - Clear track
-38 => int NOTE_TOGGLE_VARIATION; // D1 - Manual variation override toggle
-39 => int NOTE_REGENERATE;       // D#1 - Regenerate full variation bank
+38 => int NOTE_REGENERATE;       // D1 - Regenerate full variation bank
 
 74 => int CC_SPICE_CEILING;      // CC 74 - Spice ceiling knob (caps audio-driven spice)
                                  // NOTE: spice_detector.ck is source of truth for spice;
@@ -422,7 +420,6 @@ int track_loaded_from_file[NUM_TRACKS];
 // NEW: Queued action system for smooth transitions
 int queued_load_track[NUM_TRACKS];  // Which tracks should load from file at next cycle
 int queued_clear_track[NUM_TRACKS]; // Which tracks should clear at next cycle
-int queued_toggle_variation;        // Toggle variation mode at next cycle
 
 // === VARIATION MODE STATE ===
 int variation_mode_active;           // 0 = playing original, 1 = playing variation
@@ -490,7 +487,6 @@ float rolling_spice_history[4];   // MUST match ROLLING_WINDOW_BARS (ChucK requi
 0 => generation_failed;
 DEFAULT_SPICE_LEVEL => current_spice_level;
 "" => variation_status_message;
-0 => queued_toggle_variation;
 
 // Initialize v4 state
 0.0 => detected_spice_level;
@@ -1326,15 +1322,6 @@ fun void masterSyncCoordinator() {
                     <<< ">>> UNMUTED at loop boundary <<<" >>>;
                 }
 
-                // Snapshot manual toggle flag before handlers consume it
-                queued_toggle_variation => int had_manual_toggle;
-
-                // Process queued variation toggle
-                if(queued_toggle_variation) {
-                    <<< "Executing queued variation toggle" >>>;
-                    executeToggleVariation();
-                    0 => queued_toggle_variation;  // Clear queue
-                }
 
                 // Process all queued loads
                 for(0 => int i; i < NUM_TRACKS; i++) {
@@ -1356,7 +1343,7 @@ fun void masterSyncCoordinator() {
 
                 // === V4: WEIGHTED PROBABILISTIC AUTO-SWITCHING ===
                 // Only fires after rolling buffer is fully filled (cold-start guard)
-                if(!had_manual_toggle && bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
+                if(bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
                     pickVariationByWeight(rolling_avg_spice) => int target_idx;
                     if(target_idx != current_variation_index) {
                         target_idx => current_variation_index;
@@ -1487,58 +1474,6 @@ fun void oscListener() {
     }
 }
 
-// === VARIATION MODE FUNCTIONS ===
-fun void toggleVariationMode() {
-    if(!has_loop[0]) {
-        <<< "Cannot toggle variation mode: no loop recorded" >>>;
-        return;
-    }
-
-    if(!variations_ready && variation_mode_active == 0) {
-        <<< "Cannot toggle variation mode: variation not ready" >>>;
-        <<< "Record a loop or press D#1 (Note 39) to regenerate" >>>;
-        return;
-    }
-
-    // Queue the toggle for next loop boundary
-    1 => queued_toggle_variation;
-    <<< "" >>>;
-    <<< ">>> QUEUED: Variation toggle will occur at next loop boundary <<<" >>>;
-    <<< "" >>>;
-}
-
-// Internal function: Actually toggle variation (called at loop boundary)
-fun void executeToggleVariation() {
-    if(variation_mode_active == 0) {
-        // Switch to variation mode
-        <<< "" >>>;
-        <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  LOADING VARIATION                   ║" >>>;
-        <<< "╚═══════════════════════════════════════╝" >>>;
-
-        1 => variation_mode_active;
-
-        // Load the variation
-        loadVariationFile(0, 1);
-
-        <<< "" >>>;
-    }
-    else {
-        // Switch back to original
-        <<< "" >>>;
-        <<< "╔═══════════════════════════════════════╗" >>>;
-        <<< "║  LOADING ORIGINAL                    ║" >>>;
-        <<< "╚═══════════════════════════════════════╝" >>>;
-
-        0 => variation_mode_active;
-
-        // Load original file
-        loadDrumDataFromFile(0);
-
-        <<< "Playing original loop" >>>;
-        <<< "" >>>;
-    }
-}
 
 // === MAIN ONSET DETECTION LOOP ===
 fun void mainOnsetDetectionLoop() {
@@ -2228,12 +2163,7 @@ fun void midiListener() {
                     0 => generation_requested;      // Reset generation request
                 }
 
-                // Toggle variation mode (D1)
-                else if(data1 == NOTE_TOGGLE_VARIATION) {
-                    toggleVariationMode();
-                }
-
-                // Regenerate variations (D#1)
+                // Regenerate variations (D1)
                 else if(data1 == NOTE_REGENERATE) {
                     1 => generation_requested;     // Mark that generation was requested
                     0 => variations_ready;          // Reset ready flag (waiting for Python)

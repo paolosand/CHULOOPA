@@ -1604,7 +1604,7 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     print(f"\nWatching for drum file changes in: {directory}")
     print(f"Variation type: {variation_type}{' (HEURISTIC MODE - AI disabled)' if use_no_ai else ''}")
     print(f"Device: {'CPU (forced)' if force_cpu else 'Auto-detect (MPS/CUDA/CPU)'}")
-    print(f"Timing anchor: {'DISABLED (preserves AI timing)' if use_no_anchor else 'enabled'}")
+    print(f"Timing anchor: {'DISABLED (default — AI timing preserved)' if use_no_anchor else 'ENABLED (--anchor)'}")
     print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
     print(f"Current spice level: {current_spice_level:.2f}")
     print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
@@ -1848,9 +1848,9 @@ Variation Control:
                         • Higher values (4+) exceed model's vocabulary range
                         • Only affects rhythmic_creator, not Gemini
 
-    --no-anchor         Skip timing anchoring (preserves AI-generated timing)
-                        • More creative variations with new rhythms
-                        • Model's timing is preserved (not forced to original grid)
+    --anchor            Enable timing anchoring (snaps AI hits to original timing grid)
+                        • Off by default — AI timing is trusted as-is
+                        • Use if variations feel rhythmically misaligned with original
                         • Recommended for more adventurous variations
 
     Default (anchored): Snap AI hits to original pattern's timing grid
@@ -1899,8 +1899,8 @@ OSC Communication:
     parser.add_argument('--cpu', action='store_true',
                         help='Force CPU inference (more consistent, avoids thermal throttling on MPS/GPU)')
 
-    parser.add_argument('--no-anchor', action='store_true',
-                        help='Skip timing anchoring (preserves AI-generated timing, more creative variations)')
+    parser.add_argument('--anchor', action='store_true',
+                        help='Enable timing anchoring (snaps AI hits to original timing grid; off by default)')
 
     parser.add_argument('--no-ai', action='store_true',
                         help='Skip AI generation, use fast heuristic algorithm instead (instant generation)')
@@ -1914,7 +1914,7 @@ OSC Communication:
     global use_no_warp, force_cpu, use_no_anchor, use_no_ai, context_loops
     use_no_warp = args.no_warp
     force_cpu = args.cpu
-    use_no_anchor = args.no_anchor
+    use_no_anchor = not args.anchor  # Default True (anchoring OFF); --anchor enables it
     use_no_ai = args.no_ai
     context_loops = args.context_loops
 
