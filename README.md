@@ -38,52 +38,67 @@ chuck src/drum_sample_recorder.ck
 
 **Controls:**
 
-- Press **1**: Record kick samples (record 10)
-- Press **2**: Record snare samples (record 10)
-- Press **3**: Record hi-hat samples (record 10)
-- Press **Q**: Quit and save to `training_samples.csv`
+- Press **K**: Set label to kick, then beatbox (10+ samples)
+- Press **S**: Set label to snare, then beatbox (10+ samples)
+- Press **H**: Set label to hi-hat, then beatbox (10+ samples)
+- Press **N**: Disable recording (pause between classes)
+- Press **E** or **Q**: Export training data to `training_samples.csv`
+- Press **P**: Start live playback test — beatbox freely, hear KNN classification in real-time
+- Press **R**: Full reset — erase all samples and start over
+- Press **ESC**: Close window
+
+**Workflow:**
+1. Record K/S/H samples (10+ each)
+2. Press **E** to export
+3. Press **P** to test — if classification sounds wrong, press **R** and re-record
 
 This creates `training_samples.csv` with your personalized beatbox samples.
 
-### 2. Start Python Watch Mode (Terminal 1)
+### 2. Start Python AI Engine (Terminal 1)
 
 **IMPORTANT: Must run from src directory**
 
 ```bash
 cd src
-python drum_variation_ai.py --watch
+python drum_variation_ai_v2.py --watch
 ```
 
-This starts the AI variation engine that auto-generates variations when you record loops using Jake Chen's rhythmic_creator model (local inference, no API required).
+This starts the AI variation engine that pre-generates a bank of 5 variations at different spice levels using Jake Chen's rhythmic_creator model (local inference, no API required).
 
-### 3. Run CHULOOPA (Terminal 2)
+### 3. Start Spice Detector (Terminal 2)
 
 **IMPORTANT: Must run from src directory**
 
-**Stable — Ableton Live via IAC Driver (current default):**
 ```bash
 cd src
-chuck chuloopa_drums_v3_ableton.ck
+chuck spice_detector.ck
+```
+
+This analyzes live audio (guitar/vocal/room) and sends a composite spice level via OSC to both Python and ChucK every 500ms.
+
+> **Stereo mode (performance):** `chuck --channels:2 src/spice_detector.ck` — enables CC 75 knob to blend guitar vs. vocal input.
+
+### 4. Run CHULOOPA (Terminal 3)
+
+**IMPORTANT: Must run from src directory**
+
+```bash
+cd src
+chuck chuloopa_drums_v4.ck
 ```
 
 > **Ableton setup required:** Enable IAC Driver in macOS Audio MIDI Setup → create a MIDI track in Ableton → input: IAC Driver Bus 1, Monitor: In → load Drum Rack → assign C1(36)=Kick, D1(38)=Snare, F#1(42)=Hi-hat. See [Ableton Integration](#ableton-integration) below.
 
-**Standalone — No Ableton required:**
-```bash
-cd src
-chuck chuloopa_drums_v3.ck
-```
+**Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file. OSC connections are established automatically.
 
-**Note:** The KNN classifier automatically trains on startup using your `training_samples.csv` file. OSC connection to Python is established automatically.
-
-### 4. MIDI Controls (Single Track)
+### 5. MIDI Controls (Single Track)
 
 **Recording (Press & Hold):**
 
 - **MIDI Note 36** (C1): Record track 0
   - _Hear drum samples in real-time as you beatbox!_
   - Release to stop recording
-  - Python auto-generates variation when recording completes
+  - Python auto-generates full variation bank when recording completes
 
 **Clearing:**
 
@@ -91,21 +106,18 @@ chuck chuloopa_drums_v3.ck
 
 **Variation Control:**
 
-- **MIDI Note 38** (D1): Toggle variation mode ON/OFF
-  - Queued at loop boundary for smooth transitions
-  - ON: Plays AI-generated variation (sphere turns blue)
-  - OFF: Plays original recording (sphere turns red)
+- **MIDI Note 38** (D1): Regenerate full variation bank
+  - Triggers Python to regenerate all 5 spice-level variants
+  - Variation auto-selection is driven by audio spice (no manual toggle needed)
 
-- **MIDI Note 39** (D#1): Regenerate variations with current spice level
-  - Python generates new variation using current spice token count
+**Spice Ceiling:**
 
-**Spice Control:**
-
-- **CC 74**: Spice level knob (0.0-1.0)
-  - **Low (0.0-0.3)**: Conservative, subtle variations (blue text)
-  - **Medium (0.4-0.6)**: Balanced creativity (orange text)
-  - **High (0.7-1.0)**: Bold, experimental variations (red text)
-  - Visual feedback updates in real-time in ChuGL window
+- **CC 74**: Spice ceiling knob (0.0-1.0)
+  - Caps how high the audio-driven spice can go
+  - `spice_detector.ck` is the source of truth for actual spice level
+  - **Low (0.0-0.3)**: Conservative ceiling — only subtle variations selected
+  - **Medium (0.4-0.6)**: Balanced ceiling
+  - **High (0.7-1.0)**: Full range — bold variations allowed
 
 **Future (3-Track Version):**
 
@@ -117,15 +129,19 @@ chuck chuloopa_drums_v3.ck
 
 ### Initial Setup (One-Time)
 
-1. **Terminal 1:** Start Python watch mode
+1. **Terminal 1:** Start Python AI engine
    ```bash
-   cd src && python drum_variation_ai.py --watch
+   cd src && python drum_variation_ai_v2.py --watch
    ```
-2. **Terminal 2:** Start ChucK (stable Ableton pipeline)
+2. **Terminal 2:** Start spice detector
    ```bash
-   cd src && chuck chuloopa_drums_v3_ableton.ck
+   cd src && chuck spice_detector.ck
    ```
-3. **Verify:** Both terminals show "OSC connection established"
+3. **Terminal 3:** Start ChucK (Ableton pipeline)
+   ```bash
+   cd src && chuck chuloopa_drums_v4.ck
+   ```
+4. **Verify:** All terminals show OSC connections established
 
 ### Recording a Loop
 
@@ -133,39 +149,30 @@ chuck chuloopa_drums_v3.ck
 2. **Beatbox:** "BOOM tss tss BOOM"
 3. **System responds:**
    - Detects onsets (spectral flux)
-   - Classifies each hit (kick/snare/hat)
+   - Classifies each hit using MFCC-13 KNN (kick/snare/hat)
    - **Plays drum samples immediately** (real-time feedback)
    - Stores timing data with delta_time precision
 4. **Release Note 36** to stop
    - Auto-exports to `src/tracks/track_0/track_0_drums.txt`
    - Starts looping the drum pattern
-   - **Python auto-generates variation** (watch mode detects file change)
-   - ChucK sphere turns **green** when variation ready
+   - **Python auto-generates bank of 5 variations** (spice levels 0.2/0.4/0.6/0.8/1.0)
+   - ChucK gates auto-switching on `/chuloopa/bank_ready` OSC
 
-### Loading AI Variation
+### Audio-Driven Variation Selection
 
-1. **Press MIDI Note 38** (D1) to toggle variation ON
-2. Console: `>>> QUEUED: Variation toggle will occur at next loop boundary <<<`
-3. **Current loop continues** until boundary
-4. **At loop boundary:**
-   - Loads `src/tracks/track_0/variations/track_0_drums_var1.txt`
-   - Sphere turns **blue** (variation mode)
-   - Hear AI-generated variation with different timing/velocities/ghost notes
+Variation selection is **automatic** — no manual toggling needed:
 
-### Adjusting Spice Level
+1. `spice_detector.ck` analyzes live audio every 500ms
+2. Sends `/chuloopa/spice` to both Python and ChucK
+3. ChucK selects the variation whose spice level best matches the current audio energy
+4. Variation switches happen at loop boundaries (rolling 4-bar window averages spice)
+5. **CC 74** sets a ceiling to cap how spicy it can get
 
-1. **Turn CC 74 knob** on your MIDI controller
-2. **Watch ChuGL window:** Text color changes (blue → orange → red)
-3. **Console shows:** "Spice level: 75%"
-4. **Press D#1** (Note 39) to regenerate with new spice
-5. **Python generates** new variation, sends OSC when ready
-6. **Press D1** to load the new variation
+### Regenerating the Variation Bank
 
-### Toggling Back to Original
-
-1. **Press D1** again (already in variation mode)
-2. Sphere turns **red** (original mode)
-3. Hear your original recorded loop
+1. **Press MIDI Note 38** (D1) to trigger full bank regeneration
+2. Python regenerates all 5 variants and sends `/chuloopa/bank_ready` when done
+3. Auto-selection resumes with the new bank
 
 ### Future: Layering Multiple Tracks
 
@@ -230,40 +237,22 @@ ChucK (MidiOut) → IAC Driver Bus 1 → Ableton MIDI Track → Drum Rack
 
 ### Complete Pipeline
 
-**Stable pipeline (v3_ableton + drum_variation_ai.py):**
-```
-1. Start Python Watch Mode (Terminal 1) + Start ChucK (Terminal 2)
-   ↓
-2. OSC Connection Established (Python ↔ ChucK)
-   ↓
-3. Beatbox Input (Microphone)
-   ↓
-4. Real-time Transcription (Onset Detection + KNN Classification)
-   ↓
-5. MIDI output → Ableton Drum Rack via IAC Driver
-   ↓
-6. Symbolic Data Export (track_0_drums.txt with delta_time)
-   ↓
-7. Python Watchdog Detects File Change
-   ↓
-8. AI Variation Generation (rhythmic_creator, spice → token count ceiling, max 3×)
-   ↓
-9. OSC: /chuloopa/variations_ready → ChucK (sphere turns green)
-   ↓
-10. User Toggles Variation (D1) or Adjusts Spice (CC 74) + Regenerates (D#1)
-```
-
-**In-progress pipeline (v4 + drum_variation_ai_v2.py + spice_detector.ck):**
+**Current pipeline (v4 + drum_variation_ai_v2.py + spice_detector.ck):**
 ```
 1. spice_detector.ck (Terminal 2) analyzes live audio → sends /chuloopa/spice via OSC
    ↓
-2. Python (Terminal 1) pre-generates bank of 5 variations (spice 0.2/0.4/0.6/0.8/1.0)
+2. drum_variation_ai_v2.py (Terminal 1) pre-generates bank of 5 variations
+   (spice levels 0.2/0.4/0.6/0.8/1.0) → sends /chuloopa/bank_ready when done
    ↓
-3. chuloopa_drums_v4.ck (Terminal 3) records beatbox → KNN → Ableton MIDI
+3. chuloopa_drums_v4.ck (Terminal 3) records beatbox → MFCC-13 KNN → Ableton MIDI
    ↓
-4. Audio-driven spice level automatically selects matching variation from bank
+4. Loop exported → Python watchdog auto-generates variation bank
    ↓
-5. CC 74 sets spice ceiling (caps how high audio-driven spice can go)
+5. Audio-driven spice (rolling 4-bar average) selects matching variation at loop boundary
+   ↓
+6. CC 74 sets spice ceiling (caps how high audio-driven spice can go)
+   ↓
+7. D1 (Note 38) triggers full bank regeneration on demand
 ```
 
 ### Drums-Only Mode
@@ -294,8 +283,9 @@ Prevents drift across tracks using musical ratios:
 
 ### KNN Classification
 
-- **Algorithm:** K-Nearest Neighbors (k=3)
-- **Features:** 5-dimensional vector (flux, energy, band1, band2, band5)
+- **Algorithm:** K-Nearest Neighbors (k=3) using ChucK's KNN2
+- **Features:** MFCC-13 (13 mel-frequency cepstral coefficients)
+- **Confidence threshold:** 0.55 minimum probability to accept classification
 - **Training:** User-specific (10 samples per class)
 - **Fallback:** Heuristic classifier if training fails
 
@@ -337,23 +327,25 @@ The system uses OSC (Open Sound Control) for real-time bidirectional communicati
 
 **OSC Messages:**
 
-| Address                         | Direction      | Data Type | Purpose                                  |
-| ------------------------------- | -------------- | --------- | ---------------------------------------- |
-| `/chuloopa/generation_progress` | Python → ChucK | string    | Status updates during generation         |
-| `/chuloopa/variations_ready`    | Python → ChucK | int       | Signals variation is complete            |
-| `/chuloopa/regenerate`          | ChucK → Python | none      | Request new variation with current spice |
-| `/chuloopa/spice_level`         | ChucK → Python | float     | Update spice level (0.0-1.0)             |
-| `/chuloopa/clear`               | ChucK → Python | none      | Track cleared notification               |
+| Address                         | Direction               | Data Type | Purpose                                       |
+| ------------------------------- | ----------------------- | --------- | --------------------------------------------- |
+| `/chuloopa/generation_progress` | Python → ChucK          | string    | Status updates during generation              |
+| `/chuloopa/bank_ready`          | Python → ChucK          | int       | Signals all 5 variations are ready            |
+| `/chuloopa/variation_available` | Python → ChucK          | int,int   | Index + spice level of each ready variant     |
+| `/chuloopa/regenerate`          | ChucK → Python          | none      | Request full bank regeneration                |
+| `/chuloopa/spice`               | spice_detector → Python+ChucK | float | Current audio-driven spice (0.0-1.0)    |
+| `/chuloopa/clear`               | ChucK → Python          | none      | Track cleared notification                    |
 
 **Workflow:**
 
 1. User records loop (C1) in ChucK
 2. ChucK exports `track_0_drums.txt`
 3. Python watchdog detects file change
-4. Python auto-generates variation with current spice level
-5. Python sends `/chuloopa/variations_ready` to ChucK
-6. ChucK sphere turns green (variation ready)
-7. User presses D1 to load variation
+4. Python generates bank of 5 variations (spice 0.2/0.4/0.6/0.8/1.0)
+5. Python sends `/chuloopa/bank_ready` to ChucK
+6. `spice_detector.ck` streams `/chuloopa/spice` every 500ms
+7. ChucK auto-selects best variation at each loop boundary based on audio spice
+8. User presses D1 to trigger full bank regeneration on demand
 
 ### ChuGL Visual Feedback
 
@@ -363,54 +355,43 @@ The visualization window shows a single sphere with color-coded states:
 
 - **Gray**: No loop recorded
 - **Red**: Playing original loop
-- **Green** (pulsing): Variation ready (press D1 to load)
-- **Blue**: Playing variation
+- **Green**: Variation bank ready
+- **Blue**: Playing a variation (auto-selected by spice)
 
 **Spice Level Display:**
 
-Text shows current spice level with color coding:
+Text shows current audio-driven spice with color coding:
 
-- **0.0-0.3**: Blue text (conservative variations)
-- **0.4-0.6**: Orange text (balanced creativity)
-- **0.7-1.0**: Red text (experimental variations)
+- **0.0-0.3**: Blue text (conservative)
+- **0.4-0.6**: Orange text (balanced)
+- **0.7-1.0**: Red text (experimental)
 
-Updates in real-time as you turn CC 74 knob!
+Updates every 500ms from `spice_detector.ck`.
 
 ### AI Variation Generation
 
-**Tool:** `src/drum_variation_ai.py`
+**Tool:** `src/drum_variation_ai_v2.py`
 
 **Watch Mode (Primary Usage):**
 
 ```bash
 cd src
-python drum_variation_ai.py --watch
+python drum_variation_ai_v2.py --watch
 ```
 
-Automatically generates variations when you record loops using Jake Chen's rhythmic_creator model. Keep this running in a separate terminal.
+Automatically generates a bank of 5 variations when you record loops using Jake Chen's rhythmic_creator model. Keep this running in a separate terminal.
 
-**Manual Mode (Optional):**
-
-```bash
-cd src
-python drum_variation_ai.py --track 0 --type rhythmic_creator --temperature 0.8
-# Alternative: Use Gemini API (requires API key)
-python drum_variation_ai.py --track 0 --type gemini --temperature 0.8
-```
-
-**How it works (rhythmic_creator approach):**
+**How it works (v2 variation bank approach):**
 
 1. **File watching:** Python watchdog monitors `src/tracks/track_0/track_0_drums.txt`
-2. **Auto-trigger:** When file changes (after recording), generation starts automatically
-3. **Model inference:** Transformer-LSTM generates continuation via token count control:
-   - Converts pattern to MIDI triplet format (`note start_time end_time`)
-   - Generates continuation tokens up to spice-determined ceiling (max 3× context)
-   - Strips context echo and extracts new material
-   - Shifts continuation to start at 0.0s
-   - Time-warps to match original loop duration exactly
-4. **Save variation:** Writes to `src/tracks/track_0/variations/track_0_drums_var1.txt`
-5. **OSC notification:** Sends `/chuloopa/variations_ready` to ChucK
-6. **User loads:** Press D1 to hear the variation
+2. **Auto-trigger:** When file changes (after recording), bank generation starts automatically
+3. **Bank generation:** Generates 5 variants at fixed spice levels (0.2 / 0.4 / 0.6 / 0.8 / 1.0)
+   - For each level: converts pattern to MIDI triplet format, generates continuation tokens
+   - Spice maps to token count ceiling (max 3× original context)
+   - Time-warps each variant to match original loop duration exactly
+4. **Progressive notification:** Sends `/chuloopa/variation_available` as each variant completes
+5. **Bank complete:** Sends `/chuloopa/bank_ready` when all 5 variants are ready
+6. **Auto-selection:** ChucK picks the variant matching current audio spice (no user action needed)
 
 **Model Architecture (rhythmic_creator):**
 
@@ -451,17 +432,14 @@ Adjust with CC 74 knob, then press D#1 to regenerate.
 ```
 CHULOOPA/
 ├── src/
-│   ├── chuloopa_drums_v3_ableton.ck # STABLE: Ableton mode (MIDI via IAC Driver)
-│   ├── drum_variation_ai.py         # STABLE: AI variation generator with OSC
+│   ├── chuloopa_drums_v4.ck         # MAIN: Audio-driven spice + variation bank (Ableton via IAC)
+│   ├── drum_variation_ai_v2.py      # MAIN: Variation bank engine (5 variants, bank_ready OSC)
+│   ├── spice_detector.ck            # MAIN: Audio-driven spice → OSC (500ms updates)
 │   │
-│   ├── chuloopa_drums_v4.ck         # IN PROGRESS: Audio-driven spice + variation bank
-│   ├── drum_variation_ai_v2.py      # IN PROGRESS: Variation bank engine (5 variants)
-│   ├── spice_detector.ck            # IN PROGRESS: Audio-driven spice → OSC
-│   │
-│   ├── chuloopa_drums_v3.ck          # Standalone mode (built-in WAV samples, no Ableton)
-│   ├── chuloopa_drums_v2.ck          # Archived: earlier standalone version
-│   ├── drum_sample_recorder.ck      # Training data collector
-│   ├── feature_extraction.ck        # ChucK feature extraction
+│   ├── drum_sample_recorder.ck      # Training data collector (run once before main system)
+│   ├── rhythmic_creator_model.py    # Wrapper for local transformer-LSTM variation model
+│   ├── format_converters.py         # Converts between drum pattern formats
+│   ├── feature_extraction.ck        # ChucK feature extraction utilities
 │   │
 │   ├── tracks/                       # Generated drum data (auto-created)
 │   │   └── track_0/
@@ -469,9 +447,12 @@ CHULOOPA/
 │   │       └── variations/
 │   │           └── track_0_drums_var1.txt  # AI-generated variation
 │   │
+│   ├── chuloopa_drums_v3_ableton.ck # Legacy: single-variant Ableton mode
+│   ├── chuloopa_drums_v3.ck          # Legacy: standalone (built-in WAV, no Ableton)
+│   ├── drum_variation_ai.py         # Legacy: single-variant AI engine
+│   │
 │   ├── osc_test_chuck.ck            # OSC test (ChucK sender)
 │   ├── osc_test_python.ck           # OSC test (ChucK receiver)
-│   ├── osc_test_python.py           # OSC test (Python sender)
 │   └── osc_test_python_alt.py       # OSC test (127.0.0.1 fix)
 │
 ├── samples/                          # Drum samples
@@ -480,16 +461,10 @@ CHULOOPA/
 │   └── hat.WAV
 │
 ├── requirements.txt                  # Python dependencies (OSC, PyTorch, etc.)
-├── train_classifier.py               # KNN training script
 ├── training_samples.csv              # Training data (generated)
 ├── drum_classifier.pkl               # Trained KNN model (generated)
 │
-├── docs/plans/
-│   └── 2026-01-29-ai-variation-automation-design.md  # OSC integration design
-│
 ├── README.md                         # This file
-├── QUICK_START.md                    # Step-by-step guide
-├── TESTING.md                        # Testing guide for OSC integration
 └── CLAUDE.md                         # AI assistant context
 ```
 
@@ -499,28 +474,22 @@ CHULOOPA/
 
 ## Next Steps
 
-### Phase 2: AI Variation Generation ✅ (Current - March 2026)
+### Phase 2: AI Variation Generation ✅ (Complete - March 2026)
 
 **Completed:**
 
 - [x] Local AI integration using rhythmic_creator model (Jake Chen, CalArts MFA 2025)
 - [x] Continuation-based variation generation approach
-- [x] OSC communication (Python ↔ ChucK)
-- [x] Automatic variation generation (file watching)
-- [x] Real-time spice level control (CC 74)
-- [x] Visual feedback (ChuGL sphere states)
-- [x] Queued variation toggle at loop boundaries
+- [x] OSC communication (Python ↔ ChucK ↔ spice_detector)
+- [x] Automatic variation bank generation (file watching, 5 variants per loop)
+- [x] Audio-driven spice detection (`spice_detector.ck` → OSC → Python + ChucK)
+- [x] Auto-selection: variation switches at loop boundaries based on audio spice
+- [x] CC 74 as spice ceiling (caps how high audio-driven spice can go)
+- [x] MFCC-13 KNN classification (upgraded from 5-band spectral)
+- [x] Silence debounce (mutes drums during silence gaps)
+- [x] Weighted probabilistic variation selection (rolling 4-bar window)
 - [x] Single-track focused workflow
 - [x] Offline operation (no API dependencies)
-- [x] Alternative Gemini API option preserved for studio use
-
-**In Progress (v4 pipeline):**
-
-- [ ] Audio-driven spice detection (`spice_detector.ck` → OSC → Python + ChucK)
-- [ ] Variation bank: 5 pre-generated variants at fixed spice levels (0.2/0.4/0.6/0.8/1.0)
-- [ ] Auto-selection: pattern switches based on detected spice level (no manual knob needed)
-- [ ] CC 74 as spice ceiling (caps how high audio-driven spice can go)
-- [ ] Improved ChuGL visualizations (per-drum-hit feedback)
 
 ### Phase 3: Multi-Track Support (Planned - Q1 2026)
 
@@ -618,15 +587,15 @@ pip install -r requirements.txt
 
 **Python watch mode not starting:**
 
-- Must run from `src` directory: `cd src && python drum_variation_ai.py --watch`
+- Must run from `src` directory: `cd src && python drum_variation_ai_v2.py --watch`
 - Check dependencies: `pip install -r requirements.txt`
 - Verify port 5000 is available: `lsof -i :5000`
 - Kill conflicting processes: `kill <PID>`
 
 **ChucK not receiving OSC messages:**
 
-- Verify ChucK script running from `src` directory
-- Check port 5001 is available: `lsof -i :5001`
+- Verify all ChucK scripts running from `src` directory
+- Check ports 5001 is available: `lsof -i :5001`
 - Python must use `127.0.0.1` not `localhost` (pythonosc issue)
 - Look for "OSC listener started on port 5001" in ChucK output
 - Test with `src/osc_test_python_alt.py` and `src/osc_test_python.ck`
@@ -658,14 +627,13 @@ pip install -r requirements.txt
 - Check console for drift warnings
 - Verify delta_time in exported files
 
-**AI variation generation fails:**
+**AI variation bank generation fails:**
 
-- Default rhythmic_creator model should work offline without API keys
+- rhythmic_creator model works offline without API keys
 - Check Python terminal for error details
 - Verify `src/tracks/track_0/track_0_drums.txt` exists
 - Ensure PyTorch is installed: `pip install torch`
-- If using Gemini option (`--type gemini`): ensure `GEMINI_API_KEY` environment variable is set and internet connected
-- Check that rhythmic_creator model file exists in expected location
+- Confirm rhythmic_creator model weights exist in `src/models/`
 
 **Variation doesn't maintain loop duration:**
 
@@ -674,12 +642,12 @@ pip install -r requirements.txt
 - Verify generated file has correct total loop duration in header
 - Check that continuation hits are being extracted correctly (timestamps > original_end)
 
-**Spice knob not working:**
+**Spice ceiling knob not working:**
 
-- Verify CC 74 is mapped correctly: `python TESTMIDIINPUT.py`
-- Check ChucK console for "Spice level: XX%" messages
+- Verify CC 74 is mapped correctly: check `src/midi_monitor.ck`
+- CC 74 sets a ceiling — actual spice comes from `spice_detector.ck`
+- Ensure `spice_detector.ck` is running (Terminal 2)
 - ChuGL window must be open to see visual feedback
-- Turn knob slowly to see updates
 
 **OSC port conflicts:**
 
