@@ -1280,8 +1280,9 @@ def cancel_generation():
 
 
 def _generation_worker():
-    """Worker thread: pops slots from generation_queue and generates them."""
-    global generation_thread, bank_generation_ceiling, osc_client
+    """Coordinator: spawns one thread per slot, joins in order, fires bank_ready on slot 1."""
+    global bank_generation_ceiling
+
     variations_dir = DEFAULT_VARIATIONS_DIR
     variations_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1295,60 +1296,69 @@ def _generation_worker():
         print("  Worker: no hits in pattern, aborting")
         return
 
-    stage1_done = False  # Track whether we've sent bank_ready
+    # Snapshot and clear queue atomically
+    with generation_lock:
+        slots = list(generation_queue)
+        generation_queue.clear()
 
-    while True:
-        if stop_event.is_set():
-            print("  Worker: stop requested, exiting")
-            break
+    if not slots:
+        return
 
-        with generation_lock:
-            if not generation_queue:
-                break  # Queue empty, done
-            slot = generation_queue.pop(0)
+    print(f"\n  [Worker] Starting parallel generation: slots={slots}")
 
-        # Sentinel: send bank_ready and continue
-        if slot == -1:
-            if osc_client:
-                try:
-                    osc_client.send_message("/chuloopa/bank_ready", 0)
-                    osc_client.send_message("/chuloopa/generation_progress", "Stage 1 complete — auto-switching enabled")
-                except Exception as e:
-                    print(f"  Worker: OSC error sending bank_ready: {e}")
-            stage1_done = True
-            continue
+    # Spawn one thread per slot — all start simultaneously
+    threads = {
+        slot: threading.Thread(
+            target=_run_slot_thread,
+            args=(slot, pattern),
+            daemon=True,
+            name=f"slot-{slot}"
+        )
+        for slot in slots
+    }
+    for t in threads.values():
+        t.start()
 
-        # Generate variation for this slot
-        spice = [0.2, 0.4, 0.6, 0.8, 1.0][slot - 1]  # Fixed spice per slot
-        print(f"\n  [Worker] Generating var{slot} (spice={spice:.1f})...")
+    completed_slots = set()
+    bank_ready_sent = False
 
-        if osc_client:
-            osc_client.send_message("/chuloopa/generation_progress",
-                                    f"Generating var{slot}/5 (spice {spice:.1f})...")
+    # Join in slot order — bank_ready fires when slot 1 specifically completes
+    for slot in slots:
+        threads[slot].join()
+        completed_slots.add(slot)
+        print(f"  [Worker] Slot {slot} joined")
 
-        try:
-            varied, success = generate_variation(pattern, current_variation_type, temperature=spice)
-            output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-            varied.to_file(str(output_file))
-            print(f"  [Worker] var{slot} saved: {output_file}")
-
-            if osc_client:
-                osc_client.send_message("/chuloopa/bank_progress", slot)
-
-        except Exception as e:
-            print(f"  [Worker] Failed var{slot}: {e}")
+        if slot == 1 and not bank_ready_sent and osc_client:
             try:
-                fallback = humanize_pattern(pattern, timing_variance=0.005 + 0.02 * spice,
-                                            velocity_variance=0.05 + 0.1 * spice)
-                output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-                fallback.to_file(str(output_file))
-                print(f"  [Worker] Fallback var{slot} saved")
-                if osc_client:
-                    osc_client.send_message("/chuloopa/bank_progress", slot)
-            except Exception as e2:
-                print(f"  [Worker] Fallback also failed: {e2}")
+                osc_client.send_message("/chuloopa/bank_ready", 0)
+                osc_client.send_message("/chuloopa/generation_progress",
+                                        "var1 ready — auto-switching enabled")
+                bank_ready_sent = True
+                print("  [Worker] bank_ready sent (slot 1 complete)")
+            except Exception as e:
+                print(f"  [Worker] OSC error sending bank_ready: {e}")
 
-    # Update bank_generation_ceiling after all queued slots complete
+    # Fallback: slot 1 not in bank (ceiling too low to reach slot 1)
+    if not bank_ready_sent and completed_slots and osc_client:
+        lowest = min(completed_slots)
+        try:
+            osc_client.send_message("/chuloopa/bank_ready", 0)
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    f"var{lowest} ready — auto-switching enabled")
+            bank_ready_sent = True
+        except Exception as e:
+            print(f"  [Worker] OSC error sending bank_ready fallback: {e}")
+
+    # All-fail case — notify ChucK
+    if not bank_ready_sent and osc_client:
+        try:
+            osc_client.send_message("/chuloopa/generation_progress",
+                                    "All slots failed — press D#1 to retry")
+        except Exception as e:
+            print(f"  [Worker] OSC error sending all-fail message: {e}")
+
+    # Use the ceiling value that was set when this bank started (not current_ceiling,
+    # which may have changed while threads were running)
     bank_generation_ceiling = current_ceiling
     print(f"  [Worker] Done. bank_generation_ceiling={bank_generation_ceiling:.2f}")
 
