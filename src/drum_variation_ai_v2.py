@@ -1311,6 +1311,8 @@ def _generation_worker():
         print("  Worker: no hits in pattern, aborting")
         return
 
+    ceiling_at_start = current_ceiling  # snapshot — may change while threads run
+
     # Snapshot and clear queue atomically
     with generation_lock:
         slots = list(generation_queue)
@@ -1321,11 +1323,13 @@ def _generation_worker():
 
     print(f"\n  [Worker] Starting parallel generation: slots={slots}")
 
+    written_slots = set()  # slots that successfully wrote a file
+
     # Spawn one thread per slot — all start simultaneously
     threads = {
         slot: threading.Thread(
             target=_run_slot_thread,
-            args=(slot, pattern),
+            args=(slot, pattern, written_slots),
             daemon=True,
             name=f"slot-{slot}"
         )
@@ -1343,7 +1347,7 @@ def _generation_worker():
         completed_slots.add(slot)
         print(f"  [Worker] Slot {slot} joined")
 
-        if slot == 1 and not bank_ready_sent and osc_client:
+        if slot == 1 and not bank_ready_sent and 1 in written_slots and not stop_event.is_set() and osc_client:
             try:
                 osc_client.send_message("/chuloopa/bank_ready", 0)
                 osc_client.send_message("/chuloopa/generation_progress",
@@ -1354,8 +1358,8 @@ def _generation_worker():
                 print(f"  [Worker] OSC error sending bank_ready: {e}")
 
     # Fallback: slot 1 not in bank (ceiling too low to reach slot 1)
-    if not bank_ready_sent and completed_slots and osc_client:
-        lowest = min(completed_slots)
+    if not bank_ready_sent and written_slots and not stop_event.is_set() and osc_client:
+        lowest = min(written_slots)
         try:
             osc_client.send_message("/chuloopa/bank_ready", 0)
             osc_client.send_message("/chuloopa/generation_progress",
@@ -1364,17 +1368,15 @@ def _generation_worker():
         except Exception as e:
             print(f"  [Worker] OSC error sending bank_ready fallback: {e}")
 
-    # All-fail case — notify ChucK
-    if not bank_ready_sent and osc_client:
+    # All-fail case — notify ChucK (only if nothing was written and not cancelled)
+    if not bank_ready_sent and not written_slots and not stop_event.is_set() and osc_client:
         try:
             osc_client.send_message("/chuloopa/generation_progress",
                                     "All slots failed — press D#1 to retry")
         except Exception as e:
             print(f"  [Worker] OSC error sending all-fail message: {e}")
 
-    # Use the ceiling value that was set when this bank started (not current_ceiling,
-    # which may have changed while threads were running)
-    bank_generation_ceiling = current_ceiling
+    bank_generation_ceiling = ceiling_at_start
     print(f"  [Worker] Done. bank_generation_ceiling={bank_generation_ceiling:.2f}")
 
 
@@ -1435,7 +1437,7 @@ def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_cr
     start_full_bank_generation()
 
 
-def _run_slot_thread(slot: int, pattern: DrumPattern):
+def _run_slot_thread(slot: int, pattern: DrumPattern, written_slots: set):
     """Per-slot worker: generates one variation and saves it. Respects stop_event."""
     if stop_event.is_set():
         return  # cancelled before starting — don't write anything
@@ -1462,6 +1464,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern):
 
         output_file = variations_dir / f"track_0_drums_var{slot}.txt"
         varied.to_file(str(output_file))
+        written_slots.add(slot)
         print(f"  [Slot {slot}] Saved: {output_file.name} ({len(varied.hits)} hits, spice={spice:.1f})")
         if osc_client:
             try:
@@ -1482,6 +1485,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern):
             )
             output_file = variations_dir / f"track_0_drums_var{slot}.txt"
             fallback.to_file(str(output_file))
+            written_slots.add(slot)
             print(f"  [Slot {slot}] Fallback saved")
             if osc_client:
                 try:
