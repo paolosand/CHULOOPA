@@ -85,7 +85,6 @@ OSC_HOST = "127.0.0.1"   # Use IP instead of "localhost" for better compatibilit
 osc_client = None
 
 # Global state
-current_spice_level = 0.5  # Default spice level
 use_no_warp = False  # Skip time-warping if True
 use_no_anchor = True  # Timing anchoring off by default (rhythmic_creator output is solid)
 use_no_ai = False  # Force heuristic generation (skip AI) if True
@@ -1085,13 +1084,6 @@ Hits must be sorted by TIMESTAMP ascending."""
 # OSC HANDLERS
 # =============================================================================
 
-def handle_spice_change(address, spice_level):
-    """Handle spice level change from ChucK."""
-    global current_spice_level
-    current_spice_level = max(0.0, min(1.0, spice_level))
-    print(f"\n>>> OSC RECEIVED from ChucK: /chuloopa/spice = {current_spice_level:.2f} <<<\n")
-
-
 def handle_regenerate(address):
     """Handle regenerate request from ChucK — cancels in-progress, starts fresh full bank."""
     global current_variation_type
@@ -1162,7 +1154,7 @@ def handle_ceiling_change(address, new_ceiling):
 
 def generate_variations_for_track(track_file: Path, variation_type: str = 'rhythmic_creator'):
     """Generate 1 variation for a track file and send OSC notification."""
-    global osc_client, current_spice_level
+    global osc_client
 
     print(f"Loading: {track_file}")
     pattern = DrumPattern.from_file(str(track_file))
@@ -1175,7 +1167,6 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
         return
 
     print(f"  Loaded {len(pattern.hits)} hits, duration: {pattern.loop_duration:.3f}s")
-    print(f"  Current spice level: {current_spice_level:.2f}")
 
     # Create variations directory if it doesn't exist
     variations_dir = DEFAULT_VARIATIONS_DIR
@@ -1185,8 +1176,8 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
     if osc_client:
         osc_client.send_message("/chuloopa/generation_progress", f"Generating variation...")
 
-    print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
-    varied, success = generate_variation(pattern, variation_type, temperature=current_spice_level)
+    print(f"\n  Generating variation (spice: 0.5 default)")
+    varied, success = generate_variation(pattern, variation_type, temperature=0.5)
 
     output_file = variations_dir / f"track_0_drums_var1.txt"
     varied.to_file(str(output_file))
@@ -1215,9 +1206,9 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
         print("  WARNING: OSC client not initialized, cannot send ready notification")
 
     if success:
-        print(f"\n✓ Generated variation (spice: {current_spice_level:.2f})")
+        print(f"\n✓ Generated variation")
     else:
-        print(f"\n✗ Generation FAILED - used fallback (spice: {current_spice_level:.2f})")
+        print(f"\n✗ Generation FAILED - used fallback")
         print(f"  Press D#1 in ChucK to try again")
     print(f"{'='*60}\n")
 
@@ -1570,7 +1561,6 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
 
     # Setup OSC server (for receiving from ChucK)
     disp = dispatcher.Dispatcher()
-    disp.map("/chuloopa/spice", handle_spice_change)
     disp.map("/chuloopa/regenerate", handle_regenerate)
     disp.map("/chuloopa/track_cleared", handle_track_cleared)
     disp.map("/chuloopa/spice_ceiling", handle_ceiling_change)
@@ -1594,7 +1584,6 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     print(f"Device: {'CPU (forced)' if force_cpu else 'Auto-detect (MPS/CUDA/CPU)'}")
     print(f"Timing anchor: {'DISABLED (default — AI timing preserved)' if use_no_anchor else 'ENABLED (--anchor)'}")
     print(f"Time-warping: {'DISABLED (natural timing)' if use_no_warp else 'enabled'}")
-    print(f"Current spice level: {current_spice_level:.2f}")
     print("\nWaiting for OSC /chuloopa/regenerate message from ChucK...")
     print("Press Ctrl+C to stop\n")
 
@@ -1646,7 +1635,7 @@ def generate_variation(pattern: DrumPattern,
         return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
 
     elif variation_type == 'gemini':
-        return gemini_variation(pattern, spice_level=kwargs.get('spice_level', current_spice_level))
+        return gemini_variation(pattern, spice_level=kwargs.get('spice_level', kwargs.get('temperature', 0.5)))
 
     elif variation_type == 'groove_preserve':
         return groove_preserve(
@@ -1740,7 +1729,7 @@ def generate_variation_for_file(filepath: str,
             return False
 
         print(f"  Loaded {len(pattern.hits)} hits, duration: {pattern.loop_duration:.3f}s")
-        print(f"  Using spice level: {current_spice_level:.2f}")
+        print(f"  Using spice level: 0.5 (default)")
 
         # Optional backup
         if backup:
@@ -1754,7 +1743,7 @@ def generate_variation_for_file(filepath: str,
         variations_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate 1 variation
-        print(f"\n  Generating variation (spice: {current_spice_level:.2f})")
+        print(f"\n  Generating variation")
         varied, success = generate_variation(pattern, variation_type, **kwargs)
 
         if not success:
@@ -1847,9 +1836,9 @@ Variation Control:
 
 OSC Communication:
     Receives on port 5000:
-      /chuloopa/spice <float>        - Spice level (0.0-1.0)
       /chuloopa/regenerate           - Regenerate variations
       /chuloopa/track_cleared        - Track cleared notification
+      /chuloopa/spice_ceiling <float> - Spice ceiling from CC 74 (0.0-1.0)
 
     Sends to port 5001:
       /chuloopa/variations_ready <int>    - Number of variations ready
