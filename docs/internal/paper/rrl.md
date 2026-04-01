@@ -878,6 +878,168 @@ Based on the draft paper's Related Work section (Section 2.5), the following gap
 
 ---
 
+## 10. New Papers Added March 2026
+
+**Papers confirmed via subagent survey of AIMC 2025 proceedings + Jake Chen's recommendations.**
+
+---
+
+### 10.1 ChucK: A Strongly Timed Computer Music Language (CMJ 2015)
+**Authors:** Ge Wang, Perry R. Cook, Spencer Salazar
+**Venue:** Computer Music Journal, Vol. 39, No. 4, pp. 10–29
+**Year:** 2015
+**DOI:** 10.1162/COMJ_a_00324
+**BibTeX key:** wang2015chuck
+
+**Summary:**
+Introduces ChucK, a strongly-timed concurrent computer music language designed for real-time audio synthesis, analysis, and control. Defines the "strongly timed" programming model—time-aware concurrent code that enables precise scheduling at any granularity—and the chuck operator (=>) for signal routing. Core concepts include shreds (concurrent processes), unit generators (UGens), and on-the-fly coding for live performance.
+
+**Relevance to CHULOOPA:**
+- **Core technology:** CHULOOPA is implemented entirely in ChucK 1.5.x
+- **Strongly-timed scheduling:** CHULOOPA's loop boundary system and queued actions rely on ChucK's time-aware scheduling
+- **Concurrent shreds:** Onset detection, classification, and playback run as parallel ChucK shreds
+- **MIDI I/O:** ChucK's native MIDI support handles all CHULOOPA controller input
+
+**Use in Paper:** Section 4 (Implementation / Technology Stack) — primary language citation
+
+**Status:** ✅ PDF at `/Review of Literature/2015-cmj-chuck.pdf`
+
+---
+
+### 10.2 ChuGL: Unified Audiovisual Programming in ChucK (NIME 2024)
+**Authors:** Andrew Zhu Aday, Ge Wang
+**Venue:** International Conference on New Interfaces for Musical Expression (NIME)
+**Year:** 2024
+**Location:** Utrecht, The Netherlands
+**BibTeX key:** aday2024chugl
+
+**Summary:**
+ChuGL extends ChucK with a 3D audiovisual programming framework. Introduces Graphics Generators (GGens) that parallel ChucK's Audio Unit Generators (UGens), enabling sample-synchronous audio-graphics manipulation within a single language. Uses a retained-mode scenegraph API with multithreaded synchronization for low-latency audiovisual coupling.
+
+**Relevance to CHULOOPA:**
+- **Visual feedback system:** CHULOOPA uses ChuGL for its sphere-based track state visualization (gray/red/green/blue) and real-time spice level display
+- **Sample-synchronous updates:** ChuGL's strong timing aligns visual feedback precisely with drum playback
+- **AIMC 2026 audience familiarity:** NIME audience knows ChuGL; important to cite
+
+**Use in Paper:** Section 4 (Implementation) — visual feedback system citation
+
+**Status:** ✅ PDF at `/Review of Literature/2024-nime-chugl.pdf`
+
+---
+
+### 10.3 SMART: Tuning a Symbolic Music Generation System with an Audio Domain Aesthetic Reward (AIMC 2025)
+**Authors:** Nicolas Jonason, Luca Casini, Bob L.T. Sturm
+**Venue:** Proceedings of the 6th Conference on AI Music Creativity (AIMC 2025)
+**Year:** 2025
+**Location:** Brussels, Belgium, September 10–12
+**BibTeX key:** jonason2025smart
+
+**Summary:**
+SMART proposes reinforcement learning fine-tuning of symbolic music generation using Meta Audiobox Aesthetics as a reward signal. Uses group relative preference optimization (GRPO) to align symbolic piano MIDI generation with audio aesthetic preferences (content enjoyment, production quality). Shows that RL-based alignment improves content enjoyment ratings but can produce mode collapse with aggressive optimization.
+
+**Relevance to CHULOOPA:**
+- **Parameter-controlled variation creativity:** SMART demonstrates explicit user-facing control over generation quality through reward signals; CHULOOPA's "spice" parameter provides analogous real-time control over variation creativity
+- **Diversity vs. quality tradeoff:** SMART's mode collapse findings directly inform CHULOOPA's design decision to vary post-processing (timing anchoring) rather than model temperature
+- **Same venue (AIMC 2025):** Directly positions CHULOOPA within the AIMC research community
+
+**Use in Paper:** Section 2.3 (AI Generation) — cite for controlled variation generation and diversity/quality tradeoffs
+
+**Status:** ✅ PDF at `/Review of Literature/_SMART (7).pdf` and `aimc-2025/aimc-2025-music_97.pdf`
+
+---
+
+### 10.4 Conditional Generation of Bass Guitar Tablature for Guitar Accompaniment (AIMC 2025)
+**Authors:** Olivier Anoufa, Alexandre D'Hooge, Ken Déguernel
+**Venue:** Proceedings of the 6th Conference on AI Music Creativity (AIMC 2025)
+**Year:** 2025
+**Location:** Brussels, Belgium, September 10–12
+**Affiliation:** Univ. Lille, CNRS, Centrale Lille, UMR 9189 CRIStAL
+**BibTeX key:** anoufa2025bass
+
+**Summary:**
+Proposes a transformer-based decoder model for generating idiomatic bass guitar tablatures conditioned on rhythm guitar input. Uses the DadaGP dataset (100,000+ excerpts) with a BiLSTM encoder and transformer decoder architecture. Qualitative analysis shows the model captures harmonic/rhythmic consistency and natural hand movements, with some tendency to copy rhythm guitar too closely.
+
+**Relevance to CHULOOPA:**
+- **Conditional symbolic generation:** Both systems generate symbolic music (tablature / drum patterns) conditioned on musical input (guitar track / beatbox recording)
+- **Accompaniment for solo performers:** Both address the solo musician's need for AI-generated accompaniment — guitar player needs bass, singer-songwriter needs drums
+- **Transformer-LSTM architecture:** Parallel to rhythmic_creator's transformer-LSTM hybrid used in CHULOOPA
+- **Idiomaticity and evaluation:** Shared focus on whether AI output "feels right" for the instrument/context
+
+**Use in Paper:** Section 2.3 (AI Generation) — cite for conditional accompaniment generation; Section 6 (Discussion) — cite for comparison of input-conditioned symbolic generation
+
+**Status:** ✅ PDF at `/Review of Literature/Bass_AIMC-6.pdf` and `aimc-2025/AIMC_2025_paper_38.pdf`
+
+---
+
+### 10.5 AI-Assisted Sound Design with Audio Metaphor (AuMe): An Evaluation with Novice Sound Designers (AIMC 2025)
+**Authors:** Ge Liu, Keon Ju Lee, Miles Thorogood, Christopher Anderson, Philippe Pasquier
+**Venue:** Proceedings of the 6th Conference on AI Music Creativity (AIMC 2025)
+**Year:** 2025
+**Location:** Brussels, Belgium, September 10–12
+**BibTeX key:** liu2025aime
+
+**Summary:**
+Evaluates AuMe, an AI-assisted sound design tool, with 71 novice undergraduate sound designers. AuMe uses audio metaphors for sound retrieval. Results show it significantly reduces sourcing/editing time (21.83%) but introduces challenges around creative ownership, system trust, and interpretation gaps. Highlights the tension between AI assistance and pedagogical value in creative education.
+
+**Relevance to CHULOOPA:**
+- **Accessible AI for non-experts:** Both target users without technical expertise (novice sound designers / amateur beatboxers); findings on usability barriers directly inform CHULOOPA's UX design
+- **Creative ownership:** AuMe's finding that AI assistance raises creative authorship concerns mirrors CHULOOPA's "artist in the loop" design philosophy — keeping the performer central to creative output
+- **User experience challenges:** Unexpected AI outputs, interpretation gaps, and trust issues documented in AuMe contextualize CHULOOPA's design decisions (e.g., spice control, visual feedback, offline-first)
+- **Same venue:** AIMC 2025 community context
+
+**Use in Paper:** Section 2.4 (Co-Creative AI) — cite for accessible AI design findings and creative ownership discourse
+
+**Status:** ✅ PDF at `/Review of Literature/AuMe_Study_CameraReady.pdf`
+
+---
+
+### 10.6 Revival: Artistic Collaboration and Improvisation between Humans and AI in Music and Visual (AIMC 2025)
+**Authors:** Keon Ju Maverick Lee, Philippe Pasquier, Jun Yuri
+**Venue:** Proceedings of the 6th Conference on AI Music Creativity (AIMC 2025)
+**Year:** 2025
+**Location:** Brussels, Belgium, September 10–12
+**Affiliation:** Simon Fraser University / Metacreation Lab for Creative AI
+**BibTeX key:** lee2025revival
+
+**Summary:**
+Presents Revival, a live audiovisual performance by artist collective K-Phi-A combining human percussion, live electronics, and AI musical agents (MACAT and MACataRT). AI agents trained on small curated corpora respond expressively to live input, emulating sophisticated musical styles in real-time. Emphasizes a "small data mindset" — ethical, transparent, artist-specific training datasets — alongside an AI-powered visual synthesizer (Autolume). Uses OSC messaging for real-time audio-visual coordination.
+
+**Relevance to CHULOOPA:**
+- **"Small data mindset":** Lee et al. explicitly advocate for small, curated, artist-specific training data over large-scale scraping — directly validating CHULOOPA's "personalization-over-scale" approach with 30 user-specific samples
+- **Real-time co-creative performance:** Both systems position AI as responsive collaborator in live performance, with human performers retaining creative agency
+- **OSC communication:** Revival uses OSC for system coordination, same as CHULOOPA's Python-ChucK bridge
+- **AIMC community:** SFU Metacreation Lab is a central voice in AIMC; this paper directly contextualizes CHULOOPA within the same discourse
+
+**Use in Paper:** Section 2.4 (Co-Creative AI) — **KEY** citation; validates small-data mindset and real-time AI collaboration from within AIMC community
+
+**Note:** This is a DIFFERENT paper from `martin2021revival` (Martin & Bell, NIME 2021) which is already cited. Both share the name "Revival" but are distinct works.
+
+**Status:** ✅ PDF at `aimc-2025/aimc-2025-music_23.pdf`
+
+---
+
+### 10.7 A Short Review of Responsible AI Music Generation (AIMC 2025)
+**Authors:** Elizabeth Wilson, Anna Wszeborowska, Nick Bryan-Kinns
+**Venue:** Proceedings of the 6th Conference on AI Music Creativity (AIMC 2025)
+**Year:** 2025
+**Location:** Brussels, Belgium, September 10–12
+**Affiliation:** Creative Computing Institute, University of the Arts London
+**BibTeX key:** wilson2025responsible
+
+**Summary:**
+Surveys 27 contemporary AI models for music generation through the lens of Responsible AI principles: transparency & explainability, fairness, accountability, and ethical AI. Finds that AI music tools lack transparency in model training, insufficient openness in source code and datasets, and predominantly focus on audio generation at the expense of real-time, performance-oriented systems. Argues that research is needed on evaluating AI music tools through user journeys that expose mechanics, limitations, and ethical considerations.
+
+**Relevance to CHULOOPA:**
+- **Responsible AI framing:** CHULOOPA's offline-first architecture (local inference, no cloud API), user-trainable model (user owns their training data), and interpretable KNN classifier directly address Wilson et al.'s identified gaps in transparency and accountability
+- **Real-time music generation gap:** Wilson et al. identify a lack of focus on real-time generation for performance and improvisation — CHULOOPA addresses this gap directly
+- **User journey evaluation:** Their call for user-journey-based evaluation supports CHULOOPA's autoethnographic and user-testing methodology
+
+**Use in Paper:** Section 2.4 (Co-Creative AI) or Introduction — positions CHULOOPA's design decisions within responsible AI discourse; Section 6 (Discussion) — cite for ethical and transparent AI design
+
+**Status:** ✅ PDF at `aimc-2025/AIMC_2025_paper_28.pdf`
+
+---
+
 ## 10. Citation Strategy for NIME Paper
 
 ### Critical Citations (Must Include):

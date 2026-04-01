@@ -173,7 +173,7 @@ Our work adapts \citet{chen2025music}'s \textbf{rhythmic\_creator}, a Transforme
 
 \textbf{Critically}, rather than using rhythmic\_creator for unconditional generation (its original purpose), we extract its \emph{continuation} output as variations---leveraging the model's sequence extension capabilities for loop variation.
 
-\textbf{Variation-focused transformer architectures} have emerged. \citet{jiang2024variation} introduced the Variation Transformer at ISMIR 2024, demonstrating controlled variation generation for symbolic music. Comprehensive surveys on symbolic music generation \citep{briot2020deep,ji2023comprehensive} highlight the tension between creativity and controllability.
+\textbf{Variation-focused transformer architectures} have emerged. \citet{jiang2024variation} introduced the Variation Transformer at ISMIR 2024, demonstrating controlled variation generation for symbolic music. Comprehensive surveys on symbolic music generation \citep{briot2020deep,ji2023comprehensive} highlight the tension between creativity and controllability. \citet{jonason2025smart} demonstrate that reward-based tuning of symbolic generation reveals a diversity-quality tradeoff, informing CHULOOPA's design choice to control variation creativity through post-processing (timing anchoring tightness) rather than directly manipulating model temperature. \citet{anoufa2025bass} demonstrate conditional symbolic generation for bass guitar accompaniment conditioned on rhythm guitar input---a task structure parallel to CHULOOPA's beatbox-conditioned drum variation, using a similarly hybrid transformer-decoder architecture.
 
 \textbf{Timing and quantization} in AI music generation remains challenging. Most systems quantize to grids, destroying the ``swing'' and ``feel'' of human performances. \citet{davies2013microtiming} demonstrated that microtiming deviations are fundamental to musical groove. Neuroscience research \citep{harding2024science} reveals that beat-related brain activity entrains to natural timing variations. \citet{kilchenmann2015microtiming} showed that listeners perceive quantized performances as ``mechanical.'' Our proportional time-warping approach preserves non-quantized timing by scaling continuation timestamps rather than snapping to grids.
 
@@ -181,17 +181,17 @@ Our work adapts \citet{chen2025music}'s \textbf{rhythmic\_creator}, a Transforme
 
 \textbf{Hardware loop pedals} (Boss RC-505, Electro-Harmonix) enable live looping through foot controls but record audio loops without symbolic representation---preventing variation generation. CHULOOPA transcribes to symbolic drum data, enabling AI manipulation.
 
-\textbf{Co-creative looping systems} explore AI-augmented live performance. \citet{shepardson2023living} presented the Living Looper, which uses RAVE autoencoders to create generative models of audio loops. \citet{sturm2019notochord} developed Notochord, a real-time neural network for MIDI performance.
+\textbf{Co-creative looping systems} explore AI-augmented live performance. \citet{shepardson2023living} presented the Living Looper, which uses RAVE autoencoders to create generative models of audio loops. \citet{sturm2019notochord} developed Notochord, a real-time neural network for MIDI performance. \citet{lee2025revival} presented Revival, a live audiovisual performance employing AI musical agents trained on small curated corpora---explicitly advocating a ``small data mindset'' that prioritizes ethical, artist-specific training data over large-scale scraping, directly paralleling CHULOOPA's personalization-over-scale approach.
 
 \textbf{Queued actions and synchronization} are critical for glitch-free live performance. We implement queued action systems inspired by hardware loopers, ensuring pattern switching occurs at loop boundaries.
 
 \subsection{Co-Creative AI and Human-AI Collaboration}
 
-Recent discourse on \textbf{``the artist in the loop''} emphasizes human agency in AI-assisted creativity. The AIMC 2025 conference theme explicitly focused on ``The Artist in the Loop.'' \citet{loughran2020human} examined human-AI partnerships in music creation, identifying key design principles: transparency, agency, and creative dialogue.
+Recent discourse on \textbf{``the artist in the loop''} emphasizes human agency in AI-assisted creativity. The AIMC 2025 conference theme explicitly focused on ``The Artist in the Loop.'' \citet{wilson2025responsible} survey 27 contemporary AI music generation systems through Responsible AI principles---transparency, fairness, accountability, ethical AI---identifying a critical lack of focus on real-time generation for performance and improvisation, a gap CHULOOPA directly addresses. \citet{loughran2020human} examined human-AI partnerships in music creation, identifying key design principles: transparency, agency, and creative dialogue.
 
 \textbf{Co-creativity frameworks} provide theoretical grounding. \citet{lubart2005creativity} defined co-creativity as a partnership where both human and computational agent contribute meaningfully. \citet{davis2013role} outlined design principles for co-creative systems. \citet{martin2021revival} explored ``Revival'' as a framework for collaborative music creation with AI.
 
-\textbf{Accessible music technology} research highlights inclusive design importance. \citet{knotts2014accessible} surveyed accessibility in digital musical instruments. The NIME community has increasingly prioritized accessibility \citep{hodl2020accessibility,parkinson2020inclusive}.
+\textbf{Accessible music technology} research highlights inclusive design importance. \citet{knotts2014accessible} surveyed accessibility in digital musical instruments. The NIME community has increasingly prioritized accessibility \citep{hodl2020accessibility,parkinson2020inclusive}. \citet{liu2025aime} evaluated AI-assisted tools for novice sound designers, finding that while AI reduces task time, it introduces challenges around creative ownership, system trust, and interpretation gaps---considerations that shaped CHULOOPA's emphasis on user control (spice level), transparent visual feedback (ChuGL sphere states), and keeping the performer central to creative decisions.
 
 \textbf{Offline-first AI} for live performance addresses reliability concerns with cloud APIs. \citet{wyse2018realtime} explored real-time neural audio synthesis on embedded devices. \citet{fiebrink2011wekinator} showed that interactive machine learning enables musicians to train personalized models without coding. Our integration of rhythmic\_creator demonstrates that local transformer-LSTM models ($\sim$4.5M parameters) can generate musically coherent variations in 3-5 seconds on consumer CPUs without GPU acceleration.
 
@@ -397,9 +397,9 @@ Visual feedback displays spice level in ChuGL interface (color-coded: blue $<$ 0
 \subsection{Technology Stack}
 
 \begin{itemize}
-\item \textbf{ChucK 1.5.x:} Real-time audio processing, MIDI I/O, onset detection, loop playback
+\item \textbf{ChucK 1.5.x} \citep{wang2015chuck}: Real-time audio processing, MIDI I/O, onset detection, loop playback
 \item \textbf{Python 3.10+:} KNN training (scikit-learn), rhythmic\_creator inference (PyTorch)
-\item \textbf{ChuGL:} Real-time visualization (sphere-based track indicators)
+\item \textbf{ChuGL} \citep{aday2024chugl}: Real-time visualization (sphere-based track indicators)
 \end{itemize}
 
 \subsection{Performance Considerations}
