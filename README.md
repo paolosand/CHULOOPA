@@ -3,8 +3,7 @@
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 <p align="center">
-  <img src="docs/internal/paper/assets/chuloopa%20-%20active%20state.png
-  " alt="CHULOOPA active variation state" />
+  <img src="docs/internal/paper/assets/chuloopa%20-%20active%20state.png" alt="CHULOOPA active variation state" />
   <br/>
   <em>Figure 1: CHULOOPA UI active state</em>
 </p>

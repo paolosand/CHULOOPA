@@ -95,9 +95,6 @@ current_variation_type = 'rhythmic_creator'  # Default variation type (set by CL
 # Spice controls post-processing (timing drift, fills), NOT model temperature
 RHYTHMIC_CREATOR_TEMPERATURE = 1.0  # Matches Jake's original gen.py (no temperature scaling)
 
-# Ceiling-aware staged bank generation state
-current_ceiling = 1.0           # Updated via /chuloopa/spice_ceiling OSC
-bank_generation_ceiling = -1.0  # -1 = no bank generated yet; updated before each generation pass
 stop_event = threading.Event()  # Set to cancel in-progress generation thread
 generation_lock = threading.Lock()  # Ensures one generation thread at a time
 generation_queue = []           # List of slot ints (1-5)
@@ -1136,22 +1133,6 @@ def handle_track_cleared(address):
             print(f"  OSC error: {e}")
 
 
-def handle_ceiling_change(address, new_ceiling):
-    """Handle spice ceiling change from ChucK v4 CC 74."""
-    global current_ceiling
-    current_ceiling = max(0.0, min(1.0, new_ceiling))
-    print(f"\n>>> OSC RECEIVED: /chuloopa/spice_ceiling = {current_ceiling:.2f} <<<\n")
-
-    # Only generate new slots if ceiling raised enough, bank exists, and pattern exists
-    if (current_ceiling > bank_generation_ceiling + 0.1
-            and bank_generation_ceiling >= 0.0
-            and track_file_exists()):
-        new_slots = compute_new_slots(current_ceiling, bank_generation_ceiling)
-        if new_slots:
-            print(f"  Ceiling raised: generating newly reachable slots {new_slots}")
-            queue_generation(new_slots)
-
-
 def generate_variations_for_track(track_file: Path, variation_type: str = 'rhythmic_creator'):
     """Generate 1 variation for a track file and send OSC notification."""
     global osc_client
@@ -1218,50 +1199,6 @@ def track_file_exists() -> bool:
     return (DEFAULT_TRACK_DIR / "track_0_drums.txt").exists()
 
 
-def reachable_slots(ceiling: float) -> list:
-    """Return list of var indices (1-5) reachable at given ceiling."""
-    if ceiling < 0.1:
-        return []
-    elif ceiling < 0.3:
-        return [1]
-    elif ceiling < 0.5:
-        return [1, 2]
-    elif ceiling < 0.7:
-        return [1, 2, 3]
-    elif ceiling < 0.9:
-        return [1, 2, 3, 4]
-    else:
-        return [1, 2, 3, 4, 5]
-
-
-def spread_priority(slots: list) -> list:
-    """Reorder slots for join order: spread coverage across range first, fill gaps second.
-
-    In the parallel model, all threads start simultaneously — this ordering controls
-    when bank_ready fires (slot 1 first) and the join sequence, not generation order.
-    """
-    n = len(slots)
-    if n <= 3:
-        return list(slots)
-    elif n == 4:
-        stage1 = [slots[0], slots[1], slots[3]]
-        stage2 = [slots[2]]
-        return stage1 + stage2
-    else:  # n == 5
-        stage1 = [slots[0], slots[2], slots[4]]
-        stage2 = [slots[1], slots[3]]
-        return stage1 + stage2
-
-
-def compute_new_slots(new_ceiling: float, old_ceiling: float) -> list:
-    """Return slots newly reachable at new_ceiling that weren't at old_ceiling,
-    ordered by spread priority."""
-    old_slots = set(reachable_slots(old_ceiling))
-    new_slots = set(reachable_slots(new_ceiling))
-    newly_reachable = sorted(new_slots - old_slots)
-    return spread_priority(newly_reachable)
-
-
 def cancel_generation():
     """Signal running generation to stop and wait for clean exit."""
     global generation_thread, generation_queue
@@ -1275,8 +1212,6 @@ def cancel_generation():
 
 def _generation_worker():
     """Coordinator: spawns one thread per slot, joins in order, fires bank_ready on slot 1."""
-    global bank_generation_ceiling
-
     variations_dir = DEFAULT_VARIATIONS_DIR
     variations_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1289,8 +1224,6 @@ def _generation_worker():
     if not pattern.hits:
         print("  Worker: no hits in pattern, aborting")
         return
-
-    ceiling_at_start = current_ceiling  # snapshot — may change while threads run
 
     # Snapshot and clear queue atomically
     with generation_lock:
@@ -1336,7 +1269,7 @@ def _generation_worker():
             except Exception as e:
                 print(f"  [Worker] OSC error sending bank_ready: {e}")
 
-    # Fallback: slot 1 not in bank (ceiling too low to reach slot 1)
+    # Fallback: if slot 1 failed for any reason
     if not bank_ready_sent and written_slots and not stop_event.is_set() and osc_client:
         lowest = min(written_slots)
         try:
@@ -1355,8 +1288,7 @@ def _generation_worker():
         except Exception as e:
             print(f"  [Worker] OSC error sending all-fail message: {e}")
 
-    bank_generation_ceiling = ceiling_at_start
-    print(f"  [Worker] Done. bank_generation_ceiling={bank_generation_ceiling:.2f}")
+    print(f"  [Worker] Done.")
 
 
 def queue_generation(slots: list):
@@ -1371,25 +1303,15 @@ def queue_generation(slots: list):
 
 
 def start_full_bank_generation():
-    """Start a fresh full bank at current_ceiling. Caller must call cancel_generation() first."""
-    global bank_generation_ceiling, generation_thread
+    """Start a fresh full bank (all 5 slots). Caller must call cancel_generation() first."""
+    global generation_thread
 
-    slots = reachable_slots(current_ceiling)
-    if not slots:
-        print(f"Warning: No slots reachable at ceiling={current_ceiling:.2f} — skipping")
-        if osc_client:
-            osc_client.send_message("/chuloopa/generation_progress",
-                                    f"Ceiling {current_ceiling:.2f} too low — no variations")
-        return
+    all_slots = [1, 2, 3, 4, 5]
+    print(f"\n  Starting bank: slots={all_slots}")
 
-    ordered = spread_priority(slots)
-    bank_generation_ceiling = current_ceiling
-    print(f"\n  Starting bank: ceiling={current_ceiling:.2f}, slots={ordered}")
-
-    # Atomic: queue update + coordinator spawn under single lock
     with generation_lock:
         generation_queue.clear()
-        generation_queue.extend(ordered)
+        generation_queue.extend(all_slots)
         if generation_thread is None or not generation_thread.is_alive():
             generation_thread = threading.Thread(target=_generation_worker, daemon=True)
             generation_thread.start()
@@ -1397,9 +1319,8 @@ def start_full_bank_generation():
 
 
 def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
-    """Generate variation bank using ceiling-aware parallel generation.
+    """Generate all 5 variation slots in parallel.
 
-    Slots are ordered by spread_priority for join order.
     /chuloopa/bank_ready 0 is sent when slot 1 completes to enable auto-switching.
     """
     global current_variation_type
@@ -1563,7 +1484,6 @@ def watch_directory(directory: str, variation_type: str = 'gemini'):
     disp = dispatcher.Dispatcher()
     disp.map("/chuloopa/regenerate", handle_regenerate)
     disp.map("/chuloopa/track_cleared", handle_track_cleared)
-    disp.map("/chuloopa/spice_ceiling", handle_ceiling_change)
 
     server = osc_server.ThreadingOSCUDPServer((OSC_HOST, OSC_RECEIVE_PORT), disp)
     print(f"OSC server listening on {OSC_HOST}:{OSC_RECEIVE_PORT}")
@@ -1838,7 +1758,6 @@ OSC Communication:
     Receives on port 5000:
       /chuloopa/regenerate           - Regenerate variations
       /chuloopa/track_cleared        - Track cleared notification
-      /chuloopa/spice_ceiling <float> - Spice ceiling from CC 74 (0.0-1.0)
 
     Sends to port 5001:
       /chuloopa/variations_ready <int>    - Number of variations ready
