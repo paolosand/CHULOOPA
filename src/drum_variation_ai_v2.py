@@ -1132,10 +1132,28 @@ def handle_regenerate(address):
 
 
 def handle_track_cleared(address):
-    """Handle track cleared notification from ChucK."""
-    print("Track cleared notification received")
-    # Could delete variations here if desired
-    # For now, just log it
+    """Cancel in-progress generation and delete all stale variation files."""
+    print("\n>>> OSC RECEIVED: /chuloopa/track_cleared — cancelling generation <<<")
+    cancel_generation()
+
+    # Delete all variation files — prevents stale files being loaded for new recording
+    deleted = []
+    for slot in range(1, 6):
+        var_file = DEFAULT_VARIATIONS_DIR / f"track_0_drums_var{slot}.txt"
+        if var_file.exists():
+            var_file.unlink()
+            deleted.append(f"var{slot}.txt")
+
+    if deleted:
+        print(f"  Deleted stale variation files: {', '.join(deleted)}")
+    else:
+        print("  No variation files to delete")
+
+    if osc_client:
+        try:
+            osc_client.send_message("/chuloopa/generation_progress", "Cancelled — track cleared")
+        except Exception as e:
+            print(f"  OSC error: {e}")
 
 
 def handle_ceiling_change(address, new_ceiling):
