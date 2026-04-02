@@ -325,8 +325,8 @@ max(bottle.max - bottle.min) => float bottle_size;
 0.35 / bottle_size => float bottle_scale;  // Small icon size (0.35 units)
 bottle.sca(bottle_scale);
 
-// Position bottle next to spice text (to the right of the percentage)
-bottle.posX(1.2);  // To the right of "SPICE: XX%"
+// Position bottle to the right of the ECHO...VAR bar (row 1)
+bottle.posX(1.8);
 bottle.posY(-100);  // Start hidden
 bottle.posZ(0.0);
 
@@ -338,14 +338,16 @@ bottle.rotY(Math.PI / 6);   // Face forward slightly
 2.0 => float bottle_base_y;
 
 // === TEXT DISPLAYS ===
+// Row 1: "ECHO [bar] VAR" — echo/variation slider (spice level visualization)
 GText spice_text --> scene;
-spice_text.text("SPICE: 50%");
+spice_text.text("ECHO ━━━━━━━━━━ VAR");
 spice_text.posX(0.0);
 spice_text.posY(2.0);
 spice_text.posZ(0.0);
 spice_text.sca(0.25);
 spice_text.color(@(1.0, 0.6, 0.0));
 
+// Row 2: "STATE: ..." — current system state
 GText state_text --> scene;
 state_text.text("STATE: Idle");
 state_text.posX(0.0);
@@ -354,6 +356,7 @@ state_text.posZ(0.0);
 state_text.sca(0.22);
 state_text.color(@(0.8, 0.8, 0.8));
 
+// Row 3: "GTR [bar] VOX" — guitar/vocal mix indicator (stereo mode only)
 GText mix_text --> scene;
 mix_text.text("");
 mix_text.posX(0.0);
@@ -361,7 +364,7 @@ mix_text.posY(1.2);
 mix_text.posZ(0.0);
 mix_text.sca(0.20);
 mix_text.color(@(0.6, 0.8, 0.6));
-mix_text.posY(-100);  // Hidden until performance mode detected
+mix_text.posY(-100);  // Hidden until stereo performance mode detected
 
 // === AUDIO SETUP ===
 adc => Gain input_gain => blackhole;
@@ -1584,6 +1587,9 @@ fun void stopRecording(int track) {
         // === AUTO-EXPORT ===
         if(track_midi_notes[track].size() > 0) {
             exportSymbolicData(track);
+            1 => generation_requested;  // Show bottle: Python will auto-generate bank
+            0 => variations_ready;       // Not ready yet — waiting for Python
+            0 => generation_failed;
         }
 
         // === ENABLE DRUM PLAYBACK ===
