@@ -1,49 +1,49 @@
 <mxfile host="embed.diagrams.net">
-  <diagram id="nx8SewrhhkxI1RN_54PK" name="Page-1">
-    <mxGraphModel dx="1019" dy="1655" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+  <diagram id="blank" name="Page-1">
+    <mxGraphModel dx="574" dy="1368" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" parent="1" style="text;html=1;fontSize=14;fontStyle=1;align=left;" value="CHULOOPA — System Architecture (3 Concurrent Processes)" vertex="1">
+        <mxCell id="2" parent="1" style="text;html=1;fontSize=14;fontStyle=1;align=left;" value="CHULOOPA — System Architecture (3 Concurrent Processes)" vertex="1">
           <mxGeometry height="24" width="700" x="405" y="-120" as="geometry" />
         </mxCell>
-        <mxCell id="mic" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="🎤 Audio Input&#xa;(Beatbox / Mic)" vertex="1">
+        <mxCell id="3" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="🎤 Audio Input&#xa;(Beatbox / Mic)" vertex="1">
           <mxGeometry height="55" width="160" x="35" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="midi" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="🎛 MIDI Controller&#xa;Notes 36-38 / CC 74 / CC 75" vertex="1">
+        <mxCell id="4" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="🎛 MIDI Controller&#xa;Notes 36-38 / CC 74 / CC 75" vertex="1">
           <mxGeometry height="55" width="160" x="35" y="340" as="geometry" />
         </mxCell>
-        <mxCell id="r1-bg" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;opacity=30;" value="" vertex="1">
+        <mxCell id="5" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;opacity=30;" value="" vertex="1">
           <mxGeometry height="220" width="700" x="555" y="-80" as="geometry" />
         </mxCell>
-        <mxCell id="r1-label" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b85450;align=left;" value="VARIANT GENERATOR— drum_variation_ai_v2.py  (Python)" vertex="1">
+        <mxCell id="6" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b85450;align=left;" value="VARIANT GENERATOR— drum_variation_generator.py  (Python)" vertex="1">
           <mxGeometry height="16" width="400" x="577" y="-75" as="geometry" />
         </mxCell>
-        <mxCell id="p3-ai" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="AI Variation Engine&#xa;(rhythmic_creator model)" vertex="1">
+        <mxCell id="7" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="AI Variation Engine&#xa;(rhythmic_creator model)" vertex="1">
           <mxGeometry height="55" width="185" x="825" y="-48" as="geometry" />
         </mxCell>
-        <mxCell id="p3-watch" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="File Watchdog&#xa;monitors track_0_drums.txt" vertex="1">
+        <mxCell id="8" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="File Watchdog&#xa;monitors track_0_drums.txt" vertex="1">
           <mxGeometry height="55" width="200" x="1030" y="-48" as="geometry" />
         </mxCell>
-        <mxCell id="e-r1-wa" edge="1" parent="1" source="p3-watch" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="p3-ai">
+        <mxCell id="9" edge="1" parent="1" source="8" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="7">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-r1-ao" edge="1" parent="1" source="p3-ai" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=0.811;exitY=0.979;entryX=1;entryY=0.75;entryDx=0;entryDy=0;exitDx=0;exitDy=0;exitPerimeter=0;endArrow=classic;endFill=1;" target="19" value="">
+        <mxCell id="10" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=0.811;exitY=0.979;entryX=1;entryY=0.75;entryDx=0;entryDy=0;exitDx=0;exitDy=0;exitPerimeter=0;endArrow=classic;endFill=1;" target="49" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="r2-bg" parent="1" style="rounded=1;fillColor=#fff9db;strokeColor=#d6b656;opacity=50;" value="" vertex="1">
+        <mxCell id="11" parent="1" style="rounded=1;fillColor=#fff9db;strokeColor=#d6b656;opacity=50;" value="" vertex="1">
           <mxGeometry height="245" width="890" x="215" y="161.94" as="geometry" />
         </mxCell>
-        <mxCell id="r2-label" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b46504;align=left;" value="MAIN LOOPER -- chuloopa_drums_v4.ck  (ChucK)" vertex="1">
+        <mxCell id="12" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b46504;align=left;" value="MAIN LOOPER -- chuloopa_main.ck  (ChucK)" vertex="1">
           <mxGeometry height="16" width="400" x="235" y="170.94" as="geometry" />
         </mxCell>
-        <mxCell id="3" edge="1" parent="1" source="p2-onset" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="p2-knn" value="">
+        <mxCell id="13" edge="1" parent="1" source="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="16" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="p2-onset" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="Onset Detection&#xa;(13 MFCC Coefficients)" vertex="1">
+        <mxCell id="14" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="Onset Detection&#xa;(13 MFCC Coefficients)" vertex="1">
           <mxGeometry height="55" width="150" x="225" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="41" edge="1" parent="1" source="p2-knn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=-0.021;entryY=0.335;entryDx=0;entryDy=0;curved=0;entryPerimeter=0;" target="46">
+        <mxCell id="15" edge="1" parent="1" source="16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=-0.021;entryY=0.335;entryDx=0;entryDy=0;curved=0;entryPerimeter=0;" target="60">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="555" y="221" />
@@ -52,19 +52,19 @@
             <mxPoint x="572.5" y="235.45500000000015" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p2-knn" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="KNN Classifier&#xa;(kick / snare / hat)" vertex="1">
+        <mxCell id="16" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="KNN Classifier&#xa;(kick / snare / hat)" vertex="1">
           <mxGeometry height="55" width="145" x="390" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="42" edge="1" parent="1" source="p2-playback" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="p2-chugl">
+        <mxCell id="17" edge="1" parent="1" source="18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="19">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="p2-playback" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" value="MIDI Hit Sender" vertex="1">
+        <mxCell id="18" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" value="MIDI Hit Sender" vertex="1">
           <mxGeometry height="55" width="155" x="760" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="p2-chugl" parent="1" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" value="ChuGL Visuals&#xa;(sphere / spice display)" vertex="1">
+        <mxCell id="19" parent="1" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" value="ChuGL Visuals&#xa;(sphere / spice display)" vertex="1">
           <mxGeometry height="55" width="162" x="935" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="40" edge="1" parent="1" source="p2-export" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;">
+        <mxCell id="20" edge="1" parent="1" source="21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="735" y="324" />
@@ -74,16 +74,16 @@
             <mxPoint x="681.25" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p2-export" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=3;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(original drum pattern)" vertex="1">
+        <mxCell id="21" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=3;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(original drum pattern)" vertex="1">
           <mxGeometry height="50" width="158.5" x="936.75" y="311.94" as="geometry" />
         </mxCell>
-        <mxCell id="e-r2-le" edge="1" parent="1" source="46" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=1;exitY=0.75;entryX=0;entryY=0.75;entryDx=0;entryDy=0;exitDx=0;exitDy=0;" target="p2-export" value="">
+        <mxCell id="22" edge="1" parent="1" source="60" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=1;exitY=0.75;entryX=0;entryY=0.75;entryDx=0;entryDy=0;exitDx=0;exitDy=0;" target="21" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points" />
             <mxPoint x="717.355" y="339.07644000000005" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-r2-feedback" edge="1" parent="1" source="47" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#000000;strokeWidth=2;entryX=0.5;entryY=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="p2-playback" value="selected drum pattern">
+        <mxCell id="23" edge="1" parent="1" source="61" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#000000;strokeWidth=2;entryX=0.5;entryY=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="18" value="selected drum pattern">
           <mxGeometry relative="1" x="0.5176" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
@@ -93,25 +93,25 @@
             <mxPoint x="705" y="270" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r3-bg" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;opacity=35;" value="" vertex="1">
+        <mxCell id="24" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;opacity=35;" value="" vertex="1">
           <mxGeometry height="100" width="510" x="215" y="430" as="geometry" />
         </mxCell>
-        <mxCell id="r3-label" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b46504;align=left;" value="VARIANT CONTROLER— spice_detector.ck  (ChucK)" vertex="1">
+        <mxCell id="25" parent="1" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#b46504;align=left;" value="VARIANT CONTROLER— spice_detector.ck  (ChucK)" vertex="1">
           <mxGeometry height="16" width="400" x="234" y="430" as="geometry" />
         </mxCell>
-        <mxCell id="44" edge="1" parent="1" source="p1-analysis" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="20">
+        <mxCell id="26" edge="1" parent="1" source="27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="51">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="p1-analysis" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Audio Analysis&#xa;(Spectral Flux)" vertex="1">
+        <mxCell id="27" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Audio Analysis&#xa;(Spectral Flux)" vertex="1">
           <mxGeometry height="55" width="140" x="225" y="455" as="geometry" />
         </mxCell>
-        <mxCell id="p1-spice" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Spice Level&#xa;(0.0 – 1.0 ceiling)" vertex="1">
+        <mxCell id="28" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Spice Level&#xa;(0.0 – 1.0 ceiling)" vertex="1">
           <mxGeometry height="55" width="155" x="543.5" y="455" as="geometry" />
         </mxCell>
-        <mxCell id="ableton" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" value="🎸 Ableton Live&#xa;(Drum Rack via IAC MIDI)" vertex="1">
+        <mxCell id="29" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" value="🎸 Ableton Live&#xa;(Drum Rack via IAC MIDI)" vertex="1">
           <mxGeometry height="55" width="175" x="1140" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="e-mic-analysis" edge="1" parent="1" source="mic" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;entryX=0;entryY=0.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="p1-analysis" value="">
+        <mxCell id="30" edge="1" parent="1" source="3" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;entryX=0;entryY=0.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="27" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="205" y="221" />
@@ -120,18 +120,18 @@
             <mxPoint x="5" y="280" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-midi-spice" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.077;entryY=0.018;entryDx=0;entryDy=0;entryPerimeter=0;" target="p1-spice" value="CC 74">
-          <mxGeometry relative="1" x="-0.5022" as="geometry">
+        <mxCell id="31" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.001;entryY=0.679;entryDx=0;entryDy=0;entryPerimeter=0;" target="61" value="CC 74 -- Spice Ceiling">
+          <mxGeometry relative="1" x="-0.285" y="5" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
-              <mxPoint x="555" y="375" />
-              <mxPoint x="555" y="456" />
+              <mxPoint x="540" y="375" />
+              <mxPoint x="540" y="252" />
             </Array>
             <mxPoint x="195" y="374.5" as="sourcePoint" />
             <mxPoint x="555" y="450" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-spice-looper" edge="1" parent="1" source="p1-spice" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#FF8000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontStyle=1;endArrow=classic;endFill=1;" target="47" value="current spice level&#xa;OSC /chuloopa/spice">
+        <mxCell id="32" edge="1" parent="1" source="28" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#FF8000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontStyle=1;endArrow=classic;endFill=1;" target="61" value="current spice level&#xa;OSC /chuloopa/spice">
           <mxGeometry relative="1" x="-0.4074" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
@@ -143,7 +143,7 @@
             <mxPoint x="645" y="360" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-export-watch" edge="1" parent="1" source="p2-export" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#999999;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" target="p3-watch" value="">
+        <mxCell id="33" edge="1" parent="1" source="21" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#999999;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" target="8" value="">
           <mxGeometry relative="1" x="-0.464" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
@@ -152,7 +152,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-osc-looper" edge="1" parent="1" source="p3-ai" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#b85450;strokeWidth=2;fontStyle=1;" target="47" value="variations ready&#xa;(OSC /chuloopa/bank_ready)">
+        <mxCell id="34" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#b85450;strokeWidth=2;fontStyle=1;" target="61" value="variations ready&#xa;(OSC /chuloopa/bank_ready)">
           <mxGeometry relative="1" x="-0.4509" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
@@ -162,7 +162,7 @@
             <mxPoint x="608.75" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-play-ableton" edge="1" parent="1" source="p2-playback" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#82b366;strokeWidth=2;exitX=0.5;exitY=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="MIDI out">
+        <mxCell id="35" edge="1" parent="1" source="18" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#82b366;strokeWidth=2;exitX=0.5;exitY=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="MIDI out">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="835" y="194" />
@@ -172,7 +172,7 @@
             <mxPoint x="1252.5" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="5" edge="1" parent="1" source="mic" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="p2-onset" value="">
+        <mxCell id="36" edge="1" parent="1" source="3" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="14" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="195" y="220.94" />
@@ -182,13 +182,13 @@
             <mxPoint x="215" y="230.94" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="8" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;curved=0;strokeWidth=2;strokeColor=light-dark(#999999,#8B6A9A);" target="p2-knn">
+        <mxCell id="37" edge="1" parent="1" source="38" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;curved=0;strokeWidth=2;strokeColor=light-dark(#999999,#8B6A9A);" target="16">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="7" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;strokeWidth=3;fontColor=#333333;fontStyle=3" value="📄 training_samples.csv&#xa;(labeled training data)" vertex="1">
+        <mxCell id="38" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;strokeWidth=3;fontColor=#333333;fontStyle=3" value="📄 training_samples.csv&#xa;(labeled training data)" vertex="1">
           <mxGeometry height="55" width="162" x="35" y="70" as="geometry" />
         </mxCell>
-        <mxCell id="12" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;endArrow=classic;endFill=1;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" value="36 -- Record">
+        <mxCell id="39" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;endArrow=classic;endFill=1;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" value="36 -- Record">
           <mxGeometry relative="1" x="0.3694" as="geometry">
             <mxPoint as="offset" />
             <Array as="points" />
@@ -196,7 +196,7 @@
             <mxPoint x="575" y="352.44000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="49" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
+        <mxCell id="40" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="696" y="109" />
@@ -207,50 +207,50 @@
             <mxPoint x="680.9999999999998" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="15" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(file write on loop release)" vertex="1">
+        <mxCell id="41" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(file write on loop release)" vertex="1">
           <mxGeometry height="50" width="175" x="696.5" y="84" as="geometry" />
         </mxCell>
-        <mxCell id="37" edge="1" parent="1" source="16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
+        <mxCell id="42" edge="1" parent="1" source="43" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="681.25" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="16" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="" vertex="1">
+        <mxCell id="43" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="" vertex="1">
           <mxGeometry height="50" width="175" x="706.5" y="70" as="geometry" />
         </mxCell>
-        <mxCell id="36" edge="1" parent="1" source="17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
+        <mxCell id="44" edge="1" parent="1" source="45" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="681.25" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="17" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(file write on loop release)" vertex="1">
+        <mxCell id="45" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="📄 track_0_drums.txt&#xa;(file write on loop release)" vertex="1">
           <mxGeometry height="50" width="175" x="717.5" y="54.5" as="geometry" />
         </mxCell>
-        <mxCell id="35" edge="1" parent="1" source="18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
+        <mxCell id="46" edge="1" parent="1" source="47" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="681.25" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="18" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="" vertex="1">
+        <mxCell id="47" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;fontColor=#333333;" value="" vertex="1">
           <mxGeometry height="50" width="175" x="729.5" y="41" as="geometry" />
         </mxCell>
-        <mxCell id="38" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
+        <mxCell id="48" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="740" y="51" as="sourcePoint" />
             <mxPoint x="681.25" y="193.94000000000005" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="19" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=3;fontColor=#333333;" value="📄 track_0_drums_var1.txt&#xa;(1/5 AI variation patterns)" vertex="1">
+        <mxCell id="49" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=3;fontColor=#333333;" value="📄 track_0_drums_var1.txt&#xa;(1/5 AI variation patterns)" vertex="1">
           <mxGeometry height="50" width="175" x="740" y="26" as="geometry" />
         </mxCell>
-        <mxCell id="45" edge="1" parent="1" source="20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="p1-spice">
+        <mxCell id="50" edge="1" parent="1" source="51" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="28">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="20" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Input Mix&#xa;(Guitar vs Vocals) " vertex="1">
+        <mxCell id="51" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Input Mix&#xa;(Guitar vs Vocals) " vertex="1">
           <mxGeometry height="55" width="145" x="380" y="455" as="geometry" />
         </mxCell>
-        <mxCell id="21" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;entryX=0.91;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="20" value="CC 75">
-          <mxGeometry relative="1" x="-0.5844" as="geometry">
+        <mxCell id="52" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;entryX=0.91;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="51" value="CC 75 -- Input Mix">
+          <mxGeometry relative="1" x="-0.5065" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="512" y="387" />
@@ -259,10 +259,10 @@
             <mxPoint x="512" y="450" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="22" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;gradientColor=none;" value="🎸 Audio Input&#xa;(Instrument Input)" vertex="1">
+        <mxCell id="53" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;gradientColor=none;" value="🎸 Audio Input&#xa;(Instrument Input)" vertex="1">
           <mxGeometry height="55" width="160" x="35" y="256.94" as="geometry" />
         </mxCell>
-        <mxCell id="23" edge="1" parent="1" source="22" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="p1-analysis" value="">
+        <mxCell id="54" edge="1" parent="1" source="53" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="27" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="205" y="284" />
@@ -273,7 +273,7 @@
             <mxPoint x="305" y="290.06" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="25" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.993;entryY=0.83;entryDx=0;entryDy=0;entryPerimeter=0;curved=0;" target="18">
+        <mxCell id="55" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.993;entryY=0.83;entryDx=0;entryDy=0;entryPerimeter=0;curved=0;" target="47">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="975" y="82" />
@@ -281,7 +281,7 @@
             <mxPoint x="975" y="30" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="26" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;entryX=0.997;entryY=0.888;entryDx=0;entryDy=0;edgeStyle=orthogonalEdgeStyle;entryPerimeter=0;" target="17" value="">
+        <mxCell id="56" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;entryX=0.997;entryY=0.888;entryDx=0;entryDy=0;edgeStyle=orthogonalEdgeStyle;entryPerimeter=0;" target="45" value="">
           <mxGeometry height="50" relative="1" width="50" as="geometry">
             <Array as="points">
               <mxPoint x="975" y="99" />
@@ -290,7 +290,7 @@
             <mxPoint x="815" y="140" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="29" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;curved=0;entryX=1.001;entryY=0.805;entryDx=0;entryDy=0;entryPerimeter=0;" value="">
+        <mxCell id="57" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;curved=0;entryX=1.001;entryY=0.805;entryDx=0;entryDy=0;entryPerimeter=0;" value="">
           <mxGeometry height="50" relative="1" width="50" as="geometry">
             <Array as="points">
               <mxPoint x="975" y="113" />
@@ -300,7 +300,7 @@
             <mxPoint x="881.6750000000002" y="113.24999999999977" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="32" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;curved=0;" value="">
+        <mxCell id="58" edge="1" parent="1" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;curved=0;" value="">
           <mxGeometry height="50" relative="1" width="50" as="geometry">
             <Array as="points">
               <mxPoint x="975" y="128" />
@@ -309,31 +309,30 @@
             <mxPoint x="871.5" y="127.969696969697" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="33" connectable="0" parent="32" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="write 5 variations&lt;br&gt;different spice levels" vertex="1">
+        <mxCell id="59" connectable="0" parent="58" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="write 5 variations&lt;br&gt;different spice levels" vertex="1">
           <mxGeometry relative="1" x="-0.747" y="1" as="geometry">
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="46" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="loop recorder" vertex="1">
+        <mxCell id="60" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="loop recorder" vertex="1">
           <mxGeometry height="50" width="140" x="575" y="311.94" as="geometry" />
         </mxCell>
-        <mxCell id="47" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="Variation Selector&#xa;(weighted switch)" vertex="1">
+        <mxCell id="61" parent="1" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="Variation Selector&#xa;(weighted switch)" vertex="1">
           <mxGeometry height="86.06" width="140" x="575" y="193.94" as="geometry" />
         </mxCell>
-        <mxCell id="50" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;endArrow=classic;endFill=1;entryX=0;entryY=0.872;entryDx=0;entryDy=0;entryPerimeter=0;" target="47" value="37 -- Clear   |   38 -- Regenerate">
+        <mxCell id="62" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;strokeColor=#6c8ebf;endArrow=classic;endFill=1;entryX=0;entryY=0.872;entryDx=0;entryDy=0;entryPerimeter=0;" target="61" value="37 -- Clear   |   38 -- Regenerate">
           <mxGeometry relative="1" x="0.0277" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="385" y="343" />
               <mxPoint x="385" y="270" />
               <mxPoint x="565" y="270" />
-              <mxPoint x="565" y="269" />
             </Array>
             <mxPoint x="194" y="342.55999999999995" as="sourcePoint" />
             <mxPoint x="574" y="342" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="51" edge="1" parent="1" source="p3-ai" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#FFD966;strokeWidth=2;fontStyle=1;entryX=0.371;entryY=-0.007;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0;exitY=0.25;exitDx=0;exitDy=0;startArrow=classic;startFill=1;endArrow=none;endFill=0;" value="regenerate variations&#xa;(OSC /chuloopa/regenerate)">
+        <mxCell id="63" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;dashed=1;strokeColor=#FFD966;strokeWidth=2;fontStyle=1;entryX=0.371;entryY=-0.007;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0;exitY=0.25;exitDx=0;exitDy=0;startArrow=classic;startFill=1;endArrow=none;endFill=0;" value="regenerate variations&#xa;(OSC /chuloopa/regenerate)">
           <mxGeometry relative="1" x="-0.2293" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
