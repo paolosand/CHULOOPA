@@ -100,7 +100,7 @@ The system is implemented in ChucK (for real-time audio/MIDI processing) with Py
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{assets/chuloopa_system_diagram.png}
+  \includegraphics[width=\columnwidth]{images/chuloopa_system_diagram.png}
   \caption{CHULOOPA system architecture. Beatbox audio flows through onset detection, MFCC-13 KNN classification, and real-time drum playback into a looper, while a background Python process monitors for newly recorded patterns and automatically generates a 5-variant AI variation bank. Audio-driven spice detection selects the best variation at each loop boundary.}
   \label{fig:system_diagram}
 \end{figure}
@@ -228,7 +228,7 @@ in an accessible, end-to-end instrument for solo performers. CHULOOPA addresses 
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{assets/chuloopa - active state.png}
+  \includegraphics[width=\columnwidth]{images/chuloopa_active_state.png}
   \caption{CHULOOPA ChuGL visualization in the active variation state. The sphere turns blue during variation playback. Spice level text (center) updates in real-time from audio-driven analysis via \texttt{spice\_detector.ck}, color-coded from blue (conservative) through orange (balanced) to red (experimental).}
   \label{fig:ui_active}
 \end{figure}

@@ -3,7 +3,7 @@
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 <p align="center">
-  <img src="docs/internal/paper/assets/chuloopa%20-%20active%20state.png" alt="CHULOOPA active variation state" />
+  <img src="docs/internal/paper/images/chuloopa_active_state.png" alt="CHULOOPA active variation state" />
   <br/>
   <em>Figure 1: CHULOOPA UI active state</em>
 </p>
@@ -22,7 +22,7 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 - **Audio-Driven Spice** — `spice_detector.ck` analyzes live audio and auto-selects variations at loop boundaries
 - **OSC Integration** — Seamless Python-ChucK communication for automatic AI workflow
 - **Ableton Live Routing** — MIDI output via macOS IAC Driver (Drum Rack, FX, mixing)
-- **ChuGL Visualization** — Real-time color-coded sphere feedback
+- **ChuGL Visualization** — Real-time color-coded shape feedback (drum hit impulses, spice slider, state text)
 
 ---
 
@@ -33,6 +33,12 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 ```bash
 chuck src/drum_sample_recorder.ck
 ```
+
+<p align="center">
+  <img src="docs/internal/paper/images/drum_sample_recorder_ui.png" alt="CHULOOPA training UI" />
+  <br/>
+  <em>Training UI — shapes pulse and brighten as samples accumulate</em>
+</p>
 
 **Controls:** K = kick, S = snare, H = hi-hat (10+ samples each), E = export, P = test playback, R = full reset, ESC = close
 
@@ -67,13 +73,13 @@ chuck chuloopa_main.ck
 
 ### MIDI Controls
 
-| Control | Action |
-| ------- | ------ |
-| **Note 36** (C1) — Press & Hold | Record track 0 |
-| **Note 37** (C#1) | Clear track 0 |
-| **Note 38** (D1) | Regenerate full variation bank |
-| **CC 74** | Spice ceiling (0.0–1.0) — caps audio-driven spice |
-| **CC 75** | Input mix (0.0–1.0) — blends guitar vs. vocal input (requires 2-channel audio interface) |
+| Control                         | Action                                                                                   |
+| ------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Note 36** (C1) — Press & Hold | Record track 0                                                                           |
+| **Note 37** (C#1)               | Clear track 0                                                                            |
+| **Note 38** (D1)                | Regenerate full variation bank                                                           |
+| **CC 74**                       | Spice ceiling (0.0–1.0) — caps audio-driven spice                                        |
+| **CC 75**                       | Input mix (0.0–1.0) — blends guitar vs. vocal input (requires 2-channel audio interface) |
 
 Variation selection is **automatic** — `spice_detector.ck` streams audio energy every 500ms, and ChucK selects the best-matching variation at each loop boundary (rolling 4-bar window). CC 74 sets a ceiling on how high the spice can go.
 
@@ -108,49 +114,47 @@ ChucK (MidiOut) → IAC Driver Bus 1 → DAW MIDI Track → Drum Rack
 ## Technical Architecture
 
 <p align="center">
-  <img src="docs/internal/paper/assets/chuloopa_system_diagram.png" alt="CHULOOPA system architecture diagram" />
+  <img src="docs/internal/paper/images/chuloopa_system_diagram.png" alt="CHULOOPA system architecture diagram" />
   <br/>
   <em>Figure 2: CHULOOPA system architecture</em>
 </p>
 
 ### Pipeline
 
-```
-spice_detector.ck → /chuloopa/spice → Python + ChucK (every 500ms)
-         ↓
-drum_variation_generator.py → 5-variant bank (spice 0.2/0.4/0.6/0.8/1.0)
-         ↓
-chuloopa_main.ck → beatbox → MFCC-13 KNN → Ableton MIDI
-         ↓
-Loop exported → Python watchdog → variation bank regenerated
-         ↓
-Audio spice (rolling 4-bar avg) → best variant selected at loop boundary
-         ↓
-CC 74 sets spice ceiling · Note 38 triggers manual regeneration
-```
+See system diagram above. In brief:
+
+- **spice_detector.ck** analyzes live audio → sends `/chuloopa/spice` to **chuloopa_main.ck** every 500ms
+- **drum_variation_generator.py** watches `track_0_drums.txt` → generates 5-variant bank (spice 0.2/0.4/0.6/0.8/1.0) → notifies ChucK via `/chuloopa/bank_ready`
+- **chuloopa_main.ck** records beatbox → MFCC-13 KNN → Ableton MIDI → at loop boundary, selects best variant based on rolling 4-bar spice average (capped by CC 74 ceiling)
 
 ### OSC Messages
 
-| Address | Direction | Purpose |
-| ------- | --------- | ------- |
-| `/chuloopa/bank_ready` | Python → ChucK | All 5 variations ready |
-| `/chuloopa/variation_available` | Python → ChucK | Index + spice of each ready variant |
-| `/chuloopa/regenerate` | ChucK → Python | Request full bank regeneration |
-| `/chuloopa/spice` | spice_detector → Python + ChucK | Audio-driven spice (0.0–1.0) |
-| `/chuloopa/clear` | ChucK → Python | Track cleared |
+| Address                         | Direction              | Purpose                             |
+| ------------------------------- | ---------------------- | ----------------------------------- |
+| `/chuloopa/bank_ready`          | Python → ChucK         | All 5 variations ready              |
+| `/chuloopa/variation_available` | Python → ChucK         | Index + spice of each ready variant |
+| `/chuloopa/regenerate`          | ChucK → Python         | Request full bank regeneration      |
+| `/chuloopa/spice`               | spice_detector → ChucK | Audio-driven spice (0.0–1.0)        |
+| `/chuloopa/clear`               | ChucK → Python         | Track cleared                       |
 
 **Ports:** ChucK → `localhost:5000`, Python → `127.0.0.1:5001` (use `127.0.0.1` — pythonosc doesn't resolve `localhost` reliably).
 
 ### ChuGL Visual Feedback
 
-| Sphere Color | State |
-| ------------ | ----- |
-| Gray | No loop recorded |
-| Red | Playing original loop |
-| Green | Variation bank ready |
-| Blue | Playing a variation |
+Shapes (cube / octahedron / dodecahedron / icosahedron) pulse on each drum hit and change color by state:
 
-Spice text: blue (0.0–0.3 conservative) → orange (0.4–0.6 balanced) → red (0.7–1.0 experimental).
+| Shape Color                  | State                                          |
+| ---------------------------- | ---------------------------------------------- |
+| Dim gray                     | Idle (no loop)                                 |
+| Gray (blinking red text)     | Recording                                      |
+| Dim gray                     | Muted (silence gate active)                    |
+| Blue                         | Playing original loop                          |
+| Blue-green tint              | Variation bank ready (not yet playing)         |
+| Blue → Yellow → Red gradient | Playing a variation (color tracks spice level) |
+
+**Spice slider** (`ECHO ━━━ VAR`): bar moves right as spice increases. Color: blue (low) → orange (mid) → red (high).
+
+**State text** shows current mode: Idle / Recording / Echo / Var N/5 / Muted.
 
 ---
 
@@ -171,8 +175,7 @@ CHULOOPA/
 │
 ├── samples/                          # kick.wav, snare.wav, hat.WAV
 ├── requirements.txt
-├── training_samples.csv              # Generated on first recorder run
-└── drum_classifier.pkl               # Generated on first CHULOOPA run
+└── training_samples.csv              # Generated on first recorder run
 ```
 
 ---
@@ -182,6 +185,7 @@ CHULOOPA/
 **Phase 2 ✅ Complete (March 2026):** Offline AI variation bank, audio-driven spice, MFCC-13 KNN, OSC integration, weighted probabilistic selection, single-track workflow.
 
 **Phase 3 — Multi-Track (Planned):**
+
 - [ ] 3 simultaneous tracks with independent variation control
 - [ ] Per-track spice levels and visual feedback (3 spheres)
 - [ ] Cross-track variation coherence
@@ -193,9 +197,11 @@ CHULOOPA/
 **ChucK:** 1.5.x+ with ChuGL support (STK included)
 
 **Python 3.10+:**
+
 ```bash
 pip install -r requirements.txt
 ```
+
 Key packages: `python-osc`, `watchdog`, `torch`, `scikit-learn`, `numpy`
 
 **Hardware:** MIDI controller with CC 74 knob, microphone
