@@ -23,7 +23,7 @@
 
 \hyphenation{beat-box beat-box-ing ChucK CHULO-OPA}
 
-\title{CHULOOPA: A User-Trainable Beatbox-to-Drum System with Timing-Preserving AI Variation}
+\title{CHULOOPA: A Voice-Controlled Dynamic Drum Looper with Audio-Responsive AI Variation}
 
 \author{%
   Paolo Sandejas \\
@@ -38,10 +38,10 @@
 \twocolumn[%
   \maketitle
   \begin{abstract}
-    We present CHULOOPA, a voice-controlled drum looping system that exemplifies mediated musicianship in the generative AI era. By training on just 10 user-specific beatbox samples per drum class, the system achieves \textbf{$\sim$(COMPUTE FOR ACTUAL ACCURACY)\%} classification accuracy through personalized K-Nearest Neighbors (MFCC-13 features), challenging the ``more data'' paradigm. AI-generated variations preserve non-quantized timing via continuation-based generation from a local transformer-LSTM, maintaining human ``groove'' while introducing creative diversity. A background process pre-generates a bank of 5 variations at varying spice levels; audio-driven spice detection then automatically selects the best-matching variant at each loop boundary, keeping performers ``in the loop'' without manual intervention. This offline-first architecture demonstrates accessible creative AI without requiring massive datasets, cloud APIs, or quantization.
+    Live loopers are inherently repetitive --- the same pattern cycles indefinitely, limiting the musical dynamics of a live performance. CHULOOPA is a dynamic drum looper that uses beatbox input to create patterns, then autonomously varies them based on the performer's live musical energy, or ``spice'' --- a composite audio feature derived from spectral flux, RMS energy, and onset density. At loop boundaries, one of 5 pre-generated variations (from rhythmic\_creator, a transformer-LSTM drum pattern generator) is selected to match the current spice level; continuation-based generation preserves non-quantized timing, maintaining human groove across variations. Variations span a spectrum from subtle to experimental (spice 0.2--1.0), generated offline on consumer hardware. CHULOOPA demonstrates that a looper can be musically consistent yet dynamically responsive.
   \end{abstract}
 
-  \textbf{Keywords:} beatbox classification, personalized ML, timing preservation, co-creative AI, mediated musicianship
+  \textbf{Keywords:} dynamic looping, audio-driven variation, spice detection, timing preservation, co-creative AI, live performance
 ]
 
 \aimcnotice
