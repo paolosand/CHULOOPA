@@ -218,6 +218,36 @@ class DrumPattern:
 # ALGORITHMIC VARIATIONS
 # =============================================================================
 
+# MIDI notes considered "core kit" — kick variants, snare variants, closed hat
+CORE_KIT = {35, 36, 38, 40, 42}
+
+
+def compute_deviation_score(variation: 'DrumPattern', original: 'DrumPattern') -> float:
+    """Score how much a variation deviates from the original pattern.
+
+    Higher score = more deviant. Used to sort the variation bank so slot 1
+    is always the least deviant and slot 5 is the most deviant.
+
+    Args:
+        variation: Generated variation (already trimmed to loop boundary)
+        original: Original user-recorded pattern
+
+    Returns:
+        Deviation score (can be negative if variation has fewer hits than original)
+
+    Score formula:
+        hit_delta + 0.3 * non_standard_count
+        - hit_delta: len(variation.hits) - len(original.hits)
+          Primary driver. More hits = more complex.
+        - non_standard_count: hits whose midi_note is not in CORE_KIT
+          Secondary. Exotic notes (open hat, crash, ride, toms) add complexity.
+          Weighted 0.3 so a few exotic notes don't outweigh a hit count difference.
+    """
+    hit_delta = len(variation.hits) - len(original.hits)
+    non_standard = sum(1 for h in variation.hits if h.midi_note not in CORE_KIT)
+    return hit_delta + 0.3 * non_standard
+
+
 def humanize_pattern(pattern: DrumPattern,
                      timing_variance: float = 0.02,
                      velocity_variance: float = 0.1) -> DrumPattern:
