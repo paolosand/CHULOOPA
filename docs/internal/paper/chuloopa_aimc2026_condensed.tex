@@ -23,7 +23,7 @@
 
 \hyphenation{beat-box beat-box-ing ChucK CHULO-OPA}
 
-\title{CHULOOPA: A Voice-Controlled Dynamic Drum Looper with Audio-Responsive AI Variation}
+\title{Loops That Listen: A Voice-Controlled Dynamic Drum Looper with AI Variation}
 
 \author{%
   Paolo Sandejas \\
@@ -48,7 +48,7 @@
 \twocolumn[%
   \maketitle
   \begin{abstract}
-    Live loopers are inherently repetitive --- the same pattern cycles indefinitely, limiting the musical dynamics of a live performance. CHULOOPA is a dynamic drum looper that uses beatbox input to create patterns, then autonomously varies them based on the performer's live musical energy, or ``spice'' --- a composite audio feature derived from spectral flux, RMS energy, and onset density. At loop boundaries, one of 5 pre-generated variations (from rhythmic\_creator, a transformer-LSTM drum pattern generator) is selected to match the current spice level; continuation-based generation preserves non-quantized timing, maintaining human groove across variations. Variations span a spectrum from subtle to experimental (spice 0.2--1.0), generated offline on consumer hardware. CHULOOPA demonstrates that a looper can be musically consistent yet dynamically responsive.
+    Live loopers are inherently repetitive --- the same pattern cycles indefinitely, limiting the musical dynamics of a live performance. CHULOOPA is a dynamic drum looper that uses beatbox input to create patterns, then autonomously varies them based on the performer's live musical energy, or ``spice'' --- a composite audio feature derived from spectral flux, RMS energy, and onset density. At loop boundaries, one of 5 pre-generated variations (from rhythmic\_creator, a hybrid transformer based model drum pattern generator) is selected to match the current spice level; continuation-based generation preserves non-quantized timing, maintaining human groove across variations. Variations span a spectrum from subtle to experimental (spice 0.2--1.0), generated offline on consumer hardware. CHULOOPA demonstrates that a looper can be musically consistent yet dynamically responsive.
   \end{abstract}
 
   \textbf{Keywords:} dynamic looping, audio-driven variation, spice detection, timing preservation, co-creative AI, live performance
