@@ -85,7 +85,7 @@ OSC_HOST = "127.0.0.1"   # Use IP instead of "localhost" for better compatibilit
 osc_client = None
 
 # Global state
-use_no_warp = False  # Skip time-warping if True
+use_no_warp = True  # Skip time-warping by default (preserve rhythmic_creator natural timing)
 use_no_anchor = True  # Timing anchoring off by default (rhythmic_creator output is solid)
 use_no_ai = False  # Force heuristic generation (skip AI) if True
 context_loops = 1  # How many times to repeat loop in context (1, 2, 4, 8) - DEFAULT: 1
@@ -1778,8 +1778,8 @@ OSC Communication:
     parser.add_argument('--temperature', type=float, default=0.7,
                         help='Gemini sampling temperature (0.0-1.0, default 0.7)')
 
-    parser.add_argument('--no-warp', action='store_true',
-                        help='Skip time-warping (use model\'s natural timing)')
+    parser.add_argument('--warp', action='store_true',
+                        help='Enable time-warping to fit exact loop duration (off by default)')
 
     parser.add_argument('--cpu', action='store_true',
                         help='Force CPU inference (more consistent, avoids thermal throttling on MPS/GPU)')
@@ -1797,7 +1797,7 @@ OSC Communication:
 
     # Set global flags
     global use_no_warp, force_cpu, use_no_anchor, use_no_ai, context_loops
-    use_no_warp = args.no_warp
+    use_no_warp = not args.warp
     force_cpu = args.cpu
     use_no_anchor = not args.anchor  # Default True (anchoring OFF); --anchor enables it
     use_no_ai = args.no_ai
