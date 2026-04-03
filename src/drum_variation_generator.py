@@ -1240,6 +1240,56 @@ def cancel_generation():
         generation_queue.clear()
 
 
+def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
+    """Sort written variation files by deviation score ascending (least → most deviant).
+
+    Loads each written variation from disk, scores it against the original,
+    sorts by score, then rewrites var1..var{n}.txt in sorted order.
+    In-memory rewrite avoids rename conflicts.
+
+    Args:
+        written_slots: Set of slot ints (1-5) that were successfully written
+        original: Original user-recorded pattern (used as deviation reference)
+    """
+    if not written_slots or len(written_slots) < 2:
+        return  # Nothing to sort
+
+    variations_dir = DEFAULT_VARIATIONS_DIR
+
+    # Load all written variations from disk (guarantees we score the trimmed, saved version)
+    slot_patterns = {}
+    for slot in written_slots:
+        var_file = variations_dir / f"track_0_drums_var{slot}.txt"
+        if var_file.exists():
+            try:
+                slot_patterns[slot] = DrumPattern.from_file(str(var_file))
+            except Exception as e:
+                print(f"  [Sort] Could not load var{slot}: {e}")
+
+    if len(slot_patterns) < 2:
+        return  # Not enough variations to sort
+
+    # Score each variation
+    scored = [(slot, compute_deviation_score(pat, original)) for slot, pat in slot_patterns.items()]
+    scored.sort(key=lambda x: x[1])  # ascending: least deviant first
+
+    print(f"  [Sort] Deviation scores: {[(f'var{s}', f'{sc:.2f}') for s, sc in scored]}")
+
+    # Hold all patterns in memory before writing (avoids partial-write issues)
+    ordered_patterns = [slot_patterns[slot] for slot, _ in scored]
+
+    # Rewrite slots in sorted order
+    sorted_slots = sorted(written_slots)  # e.g. [1, 2, 3, 4, 5]
+    for final_slot, variation in zip(sorted_slots, ordered_patterns):
+        out_file = variations_dir / f"track_0_drums_var{final_slot}.txt"
+        try:
+            variation.to_file(str(out_file))
+        except Exception as e:
+            print(f"  [Sort] Could not write var{final_slot}: {e}")
+
+    print(f"  [Sort] Bank sorted: slot 1 = least deviant, slot {max(sorted_slots)} = most deviant")
+
+
 def _generation_worker():
     """Coordinator: spawns one thread per slot, joins in order, fires bank_ready on slot 1."""
     variations_dir = DEFAULT_VARIATIONS_DIR
