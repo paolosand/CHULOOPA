@@ -1330,37 +1330,31 @@ def _generation_worker():
     for t in threads.values():
         t.start()
 
-    completed_slots = set()
-    bank_ready_sent = False
-
-    # Join in slot order — bank_ready fires when slot 1 specifically completes
+    # Join all slot threads before sorting
     for slot in slots:
         threads[slot].join()
-        completed_slots.add(slot)
         print(f"  [Worker] Slot {slot} joined")
 
-        if slot == 1 and not bank_ready_sent and 1 in written_slots and not stop_event.is_set() and osc_client:
-            try:
-                osc_client.send_message("/chuloopa/bank_ready", 0)
-                osc_client.send_message("/chuloopa/generation_progress",
-                                        "var1 ready — auto-switching enabled")
-                bank_ready_sent = True
-                print("  [Worker] bank_ready sent (slot 1 complete)")
-            except Exception as e:
-                print(f"  [Worker] OSC error sending bank_ready: {e}")
+    if stop_event.is_set():
+        print(f"  [Worker] Cancelled — skipping sort and bank_ready")
+        return
 
-    # Fallback: if slot 1 failed for any reason
-    if not bank_ready_sent and written_slots and not stop_event.is_set() and osc_client:
-        lowest = min(written_slots)
+    # Sort bank by deviation score (least → most deviant) then send bank_ready
+    if written_slots:
+        _sort_variation_bank(written_slots, pattern)
+
+    bank_ready_sent = False
+
+    if written_slots and not stop_event.is_set() and osc_client:
         try:
             osc_client.send_message("/chuloopa/bank_ready", 0)
             osc_client.send_message("/chuloopa/generation_progress",
-                                    f"var{lowest} ready — auto-switching enabled")
+                                    "Bank ready — sorted by deviation")
             bank_ready_sent = True
+            print("  [Worker] bank_ready sent (bank sorted)")
         except Exception as e:
-            print(f"  [Worker] OSC error sending bank_ready fallback: {e}")
+            print(f"  [Worker] OSC error sending bank_ready: {e}")
 
-    # All-fail case — notify ChucK (only if nothing was written and not cancelled)
     if not bank_ready_sent and not written_slots and not stop_event.is_set() and osc_client:
         try:
             osc_client.send_message("/chuloopa/generation_progress",
