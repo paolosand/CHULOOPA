@@ -1291,7 +1291,7 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
 
 
 def _generation_worker():
-    """Coordinator: spawns one thread per slot, joins in order, fires bank_ready on slot 1."""
+    """Coordinator: spawns one thread per slot, joins all, sorts bank by deviation, fires bank_ready."""
     variations_dir = DEFAULT_VARIATIONS_DIR
     variations_dir.mkdir(parents=True, exist_ok=True)
 
