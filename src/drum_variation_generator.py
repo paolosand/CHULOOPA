@@ -1279,7 +1279,7 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
     ordered_patterns = [slot_patterns[slot] for slot, _ in scored]
 
     # Rewrite slots in sorted order
-    sorted_slots = sorted(written_slots)  # e.g. [1, 2, 3, 4, 5]
+    sorted_slots = sorted(slot_patterns.keys())  # only slots that loaded successfully
     for final_slot, variation in zip(sorted_slots, ordered_patterns):
         out_file = variations_dir / f"track_0_drums_var{final_slot}.txt"
         try:
@@ -1384,7 +1384,7 @@ def start_full_bank_generation():
 def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
     """Generate all 5 variation slots in parallel.
 
-    /chuloopa/bank_ready 0 is sent when slot 1 completes to enable auto-switching.
+    /chuloopa/bank_ready 0 is sent after all slots complete and the bank is sorted by deviation.
     """
     global current_variation_type
     current_variation_type = variation_type

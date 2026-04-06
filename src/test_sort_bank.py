@@ -42,20 +42,17 @@ def test_sort_bank_rewrites_in_order():
     # Expected sorted order by score: var2(-2.0), var3(0.0), var5(1.2), var1(2.0), var4(3.9)
     # So after sort: slot1=var2(2 hits), slot2=var3(4 hits), slot3=var5(4 hits), slot4=var1(6 hits), slot5=var4(7 hits)
 
+    import drum_variation_generator as dvg
+    original_dir = dvg.DEFAULT_VARIATIONS_DIR
     tmpdir = Path(tempfile.mkdtemp())
     try:
         for slot, pat in variations.items():
             pat.to_file(str(tmpdir / f"track_0_drums_var{slot}.txt"))
 
         # Monkeypatch DEFAULT_VARIATIONS_DIR
-        import drum_variation_generator as dvg
-        original_dir = dvg.DEFAULT_VARIATIONS_DIR
         dvg.DEFAULT_VARIATIONS_DIR = tmpdir
 
         _sort_variation_bank(set(variations.keys()), original)
-
-        # Restore
-        dvg.DEFAULT_VARIATIONS_DIR = original_dir
 
         # Load sorted files and check hit counts match expected order
         hit_counts = []
@@ -74,25 +71,26 @@ def test_sort_bank_rewrites_in_order():
         print("  PASS  test_sort_bank_rewrites_in_order")
 
     finally:
+        dvg.DEFAULT_VARIATIONS_DIR = original_dir
         shutil.rmtree(tmpdir)
 
 
 def test_sort_bank_single_slot_is_noop():
     """With only 1 written slot, _sort_variation_bank returns without error."""
     original = make_pattern([(36, 0.0), (38, 1.0)])
+    import drum_variation_generator as dvg
+    original_dir = dvg.DEFAULT_VARIATIONS_DIR
     tmpdir = Path(tempfile.mkdtemp())
     try:
         pat = make_pattern([(36, 0.0), (42, 0.5)])
         pat.to_file(str(tmpdir / "track_0_drums_var1.txt"))
 
-        import drum_variation_generator as dvg
-        original_dir = dvg.DEFAULT_VARIATIONS_DIR
         dvg.DEFAULT_VARIATIONS_DIR = tmpdir
         _sort_variation_bank({1}, original)  # Should not raise
-        dvg.DEFAULT_VARIATIONS_DIR = original_dir
 
         print("  PASS  test_sort_bank_single_slot_is_noop")
     finally:
+        dvg.DEFAULT_VARIATIONS_DIR = original_dir
         shutil.rmtree(tmpdir)
 
 
