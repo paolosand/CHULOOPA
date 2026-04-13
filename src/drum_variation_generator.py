@@ -218,6 +218,36 @@ class DrumPattern:
 # ALGORITHMIC VARIATIONS
 # =============================================================================
 
+# MIDI notes considered "core kit" — kick variants, snare variants, closed hat
+CORE_KIT = {35, 36, 38, 40, 42}
+
+
+def compute_deviation_score(variation: 'DrumPattern', original: 'DrumPattern') -> float:
+    """Score how much a variation deviates from the original pattern.
+
+    Higher score = more deviant. Used to sort the variation bank so slot 1
+    is always the least deviant and slot 5 is the most deviant.
+
+    Args:
+        variation: Generated variation (already trimmed to loop boundary)
+        original: Original user-recorded pattern
+
+    Returns:
+        Deviation score (can be negative if variation has fewer hits than original)
+
+    Score formula:
+        hit_delta + 0.3 * non_standard_count
+        - hit_delta: len(variation.hits) - len(original.hits)
+          Primary driver. More hits = more complex.
+        - non_standard_count: hits whose midi_note is not in CORE_KIT
+          Secondary. Exotic notes (open hat, crash, ride, toms) add complexity.
+          Weighted 0.3 so a few exotic notes don't outweigh a hit count difference.
+    """
+    hit_delta = len(variation.hits) - len(original.hits)
+    non_standard = sum(1 for h in variation.hits if h.midi_note not in CORE_KIT)
+    return hit_delta + 0.3 * non_standard
+
+
 def humanize_pattern(pattern: DrumPattern,
                      timing_variance: float = 0.02,
                      velocity_variance: float = 0.1) -> DrumPattern:
@@ -1210,8 +1240,58 @@ def cancel_generation():
         generation_queue.clear()
 
 
+def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
+    """Sort written variation files by deviation score ascending (least → most deviant).
+
+    Loads each written variation from disk, scores it against the original,
+    sorts by score, then rewrites var1..var{n}.txt in sorted order.
+    In-memory rewrite avoids rename conflicts.
+
+    Args:
+        written_slots: Set of slot ints (1-5) that were successfully written
+        original: Original user-recorded pattern (used as deviation reference)
+    """
+    if not written_slots or len(written_slots) < 2:
+        return  # Nothing to sort
+
+    variations_dir = DEFAULT_VARIATIONS_DIR
+
+    # Load all written variations from disk (guarantees we score the trimmed, saved version)
+    slot_patterns = {}
+    for slot in written_slots:
+        var_file = variations_dir / f"track_0_drums_var{slot}.txt"
+        if var_file.exists():
+            try:
+                slot_patterns[slot] = DrumPattern.from_file(str(var_file))
+            except Exception as e:
+                print(f"  [Sort] Could not load var{slot}: {e}")
+
+    if len(slot_patterns) < 2:
+        return  # Not enough variations to sort
+
+    # Score each variation
+    scored = [(slot, compute_deviation_score(pat, original)) for slot, pat in slot_patterns.items()]
+    scored.sort(key=lambda x: x[1])  # ascending: least deviant first
+
+    print(f"  [Sort] Deviation scores: {[(f'var{s}', f'{sc:.2f}') for s, sc in scored]}")
+
+    # Hold all patterns in memory before writing (avoids partial-write issues)
+    ordered_patterns = [slot_patterns[slot] for slot, _ in scored]
+
+    # Rewrite slots in sorted order
+    sorted_slots = sorted(slot_patterns.keys())  # only slots that loaded successfully
+    for final_slot, variation in zip(sorted_slots, ordered_patterns):
+        out_file = variations_dir / f"track_0_drums_var{final_slot}.txt"
+        try:
+            variation.to_file(str(out_file))
+        except Exception as e:
+            print(f"  [Sort] Could not write var{final_slot}: {e}")
+
+    print(f"  [Sort] Bank sorted: slot 1 = least deviant, slot {max(sorted_slots)} = most deviant")
+
+
 def _generation_worker():
-    """Coordinator: spawns one thread per slot, joins in order, fires bank_ready on slot 1."""
+    """Coordinator: spawns one thread per slot, joins all, sorts bank by deviation, fires bank_ready."""
     variations_dir = DEFAULT_VARIATIONS_DIR
     variations_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1250,37 +1330,31 @@ def _generation_worker():
     for t in threads.values():
         t.start()
 
-    completed_slots = set()
-    bank_ready_sent = False
-
-    # Join in slot order — bank_ready fires when slot 1 specifically completes
+    # Join all slot threads before sorting
     for slot in slots:
         threads[slot].join()
-        completed_slots.add(slot)
         print(f"  [Worker] Slot {slot} joined")
 
-        if slot == 1 and not bank_ready_sent and 1 in written_slots and not stop_event.is_set() and osc_client:
-            try:
-                osc_client.send_message("/chuloopa/bank_ready", 0)
-                osc_client.send_message("/chuloopa/generation_progress",
-                                        "var1 ready — auto-switching enabled")
-                bank_ready_sent = True
-                print("  [Worker] bank_ready sent (slot 1 complete)")
-            except Exception as e:
-                print(f"  [Worker] OSC error sending bank_ready: {e}")
+    if stop_event.is_set():
+        print(f"  [Worker] Cancelled — skipping sort and bank_ready")
+        return
 
-    # Fallback: if slot 1 failed for any reason
-    if not bank_ready_sent and written_slots and not stop_event.is_set() and osc_client:
-        lowest = min(written_slots)
+    # Sort bank by deviation score (least → most deviant) then send bank_ready
+    if written_slots:
+        _sort_variation_bank(written_slots, pattern)
+
+    bank_ready_sent = False
+
+    if written_slots and not stop_event.is_set() and osc_client:
         try:
             osc_client.send_message("/chuloopa/bank_ready", 0)
             osc_client.send_message("/chuloopa/generation_progress",
-                                    f"var{lowest} ready — auto-switching enabled")
+                                    "Bank ready — sorted by deviation")
             bank_ready_sent = True
+            print("  [Worker] bank_ready sent (bank sorted)")
         except Exception as e:
-            print(f"  [Worker] OSC error sending bank_ready fallback: {e}")
+            print(f"  [Worker] OSC error sending bank_ready: {e}")
 
-    # All-fail case — notify ChucK (only if nothing was written and not cancelled)
     if not bank_ready_sent and not written_slots and not stop_event.is_set() and osc_client:
         try:
             osc_client.send_message("/chuloopa/generation_progress",
@@ -1310,7 +1384,7 @@ def start_full_bank_generation():
 def generate_variation_bank(track_file: Path, variation_type: str = 'rhythmic_creator'):
     """Generate all 5 variation slots in parallel.
 
-    /chuloopa/bank_ready 0 is sent when slot 1 completes to enable auto-switching.
+    /chuloopa/bank_ready 0 is sent after all slots complete and the bank is sorted by deviation.
     """
     global current_variation_type
     current_variation_type = variation_type
