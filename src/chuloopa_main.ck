@@ -1768,7 +1768,7 @@ fun void visualizationLoop() {
         }
         else if(variation_mode_active) {
             // PLAYING VARIATION: Gradient based on effective_spice
-            // Blue (low) → Yellow (mid) → Red (high)
+            // Blue (low) → Yellow (high) — upper range drops green by 0.1 only, stays yellow
             if(effective_spice < 0.5) {
                 // Blue to Yellow gradient (0.0 - 0.5)
                 effective_spice * 2.0 => float t;

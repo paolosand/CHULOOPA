@@ -20,6 +20,8 @@
 \usepackage{graphicx}
 \usepackage{grffile}
 \usepackage{cleveref}
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
 
 \hyphenation{beat-box beat-box-ing ChucK CHULO-OPA}
 
@@ -48,7 +50,7 @@
 \twocolumn[%
   \maketitle
   \begin{abstract}
-    Looping systems are inherently repetitive --- the same pattern cycles indefinitely, limiting the musical dynamics of a live performance. CHULOOPA is a dynamic drum looper that uses beatbox input to create patterns, then autonomously varies them based on the performer's live musical energy, or ``spice'' --- a composite audio feature derived from spectral flux, RMS energy, and onset density. At loop boundaries, one of 5 pre-generated variations (from rhythmic\_creator, a hybrid transformer based model drum pattern generator) is selected to match the current spice level; continuation-based generation preserves non-quantized timing, maintaining human groove across variations. Variations span a spectrum from subtle to experimental (spice 0.2--1.0), generated offline on consumer hardware. CHULOOPA demonstrates that a looper can be musically consistent yet dynamically responsive.
+    Looping systems are inherently repetitive --- the same pattern cycles indefinitely, limiting the musical dynamics of a live performance. CHULOOPA is a dynamic drum looper that uses beatbox input to create patterns, then autonomously varies them based on the performer's live musical energy, or ``spice'' --- a dBFS-mapped RMS measure of the live audio environment. At loop boundaries, one of 5 pre-generated variations (from rhythmic\_creator, a hybrid transformer based model drum pattern generator) is selected to match the current spice level; continuation-based generation preserves non-quantized timing, maintaining human groove across variations. Variations span a spectrum from subtle to adventurous (spice 0.2--1.0), generated offline on consumer hardware. CHULOOPA demonstrates that inherent repetition need not be a constraint: with AI mediation, the loop becomes dynamically expressive without losing its musical identity.
   \end{abstract}
 
   \textbf{Keywords:} dynamic looping, audio-driven variation, spice detection, timing preservation, co-creative AI, live performance
@@ -59,40 +61,26 @@
 
 \section{INTRODUCTION}
 
-As generative AI systems increasingly mediate musical creation, questions arise about agency, accessibility, and creative control. Most AI music tools demand either technical expertise (programming, music theory) or reliance on cloud platforms (API dependencies, data privacy concerns). We ask: \emph{Can AI-mediated musicianship be accessible, personalized, and preserve human expression?}
+The strength of a loop is also its main constraint: once recorded, it never changes. For drum loops in live performance, this constraint is especially pronounced. Where a live drummer would subtly add fills, vary dynamics, or shift the groove to match the moment, a drum loop plays back identically every cycle. While not always undesired, as static loops provide rhythmic stability and free the performer's attention, over time, an unchanging loop can feel lifeless---lacking the organic variation that makes live drumming compelling. How do we bring dynamic musicality to drum loops without sacrificing their stability?
 
-CHULOOPA (ChucK-based User-trainable Loop Operator for Performance Audio \citep{wang2015chuck}) addresses this through \textbf{personalization-over-scale}: rather than training generic models on massive datasets, we create user-trainable tools that adapt to individual creative practices. A solo performer beatboxes 10 samples each of kick, snare, and hi-hat---their own idiosyncratic sounds---and the system learns \emph{their} vocabulary. This challenges the assumption that music AI requires extensive training data \citep{weber2024realtime}.
+CHULOOPA (ChucK-based Loop Operator for Performance Audio) is a voice-controlled dynamic drum looper that addresses this. A performer beatboxes a drum pattern; the system transcribes it in real-time, loops it, and immediately generates a bank of 5 AI variations at different creative levels. Simultaneously, the system continuously reads the performer's live audio energy or spice---a composite of spectral flux, RMS energy, and onset density. At each loop boundary, CHULOOPA automatically selects the variation that best matches the current musical moment. The loop listens.
 
 \subsection{Novel Contributions}
 
-\textbf{1. Minimal-data personalization:} 10 user-specific samples per class achieve \textbf{$\sim$(COMPUTE FOR ACTUAL ACCURACY)\%} accuracy for amateur beatbox classification, demonstrating that constraining the problem space to one user's style enables high accuracy without large datasets.
+\textbf{1. Audio-driven variation selection:} A spice detector continuously reads live audio energy; at each loop boundary, the system performs weighted probabilistic selection from a pre-generated bank of 5 variations, with weights interpolated from a spice-indexed table to favour variations nearest the current spice level---no manual intervention required. Prior intelligent loopers either transform continuously, require manual feature-setting, or adapt microtiming rather than pattern structure.
 
-\textbf{2. Timing-preserving AI variation:} Continuation-based variation generation using a local transformer-LSTM preserves non-quantized timing, maintaining human ``feel'' while introducing musical diversity.
-
-\textbf{3. Mediated musicianship design:} Audio-driven spice detection, pre-generated 5-variant banks, queued actions at loop boundaries, and offline-first architecture keep the artist ``in the loop,'' exemplifying distributed agency between human and AI.
-
-\subsection{Alignment with Conference Theme}
-
-CHULOOPA engages with \emph{mediated musicianship in a hyper-reproductive age} by:
-\begin{itemize}
-\item \textbf{Challenging hyper-reproduction}: Local AI inference (no cloud platforms) resists centralized generative infrastructures
-\item \textbf{Responsive AI}: Audio-driven spice detection reads live musical energy and selects variations accordingly; the performer sets a ceiling rather than issuing manual commands
-\item \textbf{Distributed agency}: Human beatbox input + AI variation = collaborative authorship
-\item \textbf{Accessibility}: Voice interface and minimal training (5 minutes) lower barriers to AI-mediated creation
-\end{itemize}
+\textbf{2. Voice as a loop creation interface:} CHULOOPA is the first intelligent looper where the performer creates drum loops using only their voice---beatbox input transcribed in real-time via a user-trained KNN classifier. Prior intelligent loopers require guitar, MIDI files, or grid-based GUIs, limiting accessibility.
 
 
 \section{RELATED WORK}
 
-\textbf{Beatbox Recognition.} \citet{stowell2010beatbox} achieved high accuracy for professional beatboxers using large datasets. \citet{delgado2019dataset} showed amateur beatboxers are inconsistent \emph{across} performers but consistent \emph{within} their own styles---validating our personalization approach. Recent work \citep{martanto2025beatbox} confirms KNN achieves 94.55\% accuracy for beatbox with optimal features.
+\textbf{Intelligent Loopers.} The Reflexive Looper \citep{marchini2017reflexive} established the paradigm of intelligent looping agents that adapt to a musician in real-time, using constrained optimization to select musical material at each beat. \citet{shepardson2023living} extended this with the Living Looper: rather than replaying recorded audio, each loop channel fits a generative RAVE autoencoder model to the recording and continuously re-synthesizes it, causing the loop to drift and transform over time. Neither system offers a pre-generated variation bank spanning a controllable creativity spectrum, nor automatically selects from it based on live audio energy intensity. Rolypoly\textasciitilde{} \citep{burloiu2020rolypoly} takes a complementary approach, using RNNs pretrained on the Groove MIDI Dataset to adapt the microtiming of a loaded drum score to the human musician's timing. Rolypoly\textasciitilde{} modulates \emph{how} a pattern is played; CHULOOPA varies \emph{what} is played.
 
-\textbf{Personalized ML for Music.} Few-shot learning for audio has shown promise \citep{wang2020metaaudio,pons2019prototypical}. \citet{weber2024realtime} demonstrated real-time drum transcription using dynamic few-shot learning, validating minimal-data approaches for performance contexts. Our work extends this to accessible creative tools: users simply beatbox 10 samples through an interactive recorder.
+\textbf{AI Drum Variation.} \citet{bruford2020jaki} present jaki, which generates 1-bar LSTM continuations of a seed drum pattern and tunes them to user-defined musical features (syncopation, density) via deep reinforcement learning. \citet{alain2020deepdrummer} use active learning to converge on user drum-loop preferences from like/dislike ratings. Both are composition tools: they operate offline, require explicit user feedback, and are not designed for live performance. CHULOOPA adapts this idea of feature-driven variation to a live looper context, replacing manual user feedback with automatic audio-energy-driven selection. We build on \citet{chen2025music}'s rhythmic\_creator, a transformer-LSTM trained on 13,000+ MIDI sequences, adapting its continuation output as the variation engine within our spice-driven selection framework.
 
-\textbf{AI Music Generation.} Transformer-based rhythm generation \citep{huang2018music,shih2023theme} typically requires quantized input. \citet{gillick2019learning} explored groove with GrooVAE but forces 16th-note grids. We adapt \citet{chen2025music}'s rhythmic\_creator (transformer-LSTM trained on 13,000+ MIDI sequences) by extracting its \emph{continuation} output and applying proportional time-warping to preserve non-quantized timing. \citet{jonason2025smart} show that user-facing control over generation quality involves diversity-quality tradeoffs, validating CHULOOPA's post-processing spice approach. \citet{anoufa2025bass} demonstrate a parallel conditional generation task (bass from rhythm guitar) using a transformer-decoder, confirming this architecture generalizes across instrument accompaniment domains.
+\textbf{Beatbox as Input.} \citet{stowell2010beatbox} and \citet{delgado2019dataset} established that amateur beatboxers are inconsistent across performers but consistent within their own style---validating personalized, user-specific training. \citet{martanto2025beatbox} confirms KNN with MFCC features achieves strong accuracy for voice-derived percussion. \citet{weber2024realtime} demonstrated real-time drum transcription with minimal training data. Prior intelligent loopers (Living Looper, Reflexive Looper, Rolypoly\textasciitilde{}) require guitar or pre-loaded MIDI; none use voice as the loop creation interface.
 
-\textbf{Co-Creative AI.} The AIMC 2025 theme ``The Artist in the Loop'' emphasizes human agency. \citet{wilson2025responsible} survey AI music tools through Responsible AI principles, identifying a lack of real-time performance-oriented systems---a gap CHULOOPA fills. \citet{loughran2020human} identified key principles: transparency, agency, creative dialogue. \citet{shepardson2023living} explored AI-augmented looping with RAVE autoencoders. \citet{lee2025revival} demonstrate AI musical agents trained on small curated corpora in live performance, validating CHULOOPA's small-data approach. CHULOOPA contributes real-time creativity control (spice level) and offline-first reliability for live performance.
-
-\textbf{Gap.} No existing system combines user-trainable personalization (10 samples/class), real-time transcription ($<$50ms), offline AI variation (local transformer-LSTM), timing preservation (non-quantized), and live performance integration in an accessible end-to-end instrument.
+\textbf{Gap.} No existing system combines audio-energy-driven automatic variation selection with a live looper form factor and a voice/beatbox input interface. CHULOOPA addresses this: the performer's voice creates the loop, and the loop's evolution is driven by the live sonic environment---without manual intervention.
 
 
 \section{SYSTEM DESIGN}
@@ -100,87 +88,126 @@ CHULOOPA engages with \emph{mediated musicianship in a hyper-reproductive age} b
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{images/chuloopa_system_diagram.png}
-  \caption{CHULOOPA system architecture. Beatbox audio flows through onset detection, MFCC-13 KNN classification, and real-time drum playback into a looper. A background Python process generates a 5-variant bank at loop record time; \texttt{spice\_detector.ck} streams audio-driven spice every 500ms, and ChucK selects the best-matching variant at each loop boundary.}
+  \caption{CHULOOPA system architecture. Beatbox audio flows through onset detection, MFCC-13 KNN classification, and real-time drum playback into a looper. A background Python process generates a 5-variant bank at loop record time; \texttt{spice\_detector.ck} streams audio-driven spice every 500\,ms, and \texttt{chuloopa\_main.ck} selects the best-matching variant at each loop boundary.}
   \label{fig:system_diagram}
 \end{figure*}
 
-\subsection{Personalized Training Pipeline}
+CHULOOPA runs as three concurrent processes (\Cref{fig:system_diagram}): \texttt{chuloopa\_main.ck} handles beatbox recording, drum classification, loop playback, and variation selection; \texttt{drum\_variation\_generator.py} generates a bank of five AI variations in the background the moment a new pattern is recorded; and \texttt{spice\_detector.ck} continuously monitors the live audio environment, streaming a single energy value---\emph{spice}---every 500\,ms. Separating spice detection into its own process was a deliberate design choice: sustained audio analysis should never compete with classification or loop timing at the critical moment of performance.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{images/drum_sample_recorder_ui.png}
-  \caption{Training UI (\texttt{drum\_sample\_recorder.ck}). Three shapes (cube = kick, octahedron = snare, dodecahedron = hi-hat) pulse on each sample and grow brighter as training data accumulates. Press K/S/H to label, E to export.}
-  \label{fig:training_ui}
-\end{figure}
+\subsection{Personalized Training}
 
-Users run \texttt{drum\_sample\_recorder.ck} and record 10 one-second samples each of kick, snare, and hi-hat sounds. The system extracts \textbf{13 MFCC coefficients} per onset---the standard speech feature range validated by \citet{martanto2025beatbox}, who showed MFCCs outperform spectral band energies for voice-derived percussion because beatbox sounds ``are better identified when using a feature more commonly used in identifying the human voice.''
-
-Features are saved to \texttt{training\_samples.csv}. When CHULOOPA starts, a KNN classifier (k=3) trains automatically in $<$1 second. KNN was chosen over deep learning because: (1) performs well with 30 total samples, (2) no overfitting, (3) instant training, (4) interpretable for debugging.
-
-\textbf{Why minimal data works:} User-specific training constrains the problem space to one person's vocal style. Amateur beatboxers are remarkably consistent in their own imperfect technique \citep{delgado2019dataset}. KNN's instance-based learning handles small datasets without parametric assumptions.
+Amateur beatboxers are inconsistent across performers but remarkably consistent within their own technique~\citep{delgado2019dataset}---a property we exploit directly. Rather than training on a large generic dataset, CHULOOPA fits a classifier to each individual user: 10 samples each of kick, snare, and hi-hat, recorded in under five minutes via \texttt{drum\_sample\_recorder.ck}. The system extracts \textbf{13 MFCC coefficients} per onset---validated by \citet{martanto2025beatbox} as outperforming spectral band energies for voice-derived percussion, because beatbox sounds are better identified using features tuned to the human voice. A KNN classifier ($k$=3) trains automatically at startup in under one second. KNN was chosen deliberately: it performs well with as few as 30 samples, trains instantly, and requires no hyperparameter tuning---user-specific training constrains the problem space enough that a simple classifier suffices.
 
 \subsection{Real-Time Transcription}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{images/chuloopa_active_state.png}
-  \caption{CHULOOPA performance UI (\texttt{chuloopa\_main.ck}) during active variation playback. Shape color tracks spice level (blue = low, yellow = mid, red = high). The spice slider (bottom left) shows audio-driven spice; state text (bottom right) displays current mode. Shapes pulse on each drum hit.}
+  \caption{CHULOOPA performance UI (\texttt{chuloopa\_main.ck}) during active variation playback. Shape colour tracks spice level (blue = low, yellow = high). The spice slider (bottom left) shows the rolling-average spice driving selection; state text (bottom right) displays the current variation slot. Shapes pulse on each drum hit.}
   \label{fig:active_ui}
 \end{figure}
 
-\textbf{Onset Detection:} Spectral flux with adaptive thresholding (1.5$\times$ running mean) in 512-sample frames, 128-sample hop (75\% overlap). The 512-sample frame provides 86 Hz frequency resolution at 44.1 kHz---necessary to discriminate kick fundamentals ($\sim$60-100Hz) from mid-frequency snare energy. Smaller windows would degrade classification accuracy \citep{bello2005tutorial}.
+Immediate audio feedback during recording is central to CHULOOPA's performance model: the performer hears classified drum samples in real-time while beatboxing, allowing technique correction before committing a pattern to loop. This requires reliable onset detection and sub-30\,ms classification latency.
 
-\textbf{Classification \& Playback:} Each onset is classified (kick/snare/hat) and corresponding drum samples play immediately. Total latency: $\sim$25ms (perceptually acceptable for live performance). Timing, drum class, and velocity are stored with delta-time encoding for drift-free loop playback.
+\textbf{Onset Detection:} Spectral flux with adaptive thresholding (1.5$\times$ running mean) in 512-sample frames, 128-sample hop (75\% overlap). The 512-sample frame provides 86\,Hz frequency resolution at 44.1\,kHz---necessary to discriminate kick fundamentals ($\sim$60--100\,Hz) from mid-frequency snare energy; smaller windows would degrade classification accuracy \citep{bello2005tutorial}.
 
-\subsection{AI Variation Generation}
+\textbf{Classification \& Playback:} Each onset is classified (kick/snare/hat) via MFCC-13 KNN and the corresponding drum sample plays immediately. Simultaneously, a MIDI note-on is sent to Ableton Live via the macOS IAC Driver, routing hits to a Drum Rack and giving the performer full control over drum sound design independently of the classification engine. Total input-to-playback latency is $\sim$25\,ms. Each hit is stored with delta-time encoding---the interval to the next hit, or to loop end for the final hit---which preserves the performer's non-quantized timing and guarantees drift-free loop playback.
 
-When a new pattern is recorded, a Python background process (\texttt{drum\_variation\_generator.py}) immediately generates a \textbf{bank of 5 variations in parallel} at spice levels 0.2, 0.4, 0.6, 0.8, and 1.0. Spice maps to a \emph{token count ceiling}: how many tokens rhythmic\_creator generates beyond the original context (max 3$\times$). Higher spice = more continuation tokens = greater divergence from the original pattern.
+\subsection{Spice Detection}
 
-Each variant is generated via:
-\begin{enumerate}
-\item Feed original pattern as context to transformer-LSTM
-\item Generate continuation up to spice-determined token ceiling
-\item Proportional time-warp to match original loop duration: $t_{new} = t_{AI} \times \frac{duration_{original}}{duration_{AI}}$
-\end{enumerate}
+Rather than asking the performer to manually set a creativity level, CHULOOPA reads the room. \texttt{spice\_detector.ck} continuously measures the energy of the live performance environment and maps it to a normalized \emph{spice} value (0.0--1.0) that drives variation selection without intervention---quieter passages favour conservative patterns; building energy pulls the system toward more adventurous ones.
 
-Once all 5 variants are ready, Python sends \texttt{/chuloopa/bank\_ready} via OSC. A second process, \textbf{\texttt{spice\_detector.ck}}, continuously analyzes live audio and streams a composite spice value to \texttt{chuloopa\_main.ck} every 500ms. At each loop boundary, ChucK selects the variant whose spice level best matches the \emph{rolling 4-bar spice average}. The performer uses \textbf{CC 74} to set a \emph{ceiling} on how high the audio-driven spice can reach, maintaining creative control without requiring manual variation selection.
+The detector averages RMS energy over a 500\,ms window and converts to a dBFS scale:
+\begin{equation}
+\text{spice} = \text{clamp}\!\left(\frac{\text{dBFS} - F}{P - F},\; 0.0,\; 1.0\right)
+\label{eq:spice}
+\end{equation}
+where $F$ is the noise-floor threshold (--75\,dBFS) and $P$ is the expected peak performance level (--50\,dBFS). The dBFS mapping was chosen deliberately: a linear RMS scale would compress most of the musically-useful dynamic range near zero, while a logarithmic scale matches how loudness is actually perceived.
 
-\textbf{Using Gemini (optional):} A cloud alternative (\texttt{drum\_variation\_gemini.py}) maps spice directly to sampling temperature via the Gemini API.
+In performance mode (two-channel audio interface), CC\,75 blends the instrument and vocal inputs before analysis, so spice reflects the collective energy of the full performance rather than the beatboxer's voice alone. The 500\,ms window smooths over transient spikes---a single loud hit does not immediately trigger the most adventurous variant---while remaining responsive to sustained shifts in musical energy. Spice is streamed to \texttt{chuloopa\_main.ck} via OSC every 500\,ms.
 
-\textbf{Performance:} 3-5s total for all 5 variants (rhythmic\_creator, CPU only). Entirely offline by default.
+\subsection{AI Variation Bank}
 
-\subsection{Queued Actions for Live Performance}
+Where prior intelligent loopers continuously re-synthesize audio \citep{shepardson2023living} or adjust microtiming to fit a pre-loaded score \citep{burloiu2020rolypoly}, CHULOOPA varies pattern structure through discrete pre-generated variants---extending the performer's original groove rather than replacing or quantizing it.
 
-Inspired by hardware loopers, actions (clear track, bank regeneration) queue during loop cycles and execute at loop boundaries. Each playback session has a unique ID; scheduled drum hits check their session ID before playing, preventing overlap. This ensures musically-coherent transitions without glitches.
+When a loop is recorded, \texttt{drum\_variation\_generator.py} immediately launches five parallel generation threads, one per spice target (0.2, 0.4, 0.6, 0.8, 1.0). Each thread feeds the recorded pattern as context to \textbf{rhythmic\_creator} \citep{chen2025music}, a transformer-LSTM-FNN hybrid (4.5M parameters) trained on 13,000+ MIDI sequences, generating a continuation whose token count scales linearly with spice: $0.85\times$ the input context at spice\,0.0, rising to $1.5\times$ at spice\,1.0. The model output is used at its natural timing---hits with timestamps beyond the original loop boundary are trimmed, and the remaining hits are kept unscaled. This preserves the model's natural rhythmic feel rather than distorting it to fit a target duration; the loop boundary acts as a hard cut, not a stretch point.
 
-\textbf{MIDI Controls:} Note 36 (hold) = record; Note 37 = clear; Note 38 = regenerate full variation bank; CC 74 = spice ceiling (caps audio-driven selection); CC 75 = guitar/vocal input mix (requires 2-channel audio interface). Variation selection is automatic---no manual toggle required.
+Crucially, rhythmic\_creator was designed as a continuation model: it has no explicit parameter for ``add more complexity.'' During testing we observed an empirical trend---requesting more tokens tends to produce denser, more varied output. However, this relationship is probabilistic, not guaranteed: a high-spice generation may return something only marginally different from the original, while a low-spice run occasionally surprises. To make the spice axis musically reliable, we sort the five generated variants by a \textbf{deviation score} after generation:
+\begin{equation}
+\text{dev} = \Delta_{\text{hits}} + 0.3 \times n_{\text{non-standard}}
+\label{eq:deviation}
+\end{equation}
+where $\Delta_{\text{hits}}$ is the difference in hit count from the original and $n_{\text{non-standard}}$ counts notes outside the core kit (kick, snare, closed hi-hat). Regardless of which generation thread produced what, slot\,1 is always the most conservative result and slot\,5 the most adventurous---the spice axis becomes a reliable musical ordering, not an artifact of generation order. Python signals completion via OSC \texttt{/chuloopa/bank\_ready}. Total generation time: 3--5 seconds on consumer CPU hardware, entirely offline.
+
+\subsection{Weighted Variation Selection}
+
+At each loop boundary, \texttt{chuloopa\_main.ck} draws from a probability distribution whose shape slides up the variation bank as spice increases (\Cref{tab:weights}). The distribution includes the original pattern as a valid option: at low spice the system may simply continue playing the original, treating restraint as a musical choice. Selection operates on a \textbf{rolling 4-bar spice average}---the first four loops serve as a calibration window, after which auto-selection activates---and a repeat-prevention rule caps consecutive plays of the same variant at two.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{ccccccc}
+\toprule
+\textbf{Spice} & \textbf{Orig.} & \textbf{V1} & \textbf{V2} & \textbf{V3} & \textbf{V4} & \textbf{V5} \\
+\midrule
+0.00 & \cellcolor{red!60}0.50 & \cellcolor{red!48}0.40 & \cellcolor{red!12}0.10 & 0.00 & 0.00 & 0.00 \\
+0.25 & \cellcolor{red!24}0.20 & \cellcolor{red!48}0.40 & \cellcolor{red!36}0.30 & \cellcolor{red!12}0.10 & 0.00 & 0.00 \\
+0.50 & \cellcolor{red!6}0.05  & \cellcolor{red!24}0.20 & \cellcolor{red!48}0.40 & \cellcolor{red!36}0.30 & \cellcolor{red!6}0.05 & 0.00 \\
+0.75 & 0.00 & \cellcolor{red!12}0.10 & \cellcolor{red!36}0.30 & \cellcolor{red!48}0.40 & \cellcolor{red!24}0.20 & 0.00 \\
+1.00 & 0.00 & 0.00 & \cellcolor{red!24}0.20 & \cellcolor{red!48}0.40 & \cellcolor{red!36}0.30 & \cellcolor{red!12}0.10 \\
+\bottomrule
+\end{tabular}
+\caption{Selection weights per spice tier. Cell shading indicates probability mass (darker = more likely). Values between tiers are linearly interpolated at loop boundaries.}
+\label{tab:weights}
+\end{table}
+
+The performer retains meaningful creative control through a single gesture: \textbf{CC\,74} sets a spice \emph{ceiling}---a hard cap on how adventurous the system can become. Rather than selecting variations manually, the performer decides how much latitude to give the system, then lets it respond to the music \citep{lubart2005creativity}.
+
+\subsection{Live Performance Controls}
+
+Inspired by hardware loopers, all structural actions (clear, bank regeneration) queue during the current cycle and execute at the next loop boundary, preventing mid-pattern interruptions. Each playback session holds a unique ID; scheduled drum hits validate their session before firing, eliminating overlap during transitions.
+
+\textbf{MIDI Controls} (variation selection is fully automatic---no manual toggle required):
+\begin{itemize}
+  \item \textbf{Note\,36} (hold): record loop
+  \item \textbf{Note\,37}: clear loop
+  \item \textbf{Note\,38}: regenerate full variation bank
+  \item \textbf{CC\,74}: spice ceiling (caps audio-driven selection)
+  \item \textbf{CC\,75}: instrument/vocal input mix
+\end{itemize}
+
+ChuGL visual feedback (\Cref{fig:active_ui}) closes the loop for the performer: the central shape shifts colour with spice level (blue $\rightarrow$ yellow) and pulses on each hit, while a spice slider reflects the rolling average currently driving selection.
 
 
 \section{EVALUATION}
 
-\subsection{Technical Performance}
+\subsection{Performance Case Study}
 
-\textbf{Classifier Accuracy:} Preliminary testing shows $\sim$(COMPUTE FOR ACTUAL ACCURACY)\% accuracy on user-specific amateur beatbox samples (formal evaluation with confusion matrix in progress).
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{images/performance_figure.png}
+  \caption{Annotated performance session. \textit{Top:} guitar waveform. \textit{Middle:} spice curve (500\,ms samples) with 4-bar rolling average. \textit{Bottom:} MIDI piano roll; shaded regions indicate the active variation slot at each loop boundary, classified directly from the MIDI output. The first 4 loops are the cold-start calibration window. Variation selection responds to sustained energy shifts without performer intervention.}
+  \label{fig:case_study}
+\end{figure}
 
-\textbf{Latency:} Total input-to-output latency measured at $\sim$25ms (onset detection 11.6ms + hop 2.9ms + feature extraction 3-5ms + KNN 1-2ms). This falls within acceptable range for live musical performance (10-30ms threshold) \citep{wyse2018realtime}.
+To evaluate CHULOOPA as a live performance tool, a session was recorded with a single performer playing guitar while beatboxing a drum loop (\Cref{fig:case_study}). Audio was captured via a two-channel interface; MIDI output was recorded in Ableton Live via the IAC Driver alongside the spice log (\texttt{spice\_log.csv}), producing a timestamped record of spice values, variation picks, and loop boundaries throughout the session. Total input-to-output latency was measured at $\sim$25\,ms (onset detection 11.6\,ms + hop 2.9\,ms + feature extraction 3--5\,ms + KNN 1--2\,ms), within the acceptable range for live performance \citep{wyse2018realtime}.
 
-\textbf{Timing Preservation:} AI-generated variations maintain exact loop duration (bit-perfect match) while preserving proportional spacing between hits. Informal listening tests confirm non-quantized ``feel'' is maintained.
-
-\subsection{Autoethnographic Findings}
-
-As designer and primary user, I documented practice sessions over 3 weeks. Key findings:
+Key observations from the session:
 \begin{itemize}
-\item \textbf{Training accessibility:} 5-minute training session achieves usable accuracy for solo practice
-\item \textbf{Real-time feedback value:} Hearing drum samples during beatboxing enables technique correction mid-performance
-\item \textbf{Variation quality:} Continuation-based variations sound musically coherent; audio-driven spice selection provides hands-free creative evolution without interrupting performance flow
-\item \textbf{Latency perception:} 25ms lag is perceivable during fast sequences but does not prevent successful pattern recording
+  \item \textbf{Spice responsiveness:} Sustained increases in guitar energy consistently raised the rolling spice average over 3--4 loop cycles, triggering selection of higher-deviation variants without performer intervention. Conversely, dynamic drops returned selection toward the original pattern within 2 bars.
+  \item \textbf{Variation coherence:} Across all five spice levels, generated variations maintained the rhythmic backbone of the original loop. The deviation-sorted bank ensured slot\,1 remained a conservative elaboration and slot\,5 the most structurally adventurous---the spice axis behaved as a reliable musical spectrum in practice.
+  \item \textbf{Latency perception:} The 25\,ms classification lag was perceivable during fast sequences but did not prevent accurate pattern recording or disrupt performance flow.
 \end{itemize}
 
-\subsection{User Testing}
+Audio and MIDI recordings are included as supplemental material.
 
-\textbf{[TO TEST! WILL FIND PEOPLE ON CAMPUS NEXT WEEK TO TRY IT OUT]}
+\subsection{Autoethnographic Observations}
 
-Protocol: 2-3 solo performers (5min training, 15min pattern creation, 5min variation testing, 5min interview). Results pending final data collection.
+As designer and primary user, I documented practice sessions over three weeks. Two findings shaped the final system design:
+
+\textbf{Real-time feedback is essential.} Hearing classified drum samples during beatboxing---rather than after---allows technique correction mid-loop, directly improving transcription accuracy in subsequent takes. This informed the decision to prioritise classification latency over all other performance metrics.
+
+\textbf{Hands-free variation suits live performance.} Early prototypes required manual variation toggling; performers consistently interrupted musical flow to manage it. Audio-driven spice selection removes this entirely---the system's evolution becomes part of the performance rather than an interruption of it.
 
 
 \section{DISCUSSION}
@@ -219,7 +246,7 @@ CHULOOPA demonstrates three key insights for mediated musicianship in the genera
 
 \textbf{1. Personalization enables accessibility:} Training on 10 user-specific samples achieves high accuracy without large datasets or technical expertise. Voice interface meets users where their skills already are.
 
-\textbf{2. Timing preservation respects human expression:} Continuation-based variation with proportional time-warping maintains non-quantized groove, showing AI can augment creativity without destroying expressive microtiming.
+\textbf{2. Timing preservation respects human expression:} Continuation-based variation at natural model timing---trimmed to the loop boundary rather than stretched---maintains non-quantized groove, showing AI can augment creativity without destroying expressive microtiming.
 
 \textbf{3. Offline-first resists platform dependence:} Local transformer-LSTM inference (3-5s, CPU-only) provides sophisticated AI variation without cloud APIs, demonstrating that mediated musicianship need not consolidate within proprietary infrastructures.
 
@@ -234,7 +261,7 @@ By treating amateur beatboxing---imperfect, idiosyncratic, personal---as legitim
 
 \textbf{Ethical Issues:} User testing conducted with informed consent. Voice recordings stored locally, not shared externally.
 
-\textbf{Use of AI:} Integrates Jake Chen's rhythmic\_creator model with attribution. Claude Sonnet 4.5 assisted with technical implementation (debugging, architecture design, OSC integration) and paper writing (structuring, editing). All conceptual design and research direction by the author.
+\textbf{Use of AI:} Integrates Jake Chen's rhythmic\_creator model with attribution. Claude Sonnet 4.6 assisted with technical implementation (debugging, architecture design, OSC integration) and paper writing (structuring, editing). All conceptual design and research direction by the author.
 
 \begin{ack}
 We thank Jake Chen (Zhaohan Chen) for making rhythmic\_creator available. We thank advisors Ajay Kapur and Jake Cheng at CalArts Music Technology. Supported by California Institute of the Arts MFA program.
