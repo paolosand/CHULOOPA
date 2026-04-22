@@ -1416,6 +1416,38 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
     print(f"  [Sort] Bank sorted: slot 1 = least deviant, slot {max(sorted_slots)} = most deviant")
 
 
+def _write_quantized_original(pattern: DrumPattern, track_file: Path) -> None:
+    """Overwrite track_file with the grid-quantized version of pattern.
+
+    Called after the variation bank is complete so ChucK's original loop and all
+    variations are on the same 16th-note grid before bank_ready fires.
+    """
+    try:
+        loop_duration = pattern.loop_duration
+        bpm = (60.0 * 4) / loop_duration
+        step_duration = (60.0 / bpm) / 4.0
+
+        events = []
+        for hit in pattern.hits:
+            step = max(0, min(15, int(round(hit.timestamp / step_duration))))
+            events.append((step, hit.midi_note))
+        events.sort(key=lambda x: (x[0], x[1]))
+
+        hits = []
+        for step, pitch in events:
+            timestamp = step * step_duration
+            hits.append(DrumHit(midi_note=pitch, timestamp=timestamp,
+                                velocity=0.75, delta_time=0.0))
+
+        quantized = DrumPattern(hits=hits, loop_duration=loop_duration,
+                                source_file=str(track_file))
+        quantized._recalculate_delta_times()
+        quantized.to_file(str(track_file))
+        print(f"  [Quantize] Original snapped to grid → {track_file.name} ({len(hits)} hits, BPM={bpm:.1f})")
+    except Exception as e:
+        print(f"  [Quantize] Warning: could not write quantized original: {e}")
+
+
 def _generation_worker():
     """Coordinator: spawns one thread per slot, joins all, sorts bank by deviation, fires bank_ready."""
     variations_dir = DEFAULT_VARIATIONS_DIR
@@ -1441,6 +1473,10 @@ def _generation_worker():
 
     print(f"\n  [Worker] Starting parallel generation: slots={slots}")
 
+    # Pre-load grid model once before threads start — avoids 5 simultaneous checkpoint loads
+    if current_variation_type == 'grid' and HAVE_GRID_MODEL and grid_model is None:
+        init_grid_model()
+
     written_slots = set()  # slots that successfully wrote a file
 
     # Spawn one thread per slot — all start simultaneously
@@ -1464,6 +1500,11 @@ def _generation_worker():
     if stop_event.is_set():
         print(f"  [Worker] Cancelled — skipping sort and bank_ready")
         return
+
+    # Replace the original loop with its quantized version so ChucK switches
+    # between grid-aligned files (original and variations share the same grid).
+    if written_slots and current_variation_type == 'grid':
+        _write_quantized_original(pattern, track_file)
 
     # Sort bank by deviation score (least → most deviant) then send bank_ready
     if written_slots:
