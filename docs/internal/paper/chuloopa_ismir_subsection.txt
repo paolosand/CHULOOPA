@@ -1,0 +1,13 @@
+\subsection{CHULOOPA}\label{subsec:CHULOOPA}
+
+CHULOOPA (ChucK-based Loop Operator for Performance Audio) is a voice-controlled drum looper for live performance. A performer beatboxes a drum pattern; a personalized KNN classifier transcribes onsets into kick/snare/hat events in real time, which are stored as timestamped MIDI triples and fed to the variation engine. The grid-based representation ensures that generated continuations align to a stable temporal reference, avoiding the timing drift that relative-interval encodings can introduce when looped material is replayed.
+
+\textbf{Integration.} The recorded pattern is converted to the model's token format and used as the generation context. CHULOOPA spawns five parallel generation threads immediately after each recording, one per spice target $s \in \{0.2, 0.4, 0.6, 0.8, 1.0\}$. Each thread generates a continuation whose token count scales linearly with spice:
+\begin{equation}
+  N_{\text{tokens}} = \lfloor N_{\text{context}} \times (0.85 + 0.65s) \rfloor
+\end{equation}
+where $N_{\text{context}}$ is the token count of the input pattern. Sampling temperature is fixed at $T=1.0$ so that spice controls \emph{output length}, not distributional sharpness. Hits beyond the original loop boundary are discarded; no time-warping is applied, preserving the model's natural rhythmic feel.
+
+\textbf{Deviation sorting.} Because continuation length is a probabilistic proxy for complexity, high-spice generations occasionally produce conservative output. After all five threads complete, variants are sorted by deviation score $d = \Delta_{\text{hits}} + 0.3 \times n_{\text{non-standard}}$, where $\Delta_{\text{hits}}$ is the difference in hit count from the original and $n_{\text{non-standard}}$ counts notes outside the core kit. Slot\,1 is always the least deviant result and slot\,5 the most adventurous, making the spice axis a reliable musical ordering regardless of generation stochasticity. Total generation time is 3--5\,s on consumer CPU hardware.
+
+\textbf{Audio-driven selection.} A dedicated process continuously measures live audio energy and maps it to a normalized spice value via a dBFS scale, streaming updates every 500\,ms. At each loop boundary, the system draws from a probability distribution over the original pattern and five variants whose shape slides up the variation bank as the rolling 4-bar spice average increases---quieter passages favour the original, building energy pulls toward slots\,4--5. A spice ceiling (MIDI CC\,74) caps how adventurous the system can become, giving the performer meaningful agency without requiring manual variant selection.
