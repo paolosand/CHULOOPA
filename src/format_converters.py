@@ -195,3 +195,95 @@ def assign_velocity(timestamp: float, loop_duration: float) -> float:
 
     # Clamp to valid range
     return max(0.4, min(1.0, base_velocity))
+
+
+# ── Grid model converters ──────────────────────────────────────────────────────
+
+def chuloopa_txt_to_grid_tokens(filepath: str, bpm: float) -> tuple:
+    """
+    Convert a CHULOOPA drum txt file to P/N grid tokens for GPTBarPair.
+
+    Returns:
+        tokens:        list[str] of alternating "P{step}" and "N{pitch}" tokens,
+                       sorted by (step, pitch) to match training-data ordering.
+        loop_duration: float, total loop duration in seconds (= one bar duration).
+    """
+    hits = []
+    loop_duration = None
+
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('# Total loop duration:'):
+                loop_duration = float(line.split(':')[1].strip().split()[0])
+            elif line and not line.startswith('#'):
+                parts = line.split(',')
+                midi_note = int(parts[0])
+                timestamp = float(parts[1])
+                hits.append((timestamp, midi_note))
+
+    if loop_duration is None:
+        raise ValueError(f"No '# Total loop duration:' header found in {filepath}")
+
+    step_duration = (60.0 / bpm) / 4.0
+
+    events = []
+    for timestamp, midi_note in hits:
+        step = int(round(timestamp / step_duration))
+        step = max(0, min(15, step))
+        events.append((step, midi_note))
+
+    events.sort(key=lambda x: (x[0], x[1]))
+
+    tokens = []
+    for step, pitch in events:
+        tokens.append(f"P{step}")
+        tokens.append(f"N{pitch}")
+
+    return tokens, loop_duration
+
+
+def grid_tokens_to_chuloopa_txt(
+    tokens: list,
+    bpm: float,
+    loop_duration: float,
+    output_filepath: str,
+) -> None:
+    """
+    Convert P/N grid tokens back to CHULOOPA drum txt format.
+
+    Timestamps are derived from step positions: timestamp = step * step_duration.
+    Velocity is fixed at 0.75 (grid tokens carry no velocity information).
+    Delta times are recalculated from sorted timestamps.
+    """
+    step_duration = (60.0 / bpm) / 4.0
+
+    hits = []
+    i = 0
+    while i < len(tokens) - 1:
+        if tokens[i].startswith('P') and tokens[i + 1].startswith('N'):
+            step = int(tokens[i][1:])
+            pitch = int(tokens[i + 1][1:])
+            timestamp = step * step_duration
+            hits.append((timestamp, pitch))
+            i += 2
+        else:
+            i += 1
+
+    hits.sort(key=lambda x: (x[0], x[1]))
+
+    delta_times = []
+    for j, (ts, _) in enumerate(hits):
+        if j < len(hits) - 1:
+            delta_times.append(hits[j + 1][0] - ts)
+        else:
+            delta_times.append(loop_duration - ts)
+
+    with open(output_filepath, 'w') as f:
+        f.write("# Track Drum Data\n")
+        f.write("# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\n")
+        f.write("# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)\n")
+        f.write("# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
+        f.write(f"# Total loop duration: {loop_duration:.6f} seconds\n")
+        for (ts, pitch), dt in zip(hits, delta_times):
+            f.write(f"{pitch},{ts:.6f},0.750000,{dt:.6f}\n")
