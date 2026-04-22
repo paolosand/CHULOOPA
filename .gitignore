@@ -7,8 +7,9 @@ notochord_env/
 venv/
 env/
 
-# Large model files
-models/
+# Large model files (binaries — tracked separately; Python code in models/ is committed)
+src/models/*.pt
+src/models/*.pkl
 
 # Python cache
 __pycache__/
