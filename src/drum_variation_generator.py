@@ -794,8 +794,19 @@ except ImportError as e:
     HAVE_RHYTHMIC_CREATOR = False
     print(f"Note: rhythmic_creator not available: {e}")
 
-# Global model instance
+# Try to import grid model (GPTBarPair)
+try:
+    from models.rhythmic_creator_grid.grid_model import RhythmicCreatorGridModel
+    HAVE_GRID_MODEL = True
+except ImportError as e:
+    HAVE_GRID_MODEL = False
+    print(f"Note: grid model not available: {e}")
+
+_GRID_MODEL_PATH = Path(__file__).parent / "models" / "grid_barpair_best_epoch.pt"
+
+# Global model instances
 rhythmic_model = None
+grid_model = None
 force_cpu = False  # Global flag to force CPU inference
 
 
@@ -937,6 +948,121 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
     except Exception as e:
         print(f"  Warning: rhythmic_creator generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("  Falling back to groove_preserve")
+        return generate_musical_variation(pattern, spice_level), False
+
+
+def init_grid_model():
+    """Initialize GPTBarPair grid model (call once at startup)."""
+    global grid_model
+
+    if not HAVE_GRID_MODEL:
+        return False
+
+    if not _GRID_MODEL_PATH.exists():
+        print(f"Warning: Grid model checkpoint not found at {_GRID_MODEL_PATH}")
+        return False
+
+    try:
+        device = 'cpu' if force_cpu else None
+        grid_model = RhythmicCreatorGridModel(str(_GRID_MODEL_PATH), device=device)
+        print(f"  Grid model loaded ({grid_model.device})")
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to load grid model: {e}")
+        return False
+
+
+def grid_model_variation(pattern: DrumPattern, spice_level: float = 0.5) -> tuple:
+    """
+    Generate a variation using the GPTBarPair grid model.
+
+    Quantizes the input pattern to a 16th-note grid, runs the model, and
+    returns a new DrumPattern on the same grid so ChucK can switch seamlessly.
+
+    Spice maps to temperature: 0.0 → 0.6, 0.5 → 1.0, 1.0 → 1.4.
+    """
+    global grid_model
+
+    if grid_model is None:
+        if not init_grid_model():
+            print("  Grid model not available, falling back to groove_preserve")
+            return generate_musical_variation(pattern, spice_level), False
+
+    try:
+        loop_duration = pattern.loop_duration
+        bpm = (60.0 * 4) / loop_duration
+        step_duration = (60.0 / bpm) / 4.0
+
+        # Convert DrumPattern hits to P/N grid tokens
+        events = []
+        for hit in pattern.hits:
+            step = max(0, min(15, int(round(hit.timestamp / step_duration))))
+            n_tok = f"N{hit.midi_note}"
+            if n_tok not in grid_model.stoi:
+                print(f"  Skipping N{hit.midi_note} (not in model vocab)")
+                continue
+            events.append((step, hit.midi_note))
+
+        if not events:
+            print("  Warning: No valid grid tokens from pattern, falling back")
+            return generate_musical_variation(pattern, spice_level), False
+
+        events.sort(key=lambda x: (x[0], x[1]))
+        context_tokens = []
+        for step, pitch in events:
+            context_tokens.append(f"P{step}")
+            context_tokens.append(f"N{pitch}")
+
+        temperature = 0.6 + (spice_level * 0.8)
+        print(f"  Generating grid variation (spice={spice_level:.2f}, temp={temperature:.2f})...")
+        print(f"    Context: {len(events)} hits, BPM={bpm:.1f}, step={step_duration*1000:.1f}ms")
+
+        variation_tokens = grid_model.generate_variation(
+            context_tokens,
+            temperature=temperature,
+        )
+
+        if not variation_tokens:
+            print("  Warning: Grid model returned empty output, falling back")
+            return generate_musical_variation(pattern, spice_level), False
+
+        # Convert variation tokens back to DrumPattern hits
+        hits = []
+        i = 0
+        while i < len(variation_tokens) - 1:
+            if variation_tokens[i].startswith('P') and variation_tokens[i + 1].startswith('N'):
+                step = int(variation_tokens[i][1:])
+                pitch = int(variation_tokens[i + 1][1:])
+                timestamp = step * step_duration
+                hits.append(DrumHit(
+                    midi_note=pitch,
+                    timestamp=timestamp,
+                    velocity=0.75,
+                    delta_time=0.0,
+                ))
+                i += 2
+            else:
+                i += 1
+
+        if not hits:
+            print("  Warning: Grid model produced no valid P/N pairs, falling back")
+            return generate_musical_variation(pattern, spice_level), False
+
+        variation = DrumPattern(
+            hits=hits,
+            loop_duration=loop_duration,
+            source_file=pattern.source_file,
+        )
+        variation._recalculate_delta_times()
+
+        print(f"    Variation: {len(variation.hits)} hits, loop={loop_duration:.2f}s")
+        return variation, True
+
+    except Exception as e:
+        print(f"  Warning: Grid model generation failed: {e}")
         import traceback
         traceback.print_exc()
         print("  Falling back to groove_preserve")
@@ -1609,10 +1735,13 @@ def generate_variation(pattern: DrumPattern,
         Tuple of (DrumPattern, success: bool)
     """
     # Check if AI is disabled (--no-ai flag)
-    if use_no_ai and variation_type in ['rhythmic_creator', 'gemini']:
+    if use_no_ai and variation_type in ['rhythmic_creator', 'gemini', 'grid']:
         print(f"  Skipping {variation_type} (--no-ai): using heuristic generation")
         spice = kwargs.get('temperature', 0.5)
         return generate_musical_variation(pattern, spice), True  # True = intentional heuristic mode, not a failure
+
+    if variation_type == 'grid':
+        return grid_model_variation(pattern, spice_level=kwargs.get('temperature', 0.5))
 
     if variation_type == 'rhythmic_creator':
         return rhythmic_creator_variation(pattern, spice_level=kwargs.get('temperature', 0.7))
@@ -1835,10 +1964,10 @@ OSC Communication:
     parser.add_argument('--file', '-f', type=str,
                         help='Path to drum pattern file')
 
-    parser.add_argument('--type', '-T', type=str, default='rhythmic_creator',
-                        choices=['rhythmic_creator', 'gemini', 'groove_preserve', 'humanize', 'mutate',
+    parser.add_argument('--type', '-T', type=str, default='grid',
+                        choices=['grid', 'rhythmic_creator', 'gemini', 'groove_preserve', 'humanize', 'mutate',
                                  'densify', 'simplify', 'shift', 'random'],
-                        help='Variation type (default: rhythmic_creator)')
+                        help='Variation type (default: grid)')
 
     parser.add_argument('--watch', '-w', action='store_true',
                         help='Watch for file changes and auto-generate')
