@@ -794,8 +794,9 @@ except ImportError as e:
     HAVE_RHYTHMIC_CREATOR = False
     print(f"Note: rhythmic_creator not available: {e}")
 
-# Global model instance
+# Global model instances
 rhythmic_model = None
+_rhythmic_model_lock = threading.Lock()
 force_cpu = False  # Global flag to force CPU inference
 
 
@@ -806,13 +807,16 @@ def init_rhythmic_creator():
     if not HAVE_RHYTHMIC_CREATOR:
         return False
 
-    try:
-        device = 'cpu' if force_cpu else None  # Auto-detect if not forced
-        rhythmic_model = get_rhythmic_model(device=device)
-        return True
-    except Exception as e:
-        print(f"Warning: Failed to load rhythmic_creator: {e}")
-        return False
+    with _rhythmic_model_lock:
+        if rhythmic_model is not None:
+            return True
+        try:
+            device = 'cpu' if force_cpu else None  # Auto-detect if not forced
+            rhythmic_model = get_rhythmic_model(device=device)
+            return True
+        except Exception as e:
+            print(f"Warning: Failed to load rhythmic_creator: {e}")
+            return False
 
 
 def rhythmic_creator_variation(pattern: DrumPattern,
@@ -840,7 +844,7 @@ def rhythmic_creator_variation(pattern: DrumPattern,
 
     t_start = time.time()  # DIAGNOSTIC
 
-    # Initialize model if needed
+    # Initialize model if needed (lock inside init_rhythmic_creator guards against race)
     t0 = time.time()  # DIAGNOSTIC
     if rhythmic_model is None:
         if not init_rhythmic_creator():
