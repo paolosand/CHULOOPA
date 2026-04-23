@@ -802,6 +802,8 @@ except ImportError as e:
     HAVE_GRID_MODEL = False
     print(f"Note: grid model not available: {e}")
 
+from format_converters import quantize_to_steps
+
 _GRID_MODEL_PATH = Path(__file__).parent / "models" / "grid_barpair_best_epoch.pt"
 
 # Global model instances
@@ -994,23 +996,23 @@ def grid_model_variation(pattern: DrumPattern, spice_level: float = 0.5) -> tupl
     try:
         loop_duration = pattern.loop_duration
         bpm = (60.0 * 4) / loop_duration
-        step_duration = (60.0 / bpm) / 4.0
+        step_duration = loop_duration / 16
 
-        # Convert DrumPattern hits to P/N grid tokens
-        events = []
-        for hit in pattern.hits:
-            step = max(0, min(15, int(round(hit.timestamp / step_duration))))
-            n_tok = f"N{hit.midi_note}"
-            if n_tok not in grid_model.stoi:
-                print(f"  Skipping N{hit.midi_note} (not in model vocab)")
-                continue
-            events.append((step, hit.midi_note))
+        raw_hits = [(h.timestamp, h.midi_note) for h in pattern.hits]
+        all_events = quantize_to_steps(raw_hits, loop_duration)
+
+        # Filter out notes not in model vocab
+        events = [
+            (step, pitch) for step, pitch in all_events
+            if f"N{pitch}" in grid_model.stoi
+        ]
+        skipped = len(all_events) - len(events)
+        if skipped:
+            print(f"  Skipping {skipped} hit(s) not in model vocab")
 
         if not events:
             print("  Warning: No valid grid tokens from pattern, falling back")
             return generate_musical_variation(pattern, spice_level), False
-
-        events.sort(key=lambda x: (x[0], x[1]))
         context_tokens = []
         for step, pitch in events:
             context_tokens.append(f"P{step}")
@@ -1427,9 +1429,13 @@ def _write_quantized_original(pattern: DrumPattern, track_file: Path) -> None:
         bpm = (60.0 * 4) / loop_duration
         step_duration = (60.0 / bpm) / 4.0
 
+        # Anchor grid to first hit so late starts don't shift every step
+        phase_offset = pattern.hits[0].timestamp if pattern.hits else 0.0
+
         events = []
         for hit in pattern.hits:
-            step = max(0, min(15, int(round(hit.timestamp / step_duration))))
+            adjusted = hit.timestamp - phase_offset
+            step = max(0, min(15, int(round(adjusted / step_duration))))
             events.append((step, hit.midi_note))
         events.sort(key=lambda x: (x[0], x[1]))
 
