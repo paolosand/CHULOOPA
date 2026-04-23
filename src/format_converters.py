@@ -261,15 +261,10 @@ def chuloopa_txt_to_grid_tokens(filepath: str, bpm: float) -> tuple:
     if loop_duration is None:
         raise ValueError(f"No '# Total loop duration:' header found in {filepath}")
 
-    step_duration = (60.0 / bpm) / 4.0
-
-    events = []
-    for timestamp, midi_note in hits:
-        step = int(round(timestamp / step_duration))
-        step = max(0, min(15, step))
-        events.append((step, midi_note))
-
-    events.sort(key=lambda x: (x[0], x[1]))
+    # bpm parameter retained for API compatibility; step calculation uses
+    # loop_duration from the file header (equivalent for 4/4 one-bar loops,
+    # and more robust to phase offsets via quantize_to_steps).
+    events = quantize_to_steps(hits, loop_duration)
 
     tokens = []
     for step, pitch in events:
