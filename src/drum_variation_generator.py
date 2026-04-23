@@ -1123,6 +1123,7 @@ def grid_model_variation(pattern: DrumPattern, spice_level: float = 0.5) -> tupl
             source_file=pattern.source_file,
         )
         variation._recalculate_delta_times()
+        variation = humanize_velocity_relative(variation, pattern)
 
         print(f"    Variation: {len(variation.hits)} hits, loop={loop_duration:.2f}s")
         return variation, True
@@ -1383,7 +1384,7 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
     varied, success = generate_variation(pattern, variation_type, temperature=0.5)
 
     output_file = variations_dir / f"track_0_drums_var1.txt"
-    varied.to_file(str(output_file))
+    varied.to_file(str(output_file), normalize=False)
     print(f"  Saved: {output_file}")
 
     # Notify ChucK based on success/failure
@@ -1475,7 +1476,7 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
     for final_slot, variation in zip(sorted_slots, ordered_patterns):
         out_file = variations_dir / f"track_0_drums_var{final_slot}.txt"
         try:
-            variation.to_file(str(out_file))
+            variation.to_file(str(out_file), normalize=False)
         except Exception as e:
             print(f"  [Sort] Could not write var{final_slot}: {e}")
 
@@ -1668,7 +1669,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern, written_slots: set):
             return
 
         output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-        varied.to_file(str(output_file))
+        varied.to_file(str(output_file), normalize=False)
         written_slots.add(slot)
         print(f"  [Slot {slot}] Saved: {output_file.name} ({len(varied.hits)} hits, spice={spice:.1f})")
         if osc_client:
@@ -1689,7 +1690,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern, written_slots: set):
                 velocity_variance=0.05 + 0.1 * spice
             )
             output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-            fallback.to_file(str(output_file))
+            fallback.to_file(str(output_file), normalize=False)
             written_slots.add(slot)
             print(f"  [Slot {slot}] Fallback saved")
             if osc_client:
@@ -1987,7 +1988,7 @@ def generate_variation_for_file(filepath: str,
             print("Warning: Variation generation returned failure flag")
 
         output_file = variations_dir / f"{filepath_obj.stem}_var1.txt"
-        varied.to_file(str(output_file))
+        varied.to_file(str(output_file), normalize=False)
         print(f"  Saved: {output_file}")
 
         print(f"\n✓ Generated variation successfully!")
