@@ -194,3 +194,29 @@ def test_roundtrip_snaps_cleanly():
         os.unlink(path_in)
         if os.path.exists(path_out):
             os.unlink(path_out)
+
+
+def test_phase_shifted_input_snaps_correctly(capsys):
+    # Simulates a recording where all hits are shifted ~0.1s late.
+    # Naive quantization gives wrong steps [1,5,7,9,12];
+    # median phase must recover the correct [0,4,6,8,12] pattern.
+    content = """\
+# Track 0 Drum Data
+# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME
+# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)
+# DELTA_TIME: Duration until next hit (for last hit: time until loop end)
+# Total loop duration: 2.391655 seconds
+36,0.103311,0.737,1.000000
+38,0.710590,0.757,1.000000
+36,0.989887,0.742,1.000000
+36,1.292404,0.731,1.000000
+38,1.864853,0.803,1.000000
+"""
+    path = make_temp_file(content)
+    try:
+        # bpm is ignored for step calculation — loop_duration from header is used
+        tokens, _ = chuloopa_txt_to_grid_tokens(path, bpm=100.5)
+        steps = [int(t[1:]) for t in tokens if t.startswith('P')]
+        assert steps == [0, 4, 6, 8, 12], f"Expected [0,4,6,8,12], got {steps}"
+    finally:
+        os.unlink(path)
