@@ -169,8 +169,20 @@ class DrumPattern:
 
         return cls(hits=hits, loop_duration=loop_duration, source_file=filepath)
 
-    def to_file(self, filepath: str):
-        """Save drum pattern to CHULOOPA txt file."""
+    def to_file(self, filepath: str, normalize: bool = True):
+        """Save drum pattern to CHULOOPA txt file.
+
+        Args:
+            filepath:  Destination path.
+            normalize: When True (default), maps velocities from [0,1] → [0.70, 0.90]
+                       so that every AI-generated pattern sits comfortably in the
+                       mid-loud range regardless of raw model output values.
+                       Pass normalize=False when velocities have already been
+                       humanized by humanize_velocity_relative() — that function
+                       produces per-instrument values in [0.10, 1.0] that carry
+                       meaningful dynamic differentiation; flattening them to
+                       [0.70, 0.90] would undo that work.
+        """
         # Recalculate delta_times
         self._recalculate_delta_times()
 
@@ -182,12 +194,14 @@ class DrumPattern:
             f.write(f"# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
             f.write(f"# Total loop duration: {self.loop_duration:.6f} seconds\n")
 
-            # Write hits with velocity normalization to 0.7-0.9 range
             for hit in self.hits:
-                # Normalize velocity: clamp to 0-1, then map to 0.7-0.9
-                normalized_velocity = max(0.0, min(1.0, hit.velocity))
-                normalized_velocity = 0.7 + (normalized_velocity * 0.2)
-                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{normalized_velocity:.6f},{hit.delta_time:.6f}\n")
+                if normalize:
+                    # Map [0,1] → [0.70, 0.90] for flat-velocity model output
+                    out_velocity = 0.7 + (max(0.0, min(1.0, hit.velocity)) * 0.2)
+                else:
+                    # Preserve raw velocities (e.g. after humanize_velocity_relative())
+                    out_velocity = max(0.0, min(1.0, hit.velocity))
+                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{out_velocity:.6f},{hit.delta_time:.6f}\n")
 
     def _recalculate_delta_times(self):
         """Recalculate delta_times based on timestamps and loop duration."""
@@ -824,7 +838,10 @@ def humanize_velocity_relative(variation: DrumPattern,
 
     for hit in result.hits:
         offset, sigma = _INSTRUMENT_VEL_PARAMS.get(hit.midi_note, _INSTRUMENT_VEL_DEFAULT)
-        center = base + offset
+        # Clamp center before drawing so very quiet inputs (base ~0.12) don't
+        # create a heavily left-truncated Gaussian at the 0.10 floor, which
+        # would collapse dynamic range and bias the distribution.
+        center = max(0.15, min(0.95, base + offset))
         hit.velocity = max(0.10, min(1.0, random.gauss(center, sigma)))
 
     return result
