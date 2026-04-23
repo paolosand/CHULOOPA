@@ -17,6 +17,7 @@ Rhythmic Creator format:
 """
 
 import random
+import statistics
 
 
 # MIDI note mapping
@@ -198,6 +199,41 @@ def assign_velocity(timestamp: float, loop_duration: float) -> float:
 
 
 # ── Grid model converters ──────────────────────────────────────────────────────
+
+def quantize_to_steps(hits: list, loop_duration: float) -> list:
+    """Snap (timestamp, midi_note) pairs to a 16-step grid.
+
+    Uses median phase estimation to correct for constant timing offsets,
+    e.g. the user starts playing slightly late in the recording window.
+
+    Args:
+        hits:          list of (timestamp_seconds: float, midi_note: int)
+        loop_duration: total loop duration in seconds (one 4/4 bar)
+
+    Returns:
+        list of (step: int, midi_note: int) sorted by (step, midi_note),
+        steps clamped to [0, 15].
+    """
+    if not hits:
+        return []
+
+    step_duration = loop_duration / 16
+    fracs = [ts % step_duration for ts, _ in hits]
+    phase = statistics.median(fracs)
+
+    spread = max(fracs) - min(fracs)
+    if spread > 0.25 * step_duration:
+        print(f"  [Quantize] Warning: loose timing "
+              f"(spread={spread:.4f}s = {spread / step_duration:.2f} steps)"
+              f" — best approximation")
+
+    events = []
+    for ts, note in hits:
+        step = max(0, min(15, round((ts - phase) / step_duration)))
+        events.append((step, note))
+
+    return sorted(events)
+
 
 def chuloopa_txt_to_grid_tokens(filepath: str, bpm: float) -> tuple:
     """
