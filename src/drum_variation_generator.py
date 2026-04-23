@@ -101,6 +101,7 @@ generation_queue = []           # List of slot ints (1-5)
 generation_thread = None        # type: Optional[threading.Thread]
 
 
+
 # =============================================================================
 # DATA STRUCTURES
 # =============================================================================
@@ -1442,7 +1443,16 @@ def _write_quantized_original(pattern: DrumPattern, track_file: Path) -> None:
         quantized = DrumPattern(hits=hits, loop_duration=loop_duration,
                                 source_file=str(track_file))
         quantized._recalculate_delta_times()
-        quantized.to_file(str(track_file))
+        with open(track_file, 'w') as f:
+            f.write(f"# Track 0 Drum Data\n")
+            f.write(f"# quantized\n")
+            f.write(f"# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME\n")
+            f.write(f"# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)\n")
+            f.write(f"# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
+            f.write(f"# Total loop duration: {loop_duration:.6f} seconds\n")
+            for hit in quantized.hits:
+                vel = 0.7 + (hit.velocity * 0.2)
+                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{vel:.6f},{hit.delta_time:.6f}\n")
         print(f"  [Quantize] Original snapped to grid → {track_file.name} ({len(hits)} hits, BPM={bpm:.1f})")
     except Exception as e:
         print(f"  [Quantize] Warning: could not write quantized original: {e}")
@@ -1662,10 +1672,19 @@ if HAVE_WATCHDOG:
             if 'variations' in str(filepath):
                 return
 
-            # Ignore AI-generated modifications (check for recent write)
-            current_time = time.time()
-            last_time = self.last_modified.get(str(filepath), 0)
+            # Ignore our own quantize write-back (file will contain '# quantized')
+            try:
+                with open(filepath, 'r') as f:
+                    header = f.read(256)
+                if '# quantized' in header:
+                    return
+            except OSError:
+                pass
 
+            current_time = time.time()
+
+            # Debounce rapid duplicate events
+            last_time = self.last_modified.get(str(filepath), 0)
             if current_time - last_time < self.cooldown:
                 return
 
