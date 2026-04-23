@@ -169,8 +169,20 @@ class DrumPattern:
 
         return cls(hits=hits, loop_duration=loop_duration, source_file=filepath)
 
-    def to_file(self, filepath: str):
-        """Save drum pattern to CHULOOPA txt file."""
+    def to_file(self, filepath: str, normalize: bool = True):
+        """Save drum pattern to CHULOOPA txt file.
+
+        Args:
+            filepath:  Destination path.
+            normalize: When True (default), maps velocities from [0,1] → [0.70, 0.90]
+                       so that every AI-generated pattern sits comfortably in the
+                       mid-loud range regardless of raw model output values.
+                       Pass normalize=False when velocities have already been
+                       humanized by humanize_velocity_relative() — that function
+                       produces per-instrument values in [0.10, 1.0] that carry
+                       meaningful dynamic differentiation; flattening them to
+                       [0.70, 0.90] would undo that work.
+        """
         # Recalculate delta_times
         self._recalculate_delta_times()
 
@@ -182,12 +194,14 @@ class DrumPattern:
             f.write(f"# DELTA_TIME: Duration until next hit (for last hit: time until loop end)\n")
             f.write(f"# Total loop duration: {self.loop_duration:.6f} seconds\n")
 
-            # Write hits with velocity normalization to 0.7-0.9 range
             for hit in self.hits:
-                # Normalize velocity: clamp to 0-1, then map to 0.7-0.9
-                normalized_velocity = max(0.0, min(1.0, hit.velocity))
-                normalized_velocity = 0.7 + (normalized_velocity * 0.2)
-                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{normalized_velocity:.6f},{hit.delta_time:.6f}\n")
+                if normalize:
+                    # Map [0,1] → [0.70, 0.90] for flat-velocity model output
+                    out_velocity = 0.7 + (max(0.0, min(1.0, hit.velocity)) * 0.2)
+                else:
+                    # Preserve raw velocities (e.g. after humanize_velocity_relative())
+                    out_velocity = max(0.0, min(1.0, hit.velocity))
+                f.write(f"{hit.midi_note},{hit.timestamp:.6f},{out_velocity:.6f},{hit.delta_time:.6f}\n")
 
     def _recalculate_delta_times(self):
         """Recalculate delta_times based on timestamps and loop duration."""
@@ -782,6 +796,57 @@ def groove_preserve(pattern: DrumPattern,
     return result
 
 
+# Per-instrument velocity table: (offset_from_base, sigma)
+_INSTRUMENT_VEL_PARAMS = {
+    # Kick
+    35: (0.05, 0.05),
+    36: (0.05, 0.05),
+    # Snare
+    37: (0.00, 0.06),
+    38: (0.00, 0.06),
+    39: (0.00, 0.06),
+    40: (0.00, 0.06),
+    # Hi-hat
+    42: (-0.15, 0.08),
+    44: (-0.15, 0.08),
+    46: (-0.15, 0.08),
+}
+_INSTRUMENT_VEL_DEFAULT = (0.00, 0.06)
+
+
+def humanize_velocity_relative(variation: DrumPattern,
+                                original: DrumPattern) -> DrumPattern:
+    """Assign fresh per-instrument velocities anchored to the original's mean.
+
+    Replaces the flat 0.75 that the grid model writes for every hit with a
+    Gaussian draw whose center is (original_mean + instrument_offset) and
+    whose spread is instrument-specific sigma.
+
+    Args:
+        variation: Grid model output (all velocities typically 0.75).
+        original:  The recorded beatbox pattern — provides the dynamic anchor.
+
+    Returns:
+        A copy of variation with humanized velocities. original is not mutated.
+    """
+    result = variation.copy()
+
+    if original.hits:
+        base = sum(h.velocity for h in original.hits) / len(original.hits)
+    else:
+        base = 0.72  # neutral fallback
+
+    for hit in result.hits:
+        offset, sigma = _INSTRUMENT_VEL_PARAMS.get(hit.midi_note, _INSTRUMENT_VEL_DEFAULT)
+        # Clamp center before drawing so very quiet inputs (base ~0.12) don't
+        # create a heavily left-truncated Gaussian at the 0.10 floor, which
+        # would collapse dynamic range and bias the distribution.
+        center = max(0.15, min(0.95, base + offset))
+        hit.velocity = max(0.10, min(1.0, random.gauss(center, sigma)))
+
+    return result
+
+
 # =============================================================================
 # RHYTHMIC CREATOR (JAKE'S MODEL) VARIATION GENERATOR
 # =============================================================================
@@ -1060,6 +1125,7 @@ def grid_model_variation(pattern: DrumPattern, spice_level: float = 0.5) -> tupl
             source_file=pattern.source_file,
         )
         variation._recalculate_delta_times()
+        variation = humanize_velocity_relative(variation, pattern)
 
         print(f"    Variation: {len(variation.hits)} hits, loop={loop_duration:.2f}s")
         return variation, True
@@ -1320,7 +1386,7 @@ def generate_variations_for_track(track_file: Path, variation_type: str = 'rhyth
     varied, success = generate_variation(pattern, variation_type, temperature=0.5)
 
     output_file = variations_dir / f"track_0_drums_var1.txt"
-    varied.to_file(str(output_file))
+    varied.to_file(str(output_file), normalize=False)
     print(f"  Saved: {output_file}")
 
     # Notify ChucK based on success/failure
@@ -1412,7 +1478,7 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
     for final_slot, variation in zip(sorted_slots, ordered_patterns):
         out_file = variations_dir / f"track_0_drums_var{final_slot}.txt"
         try:
-            variation.to_file(str(out_file))
+            variation.to_file(str(out_file), normalize=False)
         except Exception as e:
             print(f"  [Sort] Could not write var{final_slot}: {e}")
 
@@ -1583,7 +1649,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern, written_slots: set):
             return
 
         output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-        varied.to_file(str(output_file))
+        varied.to_file(str(output_file), normalize=False)
         written_slots.add(slot)
         print(f"  [Slot {slot}] Saved: {output_file.name} ({len(varied.hits)} hits, spice={spice:.1f})")
         if osc_client:
@@ -1604,7 +1670,7 @@ def _run_slot_thread(slot: int, pattern: DrumPattern, written_slots: set):
                 velocity_variance=0.05 + 0.1 * spice
             )
             output_file = variations_dir / f"track_0_drums_var{slot}.txt"
-            fallback.to_file(str(output_file))
+            fallback.to_file(str(output_file), normalize=False)
             written_slots.add(slot)
             print(f"  [Slot {slot}] Fallback saved")
             if osc_client:
@@ -1911,7 +1977,7 @@ def generate_variation_for_file(filepath: str,
             print("Warning: Variation generation returned failure flag")
 
         output_file = variations_dir / f"{filepath_obj.stem}_var1.txt"
-        varied.to_file(str(output_file))
+        varied.to_file(str(output_file), normalize=False)
         print(f"  Saved: {output_file}")
 
         print(f"\n✓ Generated variation successfully!")
