@@ -196,7 +196,7 @@ def test_roundtrip_snaps_cleanly():
             os.unlink(path_out)
 
 
-def test_phase_shifted_input_snaps_correctly():
+def test_phase_shifted_input_snaps_correctly(capsys):
     # Simulates a recording where all hits are shifted ~0.1s late.
     # Naive quantization gives wrong steps [1,5,7,9,12];
     # median phase must recover the correct [0,4,6,8,12] pattern.
