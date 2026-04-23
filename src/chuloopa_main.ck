@@ -1066,13 +1066,6 @@ fun int loadVariationFile(int track, int var_num) {
         return 0;
     }
 
-    // Stop existing drum playback
-    drum_playback_id[track] + 1 => drum_playback_id[track];
-    0 => drum_playback_active[track];
-
-    // Clear existing data
-    clearSymbolicData(track);
-
     // Load data (same logic as loadDrumDataFromFile)
     int loaded_classes[0];
     float loaded_timestamps[0];
@@ -1129,10 +1122,18 @@ fun int loadVariationFile(int track, int var_num) {
 
     fin.close();
 
+    // Validate before touching playback — old session continues if file is bad
     if(loaded_classes.size() == 0) {
         <<< "ERROR: No valid drum data found in variation file" >>>;
         return 0;
     }
+
+    // Stop existing drum playback (only after we know the new file is valid)
+    drum_playback_id[track] + 1 => drum_playback_id[track];
+    0 => drum_playback_active[track];
+
+    // Clear existing data and copy new
+    clearSymbolicData(track);
 
     // Copy to track arrays
     for(0 => int i; i < loaded_classes.size(); i++) {
@@ -1340,14 +1341,23 @@ fun void masterSyncCoordinator() {
                 // Only fires after rolling buffer is fully filled (cold-start guard)
                 if(bank_ready && has_loop[0] && !is_muted && rolling_spice_filled) {
                     pickVariationByWeight(rolling_avg_spice) => int target_idx;
-                    if(target_idx != current_variation_index) {
-                        target_idx => current_variation_index;
-                        if(target_idx == 0) {
-                            loadDrumDataFromFile(0);
+                    if(target_idx == current_variation_index) {
+                        <<< "  [Auto-switch] Staying on var" + current_variation_index + " (same pick, no reload)" >>>;
+                    } else if(target_idx == 0) {
+                        if(loadDrumDataFromFile(0)) {
+                            0 => current_variation_index;
                             0 => variation_mode_active;
+                            <<< "  [Auto-switch] → Echo (original)" >>>;
                         } else {
-                            loadVariationFile(0, target_idx);
+                            <<< "  [Auto-switch] Load FAILED — keeping var" + current_variation_index >>>;
+                        }
+                    } else {
+                        if(loadVariationFile(0, target_idx)) {
+                            target_idx => current_variation_index;
                             1 => variation_mode_active;
+                            <<< "  [Auto-switch] → var" + target_idx + " loaded OK" >>>;
+                        } else {
+                            <<< "  [Auto-switch] Load FAILED — keeping var" + current_variation_index >>>;
                         }
                     }
                 }
