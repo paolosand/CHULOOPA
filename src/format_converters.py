@@ -17,6 +17,7 @@ Rhythmic Creator format:
 """
 
 import random
+import statistics
 
 
 # MIDI note mapping
@@ -199,6 +200,41 @@ def assign_velocity(timestamp: float, loop_duration: float) -> float:
 
 # ── Grid model converters ──────────────────────────────────────────────────────
 
+def quantize_to_steps(hits: list, loop_duration: float) -> list:
+    """Snap (timestamp, midi_note) pairs to a 16-step grid.
+
+    Uses median phase estimation to correct for constant timing offsets,
+    e.g. the user starts playing slightly late in the recording window.
+
+    Args:
+        hits:          list of (timestamp_seconds: float, midi_note: int)
+        loop_duration: total loop duration in seconds (one 4/4 bar)
+
+    Returns:
+        list of (step: int, midi_note: int) sorted by (step, midi_note),
+        steps clamped to [0, 15].
+    """
+    if not hits:
+        return []
+
+    step_duration = loop_duration / 16
+    fracs = [ts % step_duration for ts, _ in hits]
+    phase = statistics.median(fracs)
+
+    spread = max(fracs) - min(fracs)
+    if spread > 0.25 * step_duration:
+        print(f"  [Quantize] Warning: loose timing "
+              f"(spread={spread:.4f}s = {spread / step_duration:.2f} steps)"
+              f" — best approximation")
+
+    events = []
+    for ts, note in hits:
+        step = max(0, min(15, round((ts - phase) / step_duration)))
+        events.append((step, note))
+
+    return sorted(events)
+
+
 def chuloopa_txt_to_grid_tokens(filepath: str, bpm: float) -> tuple:
     """
     Convert a CHULOOPA drum txt file to P/N grid tokens for GPTBarPair.
@@ -225,15 +261,10 @@ def chuloopa_txt_to_grid_tokens(filepath: str, bpm: float) -> tuple:
     if loop_duration is None:
         raise ValueError(f"No '# Total loop duration:' header found in {filepath}")
 
-    step_duration = (60.0 / bpm) / 4.0
-
-    events = []
-    for timestamp, midi_note in hits:
-        step = int(round(timestamp / step_duration))
-        step = max(0, min(15, step))
-        events.append((step, midi_note))
-
-    events.sort(key=lambda x: (x[0], x[1]))
+    # bpm parameter retained for API compatibility; step calculation uses
+    # loop_duration from the file header (equivalent for 4/4 one-bar loops,
+    # and more robust to phase offsets via quantize_to_steps).
+    events = quantize_to_steps(hits, loop_duration)
 
     tokens = []
     for step, pitch in events:
