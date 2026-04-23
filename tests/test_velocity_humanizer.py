@@ -16,6 +16,7 @@ def _make_pattern(hits_spec, loop_duration=2.0):
 
 def test_velocities_are_no_longer_flat():
     """All grid hits start at 0.75 — after humanization they should differ."""
+    random.seed(42)
     original = _make_pattern([(36, 0.0, 0.75), (38, 0.5, 0.75), (42, 1.0, 0.75)])
     variation = _make_pattern([(36, 0.0, 0.75), (38, 0.5, 0.75), (42, 1.0, 0.75)])
     result = humanize_velocity_relative(variation, original)
@@ -46,7 +47,9 @@ def test_loud_input_produces_loud_output():
 def test_kicks_louder_than_hats_on_average():
     """Kicks should average higher velocity than hats."""
     random.seed(0)
-    original = _make_pattern([(36, 0.0, 0.72)] * 8 + [(42, 0.25, 0.72)] * 8)
+    kick_hits = [(36, i * 0.25, 0.72) for i in range(8)]
+    hat_hits  = [(42, i * 0.25 + 0.125, 0.72) for i in range(8)]
+    original  = _make_pattern(kick_hits + hat_hits, loop_duration=2.0)
     variation_hits = [(36, i * 0.1, 0.75) for i in range(16)] + \
                      [(42, i * 0.1 + 0.05, 0.75) for i in range(16)]
     variation = _make_pattern(variation_hits, loop_duration=2.0)
