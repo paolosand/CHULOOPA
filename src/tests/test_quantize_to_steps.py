@@ -54,7 +54,7 @@ def test_single_hit_snaps_to_step_0():
 def test_step_clamped_to_15():
     # A hit right at loop end must not overflow to step 16
     result = quantize_to_steps([(1.99, 36)], loop_duration=2.0)
-    assert result[0][0] <= 15
+    assert result[0][0] == 15
 
 
 def test_sorted_by_step_then_note():
