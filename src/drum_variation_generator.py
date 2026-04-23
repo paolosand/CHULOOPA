@@ -782,6 +782,54 @@ def groove_preserve(pattern: DrumPattern,
     return result
 
 
+# Per-instrument velocity table: (offset_from_base, sigma)
+_INSTRUMENT_VEL_PARAMS = {
+    # Kick
+    35: (0.05, 0.05),
+    36: (0.05, 0.05),
+    # Snare
+    37: (0.00, 0.06),
+    38: (0.00, 0.06),
+    39: (0.00, 0.06),
+    40: (0.00, 0.06),
+    # Hi-hat
+    42: (-0.15, 0.08),
+    44: (-0.15, 0.08),
+    46: (-0.15, 0.08),
+}
+_INSTRUMENT_VEL_DEFAULT = (0.00, 0.06)
+
+
+def humanize_velocity_relative(variation: DrumPattern,
+                                original: DrumPattern) -> DrumPattern:
+    """Assign fresh per-instrument velocities anchored to the original's mean.
+
+    Replaces the flat 0.75 that the grid model writes for every hit with a
+    Gaussian draw whose center is (original_mean + instrument_offset) and
+    whose spread is instrument-specific sigma.
+
+    Args:
+        variation: Grid model output (all velocities typically 0.75).
+        original:  The recorded beatbox pattern — provides the dynamic anchor.
+
+    Returns:
+        A copy of variation with humanized velocities. original is not mutated.
+    """
+    result = variation.copy()
+
+    if original.hits:
+        base = sum(h.velocity for h in original.hits) / len(original.hits)
+    else:
+        base = 0.72  # neutral fallback
+
+    for hit in result.hits:
+        offset, sigma = _INSTRUMENT_VEL_PARAMS.get(hit.midi_note, _INSTRUMENT_VEL_DEFAULT)
+        center = base + offset
+        hit.velocity = max(0.10, min(1.0, random.gauss(center, sigma)))
+
+    return result
+
+
 # =============================================================================
 # RHYTHMIC CREATOR (JAKE'S MODEL) VARIATION GENERATOR
 # =============================================================================
