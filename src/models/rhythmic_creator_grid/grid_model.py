@@ -151,6 +151,7 @@ class RhythmicCreatorGridModel:
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         max_new_tokens: int = 64,
+        min_new_tokens: Optional[int] = None,
     ) -> list:
         """
         Generate a new bar from a list of P/N context tokens.
@@ -160,6 +161,11 @@ class RhythmicCreatorGridModel:
             temperature:    sampling temperature (lower = more conservative)
             top_k:          if set, restricts sampling to top-k logits
             max_new_tokens: generation budget (stops earlier at <EOS>)
+            min_new_tokens: EOS is suppressed until this many tokens are emitted.
+                            Defaults to max(4, len(context_tokens) // 2) — at least
+                            half the original hit count, with a 2-hit floor. Allows
+                            ghost-note variations while preventing empty bars.
+                            Pass 0 to disable.
 
         Returns:
             list[str] of P/N tokens for the generated bar
@@ -168,6 +174,9 @@ class RhythmicCreatorGridModel:
         if unknown:
             raise ValueError(f"Tokens not in model vocab: {unknown}")
 
+        if min_new_tokens is None:
+            min_new_tokens = max(4, len(context_tokens) // 2)
+
         seq = ['<SOS>'] + context_tokens + ['<SEP>']
         ids = [self.stoi[t] for t in seq]
         idx = torch.tensor([ids], dtype=torch.long, device=self.device)
@@ -175,10 +184,13 @@ class RhythmicCreatorGridModel:
         eos_id = self.stoi['<EOS>']
 
         with torch.no_grad():
-            for _ in range(max_new_tokens):
+            for step in range(max_new_tokens):
                 idx_crop = idx[:, -self._model.block_size:]
                 logits = self._model(idx_crop)
                 logits = logits[:, -1, :] / temperature
+
+                if step < min_new_tokens:
+                    logits[:, eos_id] = float('-inf')
 
                 if top_k is not None:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
