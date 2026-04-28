@@ -18,11 +18,25 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 
 - **Real-time Beatbox Transcription** — Vocal input → Drum samples (instant feedback)
 - **KNN Classifier** — User-trainable, personalized drum detection (MFCC-13, k=3)
-- **AI Variation Bank** — Local transformer-LSTM generates 5 variants at different spice levels
+- **AI Variation Bank** — Local GPTBarPair decoder generates 5 variants at different spice levels
 - **Audio-Driven Spice** — `spice_detector.ck` analyzes live audio and auto-selects variations at loop boundaries
 - **OSC Integration** — Seamless Python-ChucK communication for automatic AI workflow
 - **Ableton Live Routing** — MIDI output via macOS IAC Driver (Drum Rack, FX, mixing)
 - **ChuGL Visualization** — Real-time color-coded shape feedback (drum hit impulses, spice slider, state text)
+
+---
+
+## Demo
+
+<p align="center">
+  <a href="https://youtube.com/shorts/gqVEtp37bXs">
+    <img src="https://img.youtube.com/vi/gqVEtp37bXs/hqdefault.jpg" alt="CHULOOPA demo 1" width="45%" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://youtube.com/shorts/YhnaJ4LI-jY">
+    <img src="https://img.youtube.com/vi/YhnaJ4LI-jY/hqdefault.jpg" alt="CHULOOPA demo 2" width="45%" />
+  </a>
+</p>
 
 ---
 
