@@ -51,7 +51,7 @@ cd src
 python drum_variation_generator.py --watch
 ```
 
-Generates a bank of 5 variations at spice levels 0.2/0.4/0.6/0.8/1.0 using Jake Chen's rhythmic_creator model.
+Generates a bank of 5 variations at spice levels 0.2/0.4/0.6/0.8/1.0 using the GPTBarPair grid model (default). To use the Transformer-LSTM backend instead: `python drum_variation_generator.py --watch --type rhythmic_creator`
 
 ### 3. Start Spice Detector (Terminal 2)
 
@@ -150,7 +150,7 @@ Shapes (cube / octahedron / dodecahedron / icosahedron) pulse on each drum hit a
 | Dim gray                     | Muted (silence gate active)                    |
 | Blue                         | Playing original loop                          |
 | Blue-green tint              | Variation bank ready (not yet playing)         |
-| Blue → Yellow → Red gradient | Playing a variation (color tracks spice level) |
+| Blue → Yellow → Red gradient | Playing a variation (color tracks variation index: var1=blue → var5=red) |
 
 **Spice slider** (`ECHO ━━━ VAR`): bar moves right as spice increases. Color: blue (low) → orange (mid) → red (high).
 
@@ -231,6 +231,6 @@ Key packages: `python-osc`, `watchdog`, `torch`, `scikit-learn`, `numpy`
 **Advisors:** Ajay Kapur, Jake Cheng  
 **Year:** 2026
 
-**AI Model:** rhythmic_creator by Jake Chen (Zhaohan Chen), CalArts MFA 2025 — "Music As Natural Language: Deep Learning Driven Rhythmic Creation" — Transformer-LSTM hybrid adapted for continuation-based loop variation.
+**AI Model:** GPTBarPair by Jake Chen (Zhaohan Chen), CalArts MFA 2025 — based on "Music As Natural Language: Deep Learning Driven Rhythmic Creation." A 6-layer decoder-only Transformer (256-dim embeddings, 8 attention heads, 4.8M parameters, 42-token vocabulary) trained on 12,085 bar pairs from the Expanded Groove MIDI Dataset. Given a context bar encoded as P/N grid tokens on a 16-step grid, generates the following bar conditioned on that input. The original Transformer-LSTM backend remains available via `--type rhythmic_creator`.
 
 **Inspired by:** Magenta's GrooVAE, Google Gemini API, Living Looper (nn_tilde), Intelligent Instruments Lab's Notochord

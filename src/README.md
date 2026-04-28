@@ -36,7 +36,7 @@ cd src
 python drum_variation_generator.py --watch
 ```
 
-Starts the OSC server and watches for newly recorded loops. Pre-generates a bank of 5 variations at spice levels 0.2/0.4/0.6/0.8/1.0 using `rhythmic_creator` (local, offline).
+Starts the OSC server and watches for newly recorded loops. Pre-generates a bank of 5 variations at spice levels 0.2/0.4/0.6/0.8/1.0 using the **GPTBarPair grid model** (default, local, offline). To use the Transformer-LSTM backend: `python drum_variation_generator.py --watch --type rhythmic_creator`
 
 ---
 
@@ -76,13 +76,15 @@ KNN classifier trains automatically on startup from `training_samples.csv`. OSC 
 ### Spice Levels
 
 Spice is driven by `spice_detector.ck` from live audio. CC 74 sets the ceiling.
-Spice maps to a **token count ceiling** (max 3×) for the rhythmic_creator model.
+For the default **GPTBarPair grid model**, spice maps to sampling temperature (`T = 0.6 + 0.8 × spice`):
 
-| Range | Token ceiling | Behavior |
-|-------|--------------|----------|
-| 0.0–0.3 (low) | ~1× context | Conservative — minimal additions, close to original |
-| 0.4–0.6 (mid) | ~2× context | Light embellishment, subtle humanization |
-| 0.7–1.0 (high) | up to 3× context | Bold fills, ghost notes, hi-hat density |
+| Range | Temperature | Behavior |
+|-------|-------------|----------|
+| 0.0–0.3 (low) | 0.60–0.84 | Conservative — stays close to original bar structure |
+| 0.4–0.6 (mid) | 0.92–1.08 | Light embellishment, moderate fills |
+| 0.7–1.0 (high) | 1.16–1.40 | Bold fills, ghost notes, new drum voices |
+
+For the Transformer-LSTM backend (`--type rhythmic_creator`), spice maps to a token count multiplier (0.85×–1.5× of the original hit count) instead.
 
 ---
 
@@ -111,7 +113,6 @@ Spice maps to a **token count ceiling** (max 3×) for the rhythmic_creator model
 | `chuloopa_drums_v3.ck` | Standalone version (built-in WAV samples, no Ableton) |
 | `drum_variation_ai.py` | Single-variant AI engine (v1) |
 | `chuloopa_drums_v2.ck` | Archived — older standalone version |
-| `chuloopa_main.ck` | Original melody-based system (archived) |
 
 ---
 
