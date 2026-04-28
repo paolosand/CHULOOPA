@@ -1777,19 +1777,20 @@ fun void visualizationLoop() {
             0.15 => target_bloom;
         }
         else if(variation_mode_active) {
-            // PLAYING VARIATION: Gradient based on effective_spice
-            // Blue (low) → Yellow (high) — upper range drops green by 0.1 only, stays yellow
-            if(effective_spice < 0.5) {
-                // Blue to Yellow gradient (0.0 - 0.5)
-                effective_spice * 2.0 => float t;
+            // PLAYING VARIATION: Fixed color per variation index (var1=blue, var5=red)
+            // var_pos: 0.0 (var1) → 1.0 (var5), independent of spice
+            Math.max(0.0, (current_variation_index - 1) $ float / 4.0) => float var_pos;
+            if(var_pos < 0.5) {
+                // Blue to Yellow gradient (var1-var3)
+                var_pos * 2.0 => float t;
                 @(0.2 + t * 0.8, 0.4 + t * 0.6, 0.9 - t * 0.9) => target_color;
             }
             else {
-                // Yellow to Red gradient (0.5 - 1.0)
-                (effective_spice - 0.5) * 2.0 => float t;
+                // Yellow to Red gradient (var3-var5)
+                (var_pos - 0.5) * 2.0 => float t;
                 @(1.0, 1.0 - t * 0.1, 0.0) => target_color;
             }
-            0.5 + effective_spice * 0.3 => target_bloom;
+            0.5 + var_pos * 0.3 => target_bloom;
         }
         else if(variations_ready && !variation_mode_active) {
             // VARIATION READY (not playing yet): Blue with green tint + extra glow

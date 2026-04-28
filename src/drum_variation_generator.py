@@ -237,30 +237,23 @@ class DrumPattern:
 CORE_KIT = {35, 36, 38, 40, 42}
 
 
-def compute_deviation_score(variation: 'DrumPattern', original: 'DrumPattern') -> float:
+def compute_deviation_score(variation: 'DrumPattern', original: 'DrumPattern') -> tuple:
     """Score how much a variation deviates from the original pattern.
 
-    Higher score = more deviant. Used to sort the variation bank so slot 1
-    is always the least deviant and slot 5 is the most deviant.
+    Returns a tuple sorted ascending: (density_increase, new_voice_classes).
+    Density (extra hits) is the primary driver — a very busy variation always
+    ranks higher than a sparse one regardless of voice classes. New voice
+    classes break ties within the same density bucket, so a variation that
+    introduces a crash at the same density ranks above one that stays in the
+    original voice pool.
 
-    Args:
-        variation: Generated variation (already trimmed to loop boundary)
-        original: Original user-recorded pattern
-
-    Returns:
-        Deviation score (can be negative if variation has fewer hits than original)
-
-    Score formula:
-        hit_delta + 0.3 * non_standard_count
-        - hit_delta: len(variation.hits) - len(original.hits)
-          Primary driver. More hits = more complex.
-        - non_standard_count: hits whose midi_note is not in CORE_KIT
-          Secondary. Exotic notes (open hat, crash, ride, toms) add complexity.
-          Weighted 0.3 so a few exotic notes don't outweigh a hit count difference.
+    Only positive density changes are counted; sparser variations are not
+    penalized (they tie on density and sort by voice classes only).
     """
-    hit_delta = len(variation.hits) - len(original.hits)
-    non_standard = sum(1 for h in variation.hits if h.midi_note not in CORE_KIT)
-    return hit_delta + 0.3 * non_standard
+    orig_pitches = set(h.midi_note for h in original.hits)
+    V_new = len(set(h.midi_note for h in variation.hits) - orig_pitches)
+    delta_hits = len(variation.hits) - len(original.hits)
+    return (max(0, delta_hits), V_new)
 
 
 def humanize_pattern(pattern: DrumPattern,
@@ -1468,7 +1461,7 @@ def _sort_variation_bank(written_slots: set, original: 'DrumPattern'):
     scored = [(slot, compute_deviation_score(pat, original)) for slot, pat in slot_patterns.items()]
     scored.sort(key=lambda x: x[1])  # ascending: least deviant first
 
-    print(f"  [Sort] Deviation scores: {[(f'var{s}', f'{sc:.2f}') for s, sc in scored]}")
+    print(f"  [Sort] Deviation scores: {[(f'var{s}', f'+{sc[0]}hits,{sc[1]}new') for s, sc in scored]}")
 
     # Hold all patterns in memory before writing (avoids partial-write issues)
     ordered_patterns = [slot_patterns[slot] for slot, _ in scored]
