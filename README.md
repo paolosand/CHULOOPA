@@ -28,9 +28,12 @@ CHULOOPA is a real-time drum looping system built in ChucK that uses machine lea
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/bfb52c50-b379-4480-b9f3-05e787fd7f94" autoplay loop muted playsinline></video>
-
-<video src="https://github.com/user-attachments/assets/f08a0c44-54c1-4185-bbfd-e6e17c39360c" autoplay loop muted playsinline></video>
+<table>
+  <tr>
+    <td><video src="https://github.com/user-attachments/assets/bfb52c50-b379-4480-b9f3-05e787fd7f94" autoplay loop muted playsinline></video></td>
+    <td><video src="https://github.com/user-attachments/assets/f08a0c44-54c1-4185-bbfd-e6e17c39360c" autoplay loop muted playsinline></video></td>
+  </tr>
+</table>
 
 ---
 
