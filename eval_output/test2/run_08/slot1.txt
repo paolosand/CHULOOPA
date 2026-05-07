@@ -1,0 +1,8 @@
+# Track Drum Data (AI Generated Variation)
+# Format: MIDI_NOTE,TIMESTAMP,VELOCITY,DELTA_TIME
+# MIDI_NOTE: GM MIDI note number (36=kick, 38=snare, 42=hat, etc.)
+# DELTA_TIME: Duration until next hit (for last hit: time until loop end)
+# Total loop duration: 2.536780 seconds
+36,0.000000,0.878813,0.000000
+48,0.000000,0.796809,2.378231
+48,2.378231,0.807011,0.158549

@@ -1,0 +1,320 @@
+% -----------------------------------------------
+% Template for ISMIR Papers
+% 2026 version, based on previous ISMIR templates
+
+% Requirements :
+% * 6+n page length maximum
+% * 10MB maximum file size
+% * Copyright note must appear in the bottom left corner of first page
+% * Clearer statement about citing own work in anonymized submission
+% (see conference website for additional details)
+% -----------------------------------------------
+
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,cite,url}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+% Title. Please use IEEE-compliant title case when specifying the title here,
+% as it has implications for the copyright notice
+% ------
+\title{Grid-Based Language Models for Real-Time Co-Creative Drum Generation}
+
+% Note: Please do NOT use \thanks or a \footnote in any of the author markup
+
+% Three addresses
+% --------------
+\threeauthors
+  {Zhaohan Cheng} {California Institute of the Arts \\ \texttt{zcheng@calarts.edu}}
+  {Paolo Sandejas} {California Institute of the Arts \\ \texttt{paolosandejas@students.calarts.edu}}
+  {Ajay Kapur} {California Institute of the Arts \\ \texttt{akapur@calarts.edu}}
+
+% For the author list in the Creative Common license, please enter author names.
+% Please abbreviate the first names of authors and add 'and' between the second to last and last authors.
+\def\authorname{F. Author, S. Author, and T. Author}
+
+% Optional: To use hyperref, uncomment the following.
+% \usepackage[bookmarks=false,pdfauthor={\authorname},pdfsubject={\pdfsubject},hidelinks]{hyperref}
+% Mind the bookmarks=false option; bookmarks are incompatible with ismir.sty.
+
+\sloppy % please retain sloppy command for improved formatting
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present a grid-based language modeling approach for real-time symbolic drum continuation in co-creative music systems. In loop-based interaction, generated rhythms must be plausible, remain aligned to bar boundaries, and be easy to schedule, compare, and control. We therefore treat representation choice as a system-design problem.
+
+Given a context bar, a decoder-only Transformer predicts the following bar using either a relative-timing, Time-Note-Duration (TND), encoding or a fixed-grid, GRID, encoding, under matched data and model conditions. Both outputs are decoded into a shared 16-step onset grid for evaluation on E-GMD \cite{callender2020improving}. GRID improves onset F1 from 0.379 to 0.586, improves step accuracy, and reduces malformed generations relative to TND.
+
+We integrate the GRID model into two co-creative settings: CHULOOPA, a voice-controlled drum looper, and a robotic instrument deployment. Across offline evaluation and system integration, fixed-grid representation supports more reliable bar-synchronous continuation, loop alignment, variation control, and real-time scheduling.
+\end{abstract}
+
+\section{Introduction}\label{sec:introduction}
+Symbolic music generation is often evaluated as a sequence modeling problem: given musical context, a model predicts a plausible continuation. In real-time co-creative rhythm systems, however, plausibility alone is not sufficient. Generated rhythms must also remain aligned to loop boundaries, respond predictably to performer input, and be easy to schedule, compare, and control during interaction.
+
+This makes representation a practical system-design problem. Relative-timing tokenization \cite{huang2018music} describe events through time offsets between notes, which preserves local timing information but leaves bar position implicit. For loop-based drum continuation, this can make small timing errors accumulate into outputs that are harder to align and reuse. A fixed-grid representation instead places each onset directly in a bar-relative metrical position, trading micro-timing detail for temporal clarity.
+
+We study this tradeoff through next-bar drum continuation. Given a context bar, the model predicts the following bar. We compare two representations under matched data and model conditions: a relative-timing, Time-Note-Duration (TND) encoding, and a fixed-grid, GRID, encoding. Both outputs are decoded into a 16-step onset grid, focusing the evaluation on representation choice.
+
+We also examine the representation in two real-time co-creative systems. In CHULOOPA, performer input is transcribed into symbolic drum events and used as context for rhythmic variation. In a second deployment, generated drum sequences are mapped to robotic musical instruments, where repeatable scheduling and loop alignment are especially important. These systems motivate our focus on stable, interpretable, bar-synchronous rhythmic output.
+
+We find that GRID provides more reliable bar-synchronous continuation than TND and better supports the timing requirements of real-time co-creative systems. More broadly, the results show that representation design affects not only model behavior, but also how generated rhythms can be aligned, controlled, and performed.
+
+
+
+\section{Related Work}\label{sec:related_work}
+We build on prior research in symbolic music generation and drum-focused rhythmic modeling.
+
+Early work in symbolic music generation has shown that Transformer architectures \cite{VaswaniSPUJGKP17} can model long-range structure and generate coherent continuations from preceding context \cite{huang2018music}. Symbolic music tokenization strongly shapes this modeling behavior. MIDI-like and TimeShift-Duration (TSD) representations encode time through relative time-shift events and note attributes through explicit note or duration tokens \cite{oore_midilike_2018,fradet-etal-2023-byte}.  In contrast, REMI makes metrical structure explicit through bar and position events for expressive pop piano generation \cite{huang2020popmusic}. Later representations and architectures such as Compound Word Transformer, MMM, and Multitrack Music Transformer explore tradeoffs among sequence length, multitrack structure, controllability, and efficient generation \cite{hsiao2021compound,ens2020mmm,dong2023multitrack}.
+
+Recent work has also moved symbolic generation beyond unconditional continuation toward controllable, editable, and score-to-score settings. Examples include theme-conditioned generation in Theme Transformer \cite{shih2022theme}, learned and expert control features in FIGARO \cite{von2022figaro}, text- or attribute-conditioned generation in MuseCoco \cite{lu2023musecoco}, and bar-level control in MuseBarControl \cite{shu2024musebarcontrol}. In parallel, work on symbolic infilling and score-to-score modeling has explored musical score inpainting from surrounding context \cite{pati2019inpainting}, user-sketch guided generation \cite{chen2020musicsketchnet}, variable-length and structure-aware melody infilling \cite{chang2021variable,tan2022melody}, DAW-integrated multitrack infilling \cite{malandro2024composer}, and unified symbolic music-to-music models \cite{wu2024melodyt5,Jiang2025FunctionAlignment,pasquier2025midi}. 
+
+For rhythmic and drum-specific modeling, the Groove MIDI Dataset (GMD) introduced a widely used corpus of human-performed drum patterns with aligned timing and dynamics information, supporting influential work on expressive groove modeling and humanization \cite{groove2019}. The Expanded Groove MIDI Dataset (E-GMD) substantially enlarged this resource with 444 hours of audio from 43 drum kits and expressive annotations, enabling downstream work in transcription and generation \cite{callender2020improving}. Related work has also explored conditioned drum generation from melodic accompaniment \cite{dahale2022drumaccompaniment} and real-time accompaniment with transformer-based models \cite{Haki2022RealTimeDrumAccompaniment}.
+
+Earlier interactive machine-improvisation systems such as the Continuator, OMax, and ImproteK emphasize stylistic continuation, reactivity, and performer-facing control in live contexts \cite{pachet2003continuator,assayag2006omax,nika2017improtek}. More recent user-facing systems frame symbolic generation as an interactive creative aid, including large-scale browser-based harmonization in Bach Doodle \cite{huang2019bachdoodle}, visualization-driven co-composition interfaces that support selection and fine-grained editing of generated alternatives \cite{rau2022visualization}, sketch-based inpainting interfaces \cite{benetatos2022drawandlisten}, and empirical studies showing that musician agency, authorship, and workflow fit are central requirements in human-AI music creation \cite{huang2020aisongcontest,newman2023humanaimusic}. 
+
+Our work inspired by the related work described above, presents experimentation in adapting metrical-position representation to drum-only, bar-pair continuation for real-time co-creative systems. We isolate representation as the primary variable by comparing a fixed-grid encoding against a relative-timing encoding under matched data and model conditions, with the goal of stable next-bar rhythmic continuation for interactive use.
+
+\section{Methodology}\label{sec:methodology}
+We formulate symbolic rhythmic generation as next-bar continuation: given a context bar, the model predicts the immediately following bar. To study the effect of representation, we encode the same musical examples in two formats: a relative-timing event representation and a fixed-grid metrical representation. Both representations are trained with the same decoder-only Transformer architecture and target-side loss.
+
+\subsection{Data Representation}\label{subsec:representation}
+From each drum performance, we extract contiguous bar pairs $(x_i, y_i)$, where $x_i$ is the context bar and $y_i$ is the target continuation bar. MIDI drum pitches are mapped to drum classes before encoding. We discard pairs with no events in either bar and remove adjacent repeated pairs when their bar-pair signature matches the preceding kept pair. This reduces local redundancy while preserving matched examples for both encoding conditions.
+
+In the first encoding, Time-Note-Duration (TND), a bar is represented as a sequence of relative-timing events:
+\begin{equation}
+x_i = \bigl(e_j\bigr)_{j=1}^{N}, \quad e_j = (\Delta t_j, p_j, d_j)
+\end{equation}
+where $\Delta t_j$ is the time offset from the previous event, $p_j$ is the drum class, and $d_j$ is the event duration. In the token sequence, these attributes are serialized as time-shift, note, and duration tokens. TND preserves event-level timing and duration information, but the metrical position of each event must be recovered from accumulated time shifts.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=1.0\linewidth]{latex/midi_rep_v7.png}
+\caption{TND and GRID tokenizations of the same drum pattern.}
+\label{fig:representation_tokens}
+\end{figure}
+
+In the second encoding, GRID, each bar is quantized into 16 metrical steps and represented as a sequence of onset events:
+\begin{equation}
+x_i = \bigl(u_j\bigr)_{j=1}^{M}, \quad u_j = (g_j, p_j)
+\end{equation}
+where $g_j\in\{0,\dots,15\}$ is the grid position within the bar and $p_j$ is the drum class. Multiple drum classes at the same step are represented as repeated position--note pairs. Unlike TND, which includes duration information to match TSD-style tokenizations~\cite{fradet-etal-2023-byte}, GRID intentionally omits duration. This reflects the percussive nature of the task: for loop-based drum continuation, the primary symbolic information is the presence of an onset at a metrical position rather than its sustained length.
+
+Both representations are serialized as token sequences for autoregressive modeling. TND represents timing through accumulated relative offsets, while GRID represents timing directly as bar-relative metrical position.
+
+
+
+\subsection{Model}\label{subsec:model}
+
+We use the same decoder-only Transformer \cite{VaswaniSPUJGKP17} for both representations. Each bar-pair example is serialized as:
+\begin{equation}
+\langle \mathrm{SOS} \rangle,\; x_i,\; \langle \mathrm{SEP} \rangle,\; y_i,\; \langle \mathrm{EOS} \rangle,
+\end{equation}
+where $\langle \mathrm{SOS} \rangle$ and $\langle \mathrm{EOS} \rangle$ mark the sequence boundaries, and $\langle \mathrm{SEP} \rangle$ separates the context bar from the target continuation bar. The serialized sequence is passed through learned token and positional embeddings, stacked masked self-attention blocks, and an autoregressive output layer.
+
+The context bar is provided as conditional input, but the loss is applied only to the continuation bar. Since serialized sequences have different lengths, sequences are padded within each batch. Let $z=(z_1,\dots,z_T)$ be the padded serialized token sequence and let $s$ denote the index of $\langle \mathrm{SEP} \rangle$. The model estimates $p_\theta(z_t \mid z_{<t})$, and the training objective is:
+\begin{equation}
+\mathcal{L} = - \sum_{t=s+1}^{T} m_t \log p_\theta(z_t \mid z_{<t}),
+\end{equation}
+where $m_t=1$ for non-padding tokens and $m_t=0$ otherwise. This masking trains the model to predict the continuation bar rather than reconstruct the context bar.
+
+Both representations use the same architecture: 6 Transformer blocks, embedding size 256, 8 attention heads, feed-forward dimension 1024, and dropout 0.2. Both models are trained for 30 epochs with AdamW \cite{loshchilov2017decoupled}, learning rate $3\times10^{-4}$, and the checkpoint with the lowest validation loss is used for evaluation and deployment. Keeping the architecture and training procedure fixed allows the comparison to focus on symbolic representation rather than model capacity or optimization differences.
+
+
+% Models are trained with AdamW using batch size 64, learning rate $3\times10^{-4}$, weight decay $10^{-2}$, and 30 training epochs. For each representation, we select the checkpoint with the lowest validation loss.
+
+
+
+\section{Evaluation}\label{sec:evaluation}
+We evaluate representation choice in a controlled next-bar continuation setting. Both TND and GRID are trained on the same bar-pair examples, generated from the same test contexts, and decoded into a shared 16-step onset grid for comparison. This evaluation measures whether the fixed-grid representation improves rhythmic continuation quality, output validity, and loop-compatible temporal structure relative to the relative-timing baseline.
+
+
+\subsection{Dataset and Preprocessing}\label{subsec:dataset_eval_setup}
+We evaluate both representations on the Expanded Groove MIDI Dataset (E-GMD) \cite{callender2020improving}, preserving its predefined train, validation, and test split. Since the task requires a context bar and a target bar, we retain only drum clips containing at least two bars. This yields 306 training files, 46 validation files, and 71 test files; the retained subset primarily consists of beat examples rather than fills.
+
+From retained clips, we use \texttt{pretty\_midi} \cite{raffel2014intuitive} to extract drum notes and construct contiguous bar-pairs following the procedure in Section~\ref{subsec:representation}. Empty pairs and adjacent duplicate pairs are removed; adjacent duplicate removal affects fewer than 1\% of candidate pairs in every split. This results in 12,085 training pairs, 1,875 validation pairs, and 1,654 test pairs. Both TND and GRID are constructed from this same set of bar pairs, allowing the comparison to isolate representation choice rather than dataset differences.
+
+Since the two representations produce different token spaces, token-level loss and perplexity are not used as primary cross-representation metrics. Instead, generated outputs from both models are decoded into a 16-step onset grid for evaluation.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lrrrrr}
+\toprule
+Split & Orig. & Kept & Beat & Fill & Pairs \\
+\midrule
+Train & 819 & 306 & 280 & 26 & 12,085 \\
+Val & 117 & 46 & 42 & 4 & 1,875 \\
+Test & 123 & 71 & 70 & 1 & 1,654 \\
+\bottomrule
+\end{tabular}
+\caption{E-GMD split sizes after filtering and bar-pair extraction for next-bar continuation.}
+\label{tab:egmd-summary}
+\end{table}
+
+
+
+\subsection{Quantitative Evaluation}\label{subsec:quantitative_evaluation}
+For each context bar in the E-GMD test set, we generate one target bar from each model using matched decoding settings and decode all outputs into the shared 16-step onset grid. Table~\ref{tab:representation_comparison} reports onset precision, recall, and F1, together with step accuracy, exact-match rate, malformed-output rate, duplicate rate, and average predicted onset density. Precision, recall, and F1 are computed over active onsets. Step accuracy measures binary agreement over the full grid, including inactive positions. Malformed-output rate measures generations that cannot be parsed into a valid target bar, duplicate rate measures repeated onsets at the same drum class and grid position, and density is the average number of predicted onsets per bar.
+
+GRID outperforms TND on the continuation metrics. Onset F1 increases from 0.379 to 0.586, with gains in both precision and recall. GRID also improves step accuracy and reduces malformed generations, indicating better grid-level agreement and output validity. These improvements suggest that explicit metrical-position tokens provide a more reliable basis for target-bar rhythmic structure than relative time-shift events.
+
+Exact-match rates are near zero for both representations because the metric requires the entire generated bar to match the ground-truth target. GRID produces denser outputs than TND, with an average increase of 3.37 onsets per bar. This suggests a modest tendency toward more active continuations, but the increase is accompanied by higher precision, indicating that the gain is not only due to over-generation. Overall, these results indicate that GRID provides more reliable bar-synchronous rhythmic continuation than TND.
+
+
+
+\begin{table*}[t]
+\centering
+\setlength{\tabcolsep}{7pt}
+\begin{tabular}{lcccccccc}
+\toprule
+ & \multicolumn{3}{c}{Onset} & \multicolumn{2}{c}{Grid} & \multicolumn{2}{c}{Validity} & \\
+\cmidrule(lr){2-4}
+\cmidrule(lr){5-6}
+\cmidrule(lr){7-8}
+Rep. & Prec. & Rec. & F1 & Step Acc. & Exact & Malf. & Dup. & Density \\
+\midrule
+TND  & 0.412 & 0.363 & 0.379 & 0.838 & 0.000 & 0.024 & 0.000 & 15.899 \\
+GRID & 0.578 & 0.610 & 0.586 & 0.882 & 0.001 & 0.010 & 0.006 & 19.270 \\
+\bottomrule
+\end{tabular}
+\caption{Representation comparison on the E-GMD test set. All generated outputs are decoded into a shared 16-step onset grid before metric computation. Malf. denotes malformed-output rate and Dup. denotes duplicate rate.}
+\label{tab:representation_comparison}
+\end{table*}
+
+
+\subsection{Generated Example Analysis}\label{subsec:generated_analysis}
+
+To complement the aggregate metrics, Figure~\ref{fig:generated_examples} shows two generated examples decoded into the same 16-step onset grid used for evaluation. Each example includes the shared context bar, the ground-truth target, and outputs from the GRID and TND models. These examples are intended as qualitative illustrations of the trends in Table~\ref{tab:representation_comparison}.
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=1.0\linewidth]{latex/grid_vs_tnd_context_plus_pred_v7.png}
+\caption{Two rhythmic continuation examples in a shared 16-step onset grid. Top to bottom: ground-truth target, GRID output, and TND output. Magenta indicates the shared context; the vertical boundary marks the context--prediction transition.}
+  \label{fig:generated_examples}
+\end{figure}
+
+In both examples, GRID produces rhythmic continuations that remain aligned to explicit metrical positions and closely follow the ground-truth target bar's onset structure. The TND outputs contain locally plausible drum events, but show weaker agreement with the target grid and recover fewer target onset positions. This visual pattern is consistent with the quantitative results, where GRID improves onset F1, step accuracy, and malformed-output rate.
+
+
+\section{Co-Creative System Applications}\label{sec:co-creative}
+
+We integrate the GRID model into two real-time systems with different interaction modes: a voice-controlled drum looper and robotic musical instruments.\footnote{https://sites.google.com/view/chuloopa/home} These deployments demonstrate how the representation supports stable scheduling, loop alignment, and performer-facing control beyond offline evaluation.
+
+\subsection{CHULOOPA}\label{subsec:CHULOOPA}
+
+CHULOOPA (ChucK-based \cite{wang2015chuck} Loop Operator for Performance Audio) is a voice-controlled drum looper for live performance. A performer beatboxes a drum pattern; a personalized KNN classifier \cite{martanto2025beatbox} transcribes onsets into kick, snare, and hi-hat events in real time. These events are stored as timestamped MIDI triples and passed to the variation engine. The GRID representation converts this input into a stable 16-step temporal frame, allowing generated continuations and the original loop to share the same metrical reference.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=1.0\linewidth]{latex/chuloopa_condensed_v4.png}
+  \caption{CHULOOPA system architecture (main looper, variant generator, and variant selector). The variant generator quantizes the recorded pattern to a 16-step grid, runs five GRID based generation threads at increasing temperatures, and sorts the resulting bank by deviation score before signaling the looper.}
+  \label{fig:chuloopa_system}
+\end{figure*}
+
+\textbf{Integration.} The recorded pattern is converted to GRID tokens and used as the generation context. CHULOOPA spawns five parallel generation threads after each recording, one per spice target $s \in \{0.2, 0.4, 0.6, 0.8, 1.0\}$. Each thread generates a continuation at a sampling temperature that scales linearly with spice:
+\begin{equation}
+  T = 0.6 + 0.8 \times s
+\end{equation}
+This gives $T{=}0.76$ for the lowest-spice thread and $T{=}1.40$ for the highest. Temperature biases the generation process toward different levels of variation, while the sorting step below enforces a consistent ordering. The input pattern is quantized to the same 16-step grid and written back as the active playback loop before generation begins, ensuring the looped original and all variations share the same temporal reference. Generation runs asynchronously after loop capture; the original quantized pattern plays immediately while the five variants are prepared (3--5\,s on consumer CPU hardware).
+
+
+\textbf{Representation advantages.} GRID's position tokens are defined over $\{0,\dots,15\}$ by construction, so every output is metrically well-formed and directly schedulable---quantization is enforced by the representation, not learned. Table~\ref{tab:chuloopa_comparison} reports system-level metrics across 11 CHULOOPA input patterns at spice values $\{0.2, 0.6, 1.0\}$. GRID maintained zero grid deviation and full on-grid placement at every spice level; TND outputs showed a mean deviation of 23.9\,ms with only 37.6\% of onsets on-grid. When both outputs are grid-quantized for a content-only comparison, GRID preserved 67.7\% of input hits versus 36.8\% for TND, indicating stronger rhythmic coherence with the performer's original pattern.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lcc}
+\toprule
+Metric & GRID & TND \\
+\midrule
+Grid deviation (ms) & 0.0 & 23.9 \\
+On-grid rate (\%) & 100.0 & 37.6 \\
+Hit preservation (\%) & 67.7 & 36.8 \\
+\bottomrule
+\end{tabular}
+\caption{System-level comparison on 11 CHULOOPA input patterns across spice values $\{0.2, 0.6, 1.0\}$ (temperatures $T \in \{0.76, 1.08, 1.40\}$). Hit preservation is measured after grid-quantizing both outputs for a content-only comparison.}
+\label{tab:chuloopa_comparison}
+\end{table}
+
+\textbf{Deviation sorting.} Since temperature affects tendency but not outcome, generated variants are sorted after all five threads complete. Variants are sorted ascending by the tuple $(\max(0,\,\Delta_{\text{hits}}),\, V_{\text{new}})$, where $\Delta_{\text{hits}}$ is the signed hit-count difference from the original and $V_{\text{new}}$ is the number of drum voice classes present in the variation but absent from the original. Density increase is the primary criterion, and new voice classes break ties within the same density bucket. Sparser variations are not penalized. Slot\,1 is always the least deviant result and slot\,5 the most adventurous, making the spice axis a reliable musical ordering regardless of generation stochasticity.
+
+\textbf{Audio-driven selection.} A dedicated process measures live audio energy and maps it to a normalized "spice" value via a dBFS scale, streaming updates every 500\,ms. At each loop boundary, the system samples from a probability distribution over the original pattern and five generated variants. As the rolling 4-bar spice average increases, the distribution shifts toward higher-variation slots; quieter passages favor the original pattern, while higher-energy passages favor slots~4--5. The first four loops serve as a calibration window before auto-selection begins. A repeat-prevention rule caps consecutive plays of the same variant at two, and a spice ceiling controlled by MIDI CC~74 limits the maximum variation level available to the system.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{latex/CHULOOPA_performance_fig.png}
+  \caption{Annotated performance session (38--65\,s). Top: guitar audio with shaded regions showing the active variation slot at each loop boundary. Middle: instantaneous spice and 4-bar rolling average. Bottom: MIDI piano roll of generated drum events. With sustained spice near 0.75--0.80, the system predominantly selects Var3 (slot~3), cycling through adjacent slots via the repeat-prevention rule, without performer intervention.}
+  \label{fig:case_study}
+\end{figure}
+
+
+\subsection{Robotic Instruments}\label{subsec:robotic_instruments}
+Generated sequences are also used with robotic musical instruments in the Machine Lab. In this integration, symbolic rhythms are mapped to physical actuator triggers, making timing stability especially important. Small alignment errors that may be acceptable in software playback can become more apparent as uneven attacks, unstable loops, or unclear phrase boundaries.
+
+GRID provides a direct scheduling format for robotic performance. Each generated onset is already assigned to a metrical step, so it can be mapped to an actuator event without reconstructing absolute time from accumulated relative offsets. This makes the representation practical for synchronized robotic playback, where generated patterns must remain repeatable and aligned with loop boundaries.
+
+Together, CHULOOPA and the robotic instruments show how representation affects system integration. In both cases, fixed-grid output supports stable looping, interpretable variation, and real-time scheduling, which are requirements for co-creative rhythmic performance.
+
+
+
+\section{Discussion}\label{sec:discussion}
+
+The results indicate that representation choice has an effect on bar-level rhythmic continuation. GRID improves continuation quality, since metrical position is explicit in the token sequence: each onset is tied to a fixed location in the bar. TND, by contrast, requires the model to recover bar position from accumulated relative time shifts. This difference is especially important for local continuation, where generated bars must remain aligned to loop boundaries.
+
+This result should be interpreted as task-specific rather than as a preference for grid-based tokenization. TND retains duration and relative timing information, which may be useful for modeling expressive timing, microtiming, and human performance nuance. GRID removes this information in favor of onset placement, compactness, and temporal clarity. For drum-loop continuation, this tradeoff is useful because the primary requirement is stable metrical placement rather than expressive timing.
+
+The evaluation focuses on structural agreement and output validity. The shared 16-step onset grid enables a controlled comparison through onset F1, step accuracy, malformed-output rate, duplicate rate, and density. However, these metrics do not capture all aspects of musical quality, including velocity, groove feel, timbral nuance, longer-range development, or performer preference. Future work should extend the representation with velocity and microtiming controls, evaluate longer context windows, and include performer-centered studies.
+
+The system deployments show that representation is not only a modeling choice. In real-time co-creative systems, the output format also affects scheduling, variation control, visualization, and physical actuation. A useful representation for interactive rhythmic generation must therefore balance musical expressivity with temporal clarity, controllability, and integration with live performance systems.
+
+
+
+\section{Conclusion}\label{sec:conclusion}
+
+We presented a grid-based representation for real-time symbolic drum continuation and evaluated it against a relative-timing Time-Note-Duration (TND) encoding under matched data and model conditions. By decoding both representations into a shared 16-step onset grid, the evaluation isolates the effect of representation choice on next-bar rhythmic generation.
+
+On E-GMD, GRID improved onset F1, step accuracy, and malformed-output rate, indicating more reliable bar-synchronous continuation than TND. The generated examples and system integrations further show that fixed-grid output supports loop alignment, variation control, and real-time scheduling in CHULOOPA and robotic instrument performance.
+
+Overall, these results suggest that representation design is a system-level decision in co-creative musical AI. It shapes not only model behavior, but also how generated rhythms can be controlled, synchronized, and performed.
+
+
+\section{AI Usage Statement}
+Large language models were used for literature-search assistance and language editing. The research direction, system design, experimental methodology, analysis, and conclusions were developed by the authors. The authors manually verified all cited works, claims, references, figures, tables, and reported results. LLMs were not used to generate experimental data, model outputs, evaluation metrics, or quantitative results. The authors take full responsibility for the paper.
+
+
+% For BibTeX users:
+\bibliography{ISMIRtemplate}
+
+% For non BibTeX users:
+%\begin{thebibliography}{citations}
+% \bibitem{Author:17}
+% E.~Author and B.~Authour, ``The title of the conference paper,'' in {\em Proc.
+% of the Int. Society for Music Information Retrieval Conf.}, (Suzhou, China),
+% pp.~111--117, 2017.
+%
+% \bibitem{Someone:10}
+% A.~Someone, B.~Someone, and C.~Someone, ``The title of the journal paper,''
+%  {\em Journal of New Music Research}, vol.~A, pp.~111--222, September 2010.
+%
+% \bibitem{Person:20}
+% O.~Person, {\em Title of the Book}.
+% \newblock Montr\'{e}al, Canada: McGill-Queen's University Press, 2021.
+%
+% \bibitem{Person:09}
+% F.~Person and S.~Person, ``Title of a chapter this book,'' in {\em A Book
+% Containing Delightful Chapters} (A.~G. Editor, ed.), pp.~58--102, Tokyo,
+% Japan: The Publisher, 2009.
+%
+%\end{thebibliography}
+
+\end{document}

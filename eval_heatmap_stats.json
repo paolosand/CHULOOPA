@@ -1,0 +1,113 @@
+{
+  "test1": {
+    "voices": [
+      22,
+      26,
+      36,
+      37,
+      38,
+      40,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      55,
+      57,
+      59
+    ],
+    "slots": [
+      {
+        "slot": 1,
+        "avg_density": 5.3999999999999995,
+        "orig_overlap": 0.825,
+        "new_cell_prob": 0.006645569620253164
+      },
+      {
+        "slot": 2,
+        "avg_density": 8.0,
+        "orig_overlap": 0.7500000000000001,
+        "new_cell_prob": 0.015822784810126583
+      },
+      {
+        "slot": 3,
+        "avg_density": 9.6,
+        "orig_overlap": 0.65,
+        "new_cell_prob": 0.022151898734177215
+      },
+      {
+        "slot": 4,
+        "avg_density": 11.4,
+        "orig_overlap": 0.7250000000000001,
+        "new_cell_prob": 0.02689873417721519
+      },
+      {
+        "slot": 5,
+        "avg_density": 12.700000000000003,
+        "orig_overlap": 0.75,
+        "new_cell_prob": 0.030696202531645574
+      }
+    ]
+  },
+  "test2": {
+    "voices": [
+      22,
+      26,
+      36,
+      37,
+      38,
+      40,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      55,
+      59
+    ],
+    "slots": [
+      {
+        "slot": 1,
+        "avg_density": 6.799999999999999,
+        "orig_overlap": 0.325,
+        "new_cell_prob": 0.018333333333333333
+      },
+      {
+        "slot": 2,
+        "avg_density": 9.2,
+        "orig_overlap": 0.375,
+        "new_cell_prob": 0.025666666666666664
+      },
+      {
+        "slot": 3,
+        "avg_density": 10.2,
+        "orig_overlap": 0.375,
+        "new_cell_prob": 0.028999999999999998
+      },
+      {
+        "slot": 4,
+        "avg_density": 11.799999999999999,
+        "orig_overlap": 0.375,
+        "new_cell_prob": 0.03433333333333333
+      },
+      {
+        "slot": 5,
+        "avg_density": 13.0,
+        "orig_overlap": 0.325,
+        "new_cell_prob": 0.039
+      }
+    ]
+  }
+}
