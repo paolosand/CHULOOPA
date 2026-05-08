@@ -3,7 +3,7 @@
 **An intelligent drum looper that transforms beatbox into transcribed drum patterns with AI-powered variations.**
 
 <p align="center">
-  <img src="docs/internal/paper/images/chuloopa_active_state.png" alt="CHULOOPA active variation state" />
+  <img src="docs/images/chuloopa_active_state.png" alt="CHULOOPA active variation state" />
   <br/>
   <em>Figure 1: CHULOOPA UI active state</em>
 </p>
@@ -46,7 +46,7 @@ chuck src/drum_sample_recorder.ck
 ```
 
 <p align="center">
-  <img src="docs/internal/paper/images/drum_sample_recorder_ui.png" alt="CHULOOPA training UI" />
+  <img src="docs/images/drum_sample_recorder_ui.png" alt="CHULOOPA training UI" />
   <br/>
   <em>Training UI — shapes pulse and brighten as samples accumulate</em>
 </p>
@@ -125,7 +125,7 @@ ChucK (MidiOut) → IAC Driver Bus 1 → DAW MIDI Track → Drum Rack
 ## Technical Architecture
 
 <p align="center">
-  <img src="docs/internal/paper/images/chuloopa_system_diagram.png" alt="CHULOOPA system architecture diagram" />
+  <img src="docs/images/chuloopa_system_diagram.png" alt="CHULOOPA system architecture diagram" />
   <br/>
   <em>Figure 2: CHULOOPA system architecture</em>
 </p>
