@@ -26,3 +26,20 @@ imgui.ini
 
 # Git worktrees
 .worktrees/
+
+# Private paper files (kept locally, not for remote)
+docs/internal/paper/
+docs/internal/jake_paper.tex
+docs/internal/jake_paper_bib.bib
+docs/internal/jake_feedback-*.md
+docs/internal/jake_ajay_feedback-*.md
+docs/internal/pao_read_through.md
+docs/internal/PAPER_EVALUATION_RUBRIC.md
+
+# Runtime logs
+spice_log.csv
+
+# Generated eval artifacts (scripts + structure tracked, outputs are not)
+eval/output/
+eval/midi/
+eval/figures/
